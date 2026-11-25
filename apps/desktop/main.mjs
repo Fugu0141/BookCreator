@@ -801,6 +801,21 @@ async function smoke(){
   await until("document.querySelector('#source').value.includes('font-size=\\\"4.2mm\\\"')");
   await exec("document.querySelector('#preview-button').click()");
   await until("(()=>{const spans=[...document.querySelector('#preview > div')?.shadowRoot?.querySelectorAll('[data-inline-style]')??[]];return spans.some(s=>s.textContent==='2'&&s.style.verticalAlign==='super')&&spans.some(s=>s.textContent==='2'&&s.style.verticalAlign==='sub')&&spans.some(s=>s.textContent==='大文字'&&Math.abs(parseFloat(s.style.fontSize)-4.2*96/25.4)<.01);})()");
+  // Toggle an isolated styled line without losing text or changing existing list counters.
+  const beforeList=await exec("document.querySelector('#source').value");
+  await exec("(()=>{const e=document.querySelector('#source'),p=e.value.lastIndexOf('x^2^');e.focus();e.setSelectionRange(p,p+1);document.querySelector('#source-list-ordered').click();})()");
+  await until("document.querySelector('#source').value.includes('1. x^2^')");
+  await exec("document.querySelector('#preview-button').click()");
+  await until("document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-list-marker]')?.textContent==='1.'");
+  await exec("document.querySelector('#preview > div').shadowRoot.querySelector('[data-list-body]').click()");
+  if(!await exec("(()=>{const e=document.querySelector('#source');return e.value.slice(e.selectionStart,e.selectionEnd).startsWith('x^2^');})()"))throw Error('List body selection includes marker');
+  await exec("document.querySelector('#source-list-bullet').click()");
+  await until("document.querySelector('#source').value.includes('- x^2^')");
+  await exec("document.querySelector('#preview-button').click()");
+  await until("document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-list-marker]')?.textContent==='•'");
+  await exec("document.querySelector('#preview > div').shadowRoot.querySelector('[data-list-body]').click()");
+  await exec("document.querySelector('#source-list-bullet').click()");
+  await until("document.querySelector('#source').value==="+JSON.stringify(beforeList));
   // Raw manuscript lists must render derived markers and map back to marker-free text.
   const listBase=await exec("document.querySelector('#source').value");
   const listSource=listBase.replace(/\n*$/,'')+'\n\n3. **第一項**\n   - 子項目\n1. 第二項\n\n- 箇条書き\n';
