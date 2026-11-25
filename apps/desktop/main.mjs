@@ -486,7 +486,32 @@ async function smoke(){
   if(!libraryText.includes('previewComponentLibrary:')||!libraryText.includes('再利用部品')||!libraryText.includes('field: chapter-number'))throw Error('Library not persisted');
   await exec("document.querySelector('#lab-cancel').click()");
   await until("!document.querySelector('#lab-measure')");
-  console.log('PASS named library registration, rename, independent draft copy and persistence; dynamic sample and manuscript context, theme and paper; image ratio lock, non-destructive crop and history; image component asset, actual pixels, theme and paper; component duplication and lock guards; Canvas smart guide cancellation and equal-gap distribution; Canvas multi-selection, alignment, history and persisted geometry; Canvas resize, undo/redo and persisted width; Canvas actual mouse drag, undo/redo and persisted paper; Canvas numeric coordinates and actual paper rendering; nested component grouping and actual book preview; H1-specific fixed label and independent font; Component Lab measure, discard, apply and actual book rendering; book settings save and physical whole-book preview; imported project font, license metadata, theme selection, actual font rendering; Electron project creation, theme save/reopen, Electron sandbox, project open/read, React editing, bundled Noto, independent font roles, stale invalidation, measured preview, source selection and save');
+  // Bind the measured library entry to the currently selected H1 design.
+  await exec("document.querySelector('#component-lab').click()");
+  await until("document.querySelector('#lab-library-select')?.options[1]?.textContent==='再利用部品'");
+  await exec("(()=>{const e=document.querySelector('#lab-library-select');e.value=e.options[1].value;e.dispatchEvent(new Event('change',{bubbles:true}));})()");
+  await exec("document.querySelector('#lab-library-load').click()");
+  await exec("document.querySelector('#lab-measure').click()");
+  await until("!document.querySelector('#lab-library-bind').disabled");
+  await exec("document.querySelector('#lab-library-bind').click()");
+  await until("!document.querySelector('#lab-measure') && !document.querySelector('#open').disabled");
+  await exec("document.querySelector('#preview-book').click()");
+  await until("Array.from(document.querySelector('#preview > div')?.shadowRoot?.querySelectorAll('[data-fixed-label]')??[]).some(e=>e.dataset.componentNode.startsWith('dynamic-')&&e.textContent==='第1章')");
+  const sharedYaml=await readFile(join(smokeRoot,'new-book','themes','default','theme.yaml'),'utf8');
+  if(!/bindings:\s*\n\s*['"]?1['"]?: component-/.test(sharedYaml))throw Error('Shared H1 binding not persisted');
+  await exec("document.querySelector('#component-lab').click()");
+  await until("document.querySelector('#lab-current-binding')?.textContent.includes('共有参照：再利用部品')");
+  if(!await exec("document.querySelector('#lab-library-delete').disabled && document.querySelector('#lab-library-impact').textContent.includes('H1')"))throw Error('Shared usage or delete guard missing');
+  await exec("document.querySelector('#lab-measure').click()");
+  await until("!document.querySelector('#lab-apply').disabled");
+  if(!await exec("document.querySelector('#lab-apply').textContent.includes('独立コピー')"))throw Error('Detach action unclear');
+  await exec("document.querySelector('#lab-apply').click()");
+  await until("!document.querySelector('#lab-measure') && !document.querySelector('#open').disabled");
+  await exec("document.querySelector('#component-lab').click()");
+  await until("document.querySelector('#lab-current-binding')?.textContent.includes('独立デザイン')");
+  await exec("document.querySelector('#lab-cancel').click()");
+  await until("!document.querySelector('#lab-measure')");
+  console.log('PASS shared binding, paper, impact and detach; named library registration, rename, independent draft copy and persistence; dynamic sample and manuscript context, theme and paper; image ratio lock, non-destructive crop and history; image component asset, actual pixels, theme and paper; component duplication and lock guards; Canvas smart guide cancellation and equal-gap distribution; Canvas multi-selection, alignment, history and persisted geometry; Canvas resize, undo/redo and persisted width; Canvas actual mouse drag, undo/redo and persisted paper; Canvas numeric coordinates and actual paper rendering; nested component grouping and actual book preview; H1-specific fixed label and independent font; Component Lab measure, discard, apply and actual book rendering; book settings save and physical whole-book preview; imported project font, license metadata, theme selection, actual font rendering; Electron project creation, theme save/reopen, Electron sandbox, project open/read, React editing, bundled Noto, independent font roles, stale invalidation, measured preview, source selection and save');
   closing=true;win.destroy();await rm(smokeRoot,{recursive:true,force:true,maxRetries:10,retryDelay:100});app.exit(0);
 }
 app.on('window-all-closed',()=>{if(!SMOKE)app.quit();});
