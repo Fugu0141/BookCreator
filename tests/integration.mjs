@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
-import {editDocument,compileMeasuredManuscript,canReviewLayout,prepareBrowserPreview,prepareBookBrowserPreview,defaultHeadingDesign,previewSourceRange,planInlineFormat,planListFormat,planListIndent,planListBatch} from '../dist/index.js';
+import {editDocument,compileMeasuredManuscript,canReviewLayout,prepareBrowserPreview,prepareBookBrowserPreview,defaultHeadingDesign,previewSourceRange,planInlineFormat,planListFormat,planListIndent,planListBatch,inspectDisplayMath,planDisplayMath} from '../dist/index.js';
 const load = (variable, fallback) => import(pathToFileURL(resolve(process.env[variable] ?? fallback)).href);
 const bcm = await load('BCM_DIST', '../BookCreator_Markdown/dist/index.js');
 const engine = await load('ENGINE_DIST', '../BookCreator_LayoutEngine/dist/index.js');
@@ -604,4 +604,35 @@ test('display math rejects incomplete fences, unsupported formulas and absent va
   }
   assert.equal(run('$$\nx\n$$\n',{...deps,validateDisplayMath:undefined}).options,undefined);
   assert.ok(run('$$\nx\n$$').options);
+});
+
+
+test('GUI math planner inserts at empty line or EOF and preserves surrounding raw source',()=>{
+  const plan=(source,start,end,formula)=>planDisplayMath(source,start,end,formula,bcm.scanDocument,engine.parsePreviewMath);
+  const formula='\\frac{x_1^2}{b}';
+  for(const nl of ['\n','\r\n']){
+    const source=['導入。','','結び。',''].join(nl),pos=source.indexOf(nl)+nl.length;
+    const p=plan(source,pos,pos,formula),next=bcm.applyPatches(source,[p.patch]);
+    assert.equal(p.patch.expected,'');assert.equal(next.slice(p.selection.start,p.selection.end),formula);
+    assert.equal(next.slice(0,p.patch.range.start)+next.slice(p.patch.range.start+p.patch.replacement.length),source);
+    assert.equal(bcm.scanDocument(next).blocks.filter(b=>b.kind==='math').length,1);
+    assert.equal(next.replaceAll(nl,'' ).includes('\n'),false);
+    const target=inspectDisplayMath(next,p.selection.start,p.selection.end,bcm.scanDocument);assert.equal(target.mode,'edit');
+    const q=plan(next,p.selection.start,p.selection.end,'\\sqrt{x}');
+    assert.equal(q.patch.expected,formula);assert.equal(bcm.applyPatches(next,[q.patch]),next.replace(formula,'\\sqrt{x}'));
+  }
+  for(const source of ['', '日本語。','日本語。\n','日本語。\r\n']){
+    const p=plan(source,source.length,source.length,formula),next=bcm.applyPatches(source,[p.patch]);
+    assert.ok(next.startsWith(source));assert.equal(next.slice(p.selection.start,p.selection.end),formula);
+    assert.equal(bcm.scanDocument(next).blocks.filter(b=>b.kind==='math').length,1);
+  }
+});
+test('GUI math planner refuses protected, ambiguous, unsafe and mixed-ending insertion',()=>{
+  const plan=(source,start,end,formula='x^2')=>planDisplayMath(source,start,end,formula,bcm.scanDocument,engine.parsePreviewMath);
+  for(const [source,start,end] of [['本文。',1,1],['本文。',0,2],['~~~\n\n~~~\n',4,4],['~~~\n',4,4],['$$\nx\n',5,5],['A\r\nB\n',5,5],[':::callout{kind="note"}\n\n:::\n',24,24]]){
+    assert.throws(()=>plan(source,start,end),RangeError,source);
+  }
+  for(const formula of ['','x\nz','\\input{secret}','x^2^3','x'.repeat(2049)])assert.throws(()=>plan('',0,0,formula),RangeError);
+  const source='$$\r\n  x^2 \r\n$$ \r\n';const p=plan(source,5,6,'y');
+  assert.equal(bcm.applyPatches(source,[p.patch]),'$$\r\ny\r\n$$ \r\n');
 });

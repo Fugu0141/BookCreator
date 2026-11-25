@@ -37,3 +37,5 @@ export * from './inline-preview.js';
 export * from './inline-edit.js';
 
 export {planListIndent,planListBatch} from './list-edit.js';
+
+export {inspectDisplayMath,planDisplayMath} from './math-edit.js';
