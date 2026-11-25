@@ -1,7 +1,7 @@
-import {lstat,open,mkdir,readdir,rename,unlink} from 'node:fs/promises';
+import {lstat,open,mkdir,readdir} from 'node:fs/promises';
 import {constants} from 'node:fs';
 import {join,extname} from 'node:path';
-import {createHash,randomUUID} from 'node:crypto';
+import {createHash} from 'node:crypto';
 const MAX=20*1024*1024, MAX_TOTAL=64*1024*1024, MAX_FACES=16;
 const digest=b=>createHash('sha256').update(b).digest('hex');
 const bad=(message)=>{throw Object.assign(Error(message),{code:'FONT'});};
@@ -79,6 +79,7 @@ export function projectFonts(root){
       const rights=permission(m),bytes=await regular(join(dir,'font.'+m.format),MAX);
       if((total+=bytes.length)>MAX_TOTAL||digest(bytes)!==id)bad('Font catalog hash or size mismatch');
       const meta=inspectStaticFont(bytes);
+      if(meta.fsType&2)bad('Restricted font is not supported');
       if(['format','family','style','weight','fsType'].some(k=>meta[k]!==m[k]))bad('Font metadata mismatch');
       const info={id:'font-'+id,sha256:id,alias:fontAlias(id),...meta,...rights};
       result.push(includeBytes?{...info,bytes}:info);
