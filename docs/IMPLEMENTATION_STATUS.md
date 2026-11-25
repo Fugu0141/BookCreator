@@ -59,3 +59,7 @@ Recursive row/column groups with stable IDs, group/ungroup, sibling reorder, phy
 ## M04 — bounded Canvas editing
 
 Component Lab supports converting a nested group to fixed-height Canvas, numeric child X/Y/width, paint order and measured overflow diagnostics. Theme and actual book preview share the same compiled coordinates. CI pending. Not full-page/spread Canvas; no drag, rotation, anchors or general assets yet.
+
+## M04 — Canvas direct manipulation and draft history
+
+Measured preview pointer drag, bounds and 0.1 mm snap, single-gesture commit, automatic remeasurement, selection outline, bounded 64-entry undo/redo for draft design changes. Explicit Apply/Discard preserved. Actual Electron mouse-event smoke and pure history/coordinate tests added. CI pending; no resize handles, global history, or full-page Canvas.
