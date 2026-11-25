@@ -92,6 +92,12 @@ function checkComponentFonts(design,faces){
     if(!(FACE_IDS.has(f.id)?[400,500,600,700].includes(f.weight):faces.some(face=>face.id===f.id&&face.weight===f.weight)))fail('THEME','Unknown component font or unsupported weight');
   }
 }
+async function checkComponentImages(designs,store){
+  const ids=new Set();
+  function visit(children){for(const c of children){if(c.type==='image')ids.add(c.assetId);else if(c.type==='group')visit(c.children);}}
+  for(const design of designs.filter(Boolean))visit(design.children);
+  for(const id of ids)await store.read(id);
+}
 function readTypography(doc,faces){
   const t=doc.toJS({maxAliasCount:0});
   if(!record(t)||t.schemaVersion!==1)fail('THEME','Unsupported theme format');
@@ -175,6 +181,7 @@ export async function openWorkspace(manifestPath){
         headingLevels=raw.schemaVersion===2?validateHeadingLevels(raw.levels):{};
         const faces=await fontStore.list();
         for(const design of [headingDesign,...Object.values(headingLevels)].filter(Boolean))checkComponentFonts(design,faces);
+        await checkComponentImages([headingDesign,...Object.values(headingLevels)],imageStore);
       }catch(e){componentEditable=false;componentMessage=e.message;headingDesign=null;headingLevels={};}}
       return {editable:true,roles,headingDesign,headingLevels,componentEditable,componentMessage,revision:hash(r.bytes),path,doc,...r};}
     catch(e){if(e.code==='THEME')return {editable:false,roles:null,revision:null,message:e.message};throw e;}
@@ -269,6 +276,7 @@ export async function openWorkspace(manifestPath){
         if(design)checkComponentFonts(design,await fontStore.list());
         const heading=level==='default'?design:t.headingDesign,levels={...t.headingLevels};
         if(level!=='default'){if(design)levels[level]=design;else delete levels[level];}
+        await checkComponentImages([heading,...Object.values(levels)],imageStore);
         t.doc.set('previewComponents',{schemaVersion:2,heading,levels});
         const info=sourceInfo(t.bytes);if(!info.editable)fail('FORMAT','Mixed theme line endings are read-only');
         const bytes=Buffer.from((info.bom?'\uFEFF':'')+t.doc.toString().replace(/\n/g,info.eol),'utf8');
