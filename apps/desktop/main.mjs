@@ -622,7 +622,29 @@ async function smoke(){
   await until("!document.querySelector('#lab-measure')");
   await exec("document.querySelector('#preview-book').click()");
   await until("Array.from(document.querySelector('#preview > div')?.shadowRoot?.querySelectorAll('[data-fixed-label]')??[]).some(e=>e.textContent==='用語集')");
-  console.log('PASS independently created custom component, direct insertion, rename and paper; custom study design, typed library and actual paper; study template, real paper and source selection; typed paragraph library, binding, usage filter and detach; paragraph frame fragmentation and theme/heading coexistence; shared binding, paper, impact and detach; named library registration, rename, independent draft copy and persistence; dynamic sample and manuscript context, theme and paper; image ratio lock, non-destructive crop and history; image component asset, actual pixels, theme and paper; component duplication and lock guards; Canvas smart guide cancellation and equal-gap distribution; Canvas multi-selection, alignment, history and persisted geometry; Canvas resize, undo/redo and persisted width; Canvas actual mouse drag, undo/redo and persisted paper; Canvas numeric coordinates and actual paper rendering; nested component grouping and actual book preview; H1-specific fixed label and independent font; Component Lab measure, discard, apply and actual book rendering; book settings save and physical whole-book preview; imported project font, license metadata, theme selection, actual font rendering; Electron project creation, theme save/reopen, Electron sandbox, project open/read, React editing, bundled Noto, independent font roles, stale invalidation, measured preview, source selection and save');
+  // Add a number field to the warning design without changing its manuscript.
+  await exec("(()=>{const e=document.querySelector('#study-design-kind');e.value='warning';e.dispatchEvent(new Event('change',{bubbles:true}));})()");
+  await exec("document.querySelector('#study-design-lab').click()");
+  await until("!!document.querySelector('#lab-study-title')");
+  await exec("document.querySelector('[data-lab-node=study-label]').click()");
+  await until("!!document.querySelector('#lab-dynamic-field')");
+  await exec("(()=>{const e=document.querySelector('#lab-dynamic-field');e.value='study-number';e.dispatchEvent(new Event('change',{bubbles:true}));})()");
+  await exec("document.querySelector('#lab-measure').click()");
+  await until("!document.querySelector('#lab-apply').disabled");
+  if(!await exec("Array.from(document.querySelector('#lab-preview > div').shadowRoot.querySelectorAll('[data-fixed-label]')).some(e=>e.dataset.componentNode==='study-label'&&e.textContent==='3.2')"))throw Error('Study numbering sample did not resolve');
+  await exec("document.querySelector('#lab-apply').click()");
+  await until("!document.querySelector('#lab-measure') && !document.querySelector('#open').disabled");
+  await exec("(()=>{const e=document.querySelector('#study-kind');e.value='warning';e.dispatchEvent(new Event('change',{bubbles:true}));})()");
+  await exec("document.querySelector('#study-append').click()");
+  await until("document.querySelector('#source').value.split(':::callout{kind=\\\"warning\\\"}').length===3");
+  await exec("document.querySelector('#preview-button').click()");
+  await until("(()=>{const nodes=Array.from(document.querySelector('#preview > div')?.shadowRoot?.querySelectorAll('[data-fixed-label]')??[]).filter(e=>e.dataset.componentNode==='study-label').map(e=>e.textContent);return nodes.some(t=>/^\\d+\\.1$/.test(t))&&nodes.some(t=>/^\\d+\\.2$/.test(t));})()");
+  const readNumbers="Array.from(document.querySelector('#preview > div').shadowRoot.querySelectorAll('[data-fixed-label]')).filter(e=>e.dataset.componentNode==='study-label'&&/^\\d+\\.\\d+$/.test(e.textContent)).map(e=>e.textContent)";
+  const partialNumbers=await exec(readNumbers);
+  await exec("document.querySelector('#preview-book').click()");
+  await until("!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-fixed-label]')");
+  if(JSON.stringify(await exec(readNumbers))!==JSON.stringify(partialNumbers))throw Error('Study number differs between selected manuscript and book');
+  console.log('PASS study numbering sample, chapter sequence and selected/book consistency; independently created custom component, direct insertion, rename and paper; custom study design, typed library and actual paper; study template, real paper and source selection; typed paragraph library, binding, usage filter and detach; paragraph frame fragmentation and theme/heading coexistence; shared binding, paper, impact and detach; named library registration, rename, independent draft copy and persistence; dynamic sample and manuscript context, theme and paper; image ratio lock, non-destructive crop and history; image component asset, actual pixels, theme and paper; component duplication and lock guards; Canvas smart guide cancellation and equal-gap distribution; Canvas multi-selection, alignment, history and persisted geometry; Canvas resize, undo/redo and persisted width; Canvas actual mouse drag, undo/redo and persisted paper; Canvas numeric coordinates and actual paper rendering; nested component grouping and actual book preview; H1-specific fixed label and independent font; Component Lab measure, discard, apply and actual book rendering; book settings save and physical whole-book preview; imported project font, license metadata, theme selection, actual font rendering; Electron project creation, theme save/reopen, Electron sandbox, project open/read, React editing, bundled Noto, independent font roles, stale invalidation, measured preview, source selection and save');
   closing=true;win.destroy();await rm(smokeRoot,{recursive:true,force:true,maxRetries:10,retryDelay:100});app.exit(0);
 }
 app.on('window-all-closed',()=>{if(!SMOKE)app.quit();});
