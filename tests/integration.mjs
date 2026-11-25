@@ -472,3 +472,33 @@ test('inline size and baseline editing preserve manuscript and compile into vari
   apply('2',{baseline:'sub'},raw.indexOf('H'));apply('2',{baseline:'super'});
   assert.equal(raw,original);
 });
+
+test('scanner list subset preserves marker-free source ranges, numbering and nesting',()=>{
+  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds};
+  const source='導入。\r\n\r\n3. **第一項**\r\n  - 子項目\r\n  1. 子番号\r\n  1. 子続き\r\n1. 第二項\r\n  1. 新しい子\r\n\r\n- 別リスト\r\n+ 次の項目\r\n\r\n結び。\r\n';
+  const doc={documentId:'list',revision:'1',source,startOn:'page'};
+  const one=prepareBrowserPreview(doc,'1','list',{width:100000,height:70000},deps);
+  const book=prepareBookBrowserPreview([doc],'1','list',{width:100000,height:70000},deps);
+  assert.deepEqual(one.diagnostics,[]);assert.deepEqual(book.diagnostics,[]);
+  for(const blocks of [one.options.blocks,book.options.sections[0].blocks]){
+    const list=blocks.filter(b=>b.listItem);
+    assert.deepEqual(list.map(b=>[b.listItem.kind,b.listItem.depth,b.listItem.number]),[
+      ['ordered',0,3],['bullet',1,undefined],['ordered',1,1],['ordered',1,2],['ordered',0,4],['ordered',1,1],['bullet',0,undefined],['bullet',0,undefined]
+    ]);
+    assert.deepEqual(blocks.filter(b=>!b.listItem).map(b=>b.request.text),['導入。','結び。']);
+    assert.equal(list[0].request.text,'第一項');
+    assert.equal(list[0].request.inlineStyles[0].fontWeight,700);
+    assert.equal(list[0].sourceTextStart,undefined);
+    const span=previewSourceRange(list[0],{textStart:0,textEnd:3});
+    assert.equal(source.slice(span.start,span.end),'**第一項**');
+    for(const b of list.slice(1)){
+      assert.equal(source.slice(b.sourceTextStart,b.sourceTextStart+b.request.text.length),b.request.text);
+      assert.equal(b.splitPolicy,'allow');assert.equal(b.component,undefined);
+    }
+    assert.equal(source.slice(list[0].origin.range.start,list[0].origin.range.end),'3. **第一項**\r\n');
+  }
+  for(const source of ['  - orphan\n','- Parent\n    - deep\n','- Parent\ncontinuation\n','Paragraph\n- item\n','999. last\n1. overflow\n','- [link](url)\n','- \n']){
+    const result=prepareBrowserPreview({...doc,source},'1','bad-list',{width:100000,height:70000},deps);
+    assert.equal(result.options,undefined,source);assert.ok(result.diagnostics.length,source);
+  }
+});
