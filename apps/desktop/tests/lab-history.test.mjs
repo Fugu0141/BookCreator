@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHistory,commitHistory,undoHistory,redoHistory} from '../lab-history.mjs';
-import {dragPosition} from '../canvas-interaction.mjs';
+import {dragPosition,nudgePosition} from '../canvas-interaction.mjs';
 test('history preserves original and redo, new edits discard future',()=>{
   const initial={children:[{id:'a',x:0,y:0}]},a=createHistory(initial),b=commitHistory(a,{children:[{id:'a',x:3000,y:500}]}),c=commitHistory(b,{children:[{id:'a',x:8000,y:1500}]});
   assert.equal(undoHistory(c).present,b.present);
@@ -21,4 +21,13 @@ test('drag snaps and clamps to measured canvas bounds',()=>{
   assert.deepEqual(dragPosition({x:3000,y:5000},{x:1457,y:-333},{x:20000,y:30000}),{x:4500,y:4700});
   assert.deepEqual(dragPosition({x:3000,y:5000},{x:-99999,y:99999},{x:20000,y:25678}),{x:0,y:25678});
   assert.throws(()=>dragPosition({x:0,y:0},{x:NaN,y:0},{x:10,y:10}),RangeError);
+});
+
+test('keyboard nudge preserves other axis, supports coarse step and clamps',()=>{
+  const start={x:3550,y:1234},bounds={x:4000,y:1500};
+  assert.deepEqual(nudgePosition(start,'ArrowRight',bounds),{x:3650,y:1234});
+  assert.deepEqual(nudgePosition(start,'ArrowRight',bounds,true),{x:4000,y:1234});
+  assert.deepEqual(nudgePosition(start,'ArrowDown',bounds,true),{x:3550,y:1500});
+  assert.deepEqual(nudgePosition({x:50,y:20},'ArrowLeft',bounds),{x:0,y:20});
+  assert.equal(nudgePosition(start,'Enter',bounds),null);
 });
