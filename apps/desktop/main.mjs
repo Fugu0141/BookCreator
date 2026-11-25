@@ -77,7 +77,7 @@ async function run(){
   handle('listImages',async(...args)=>{checkArgs(args,0);return requireWorkspace().images();});
   handle('importImage',async(...args)=>{
     checkArgs(args,1);if(args[0]!==true)throw Error('Confirm permission to copy and share the image');const current=requireWorkspace();
-    const chosen=SMOKE?{canceled:true}:await dialog.showOpenDialog(win,{title:'プロジェクトにPNG素材をコピー',properties:['openFile'],filters:[{name:'PNG image',extensions:['png']}]});
+    const chosen=SMOKE?{canceled:false,filePaths:[join(smokeRoot,'test-image.png')]}:await dialog.showOpenDialog(win,{title:'プロジェクトにPNG素材をコピー',properties:['openFile'],filters:[{name:'PNG image',extensions:['png']}]});
     if(chosen.canceled)return null;
     const result=await current.importImage(chosen.filePaths[0]);return {...result,images:await current.images()};
   });
@@ -111,6 +111,23 @@ async function smoke(){
   if(!await exec("typeof require==='undefined' && typeof process==='undefined' && !!window.bookcreator"))throw Error('Renderer isolation failed');
   await exec("document.querySelector('#open').click()");
   await until("!!document.querySelector('[data-section=chapter]')");
+  const {tinyPng}=await import('./tests/png-fixture.mjs');
+  await writeFile(join(smokeRoot,'test-image.png'),tinyPng());
+  await exec("document.querySelector('#image-manager').click()");
+  await until("!!document.querySelector('#import-image')");
+  if(!await exec("document.querySelector('#import-image').disabled"))throw Error('Image import permission gate missing');
+  await exec("document.querySelector('#image-copy').click()");
+  await until("!document.querySelector('#import-image').disabled");
+  await exec("document.querySelector('#import-image').click()");
+  await until("!!document.querySelector('[data-project-image] img') && document.querySelector('[data-project-image] img').naturalWidth===2 && !document.querySelector('#open').disabled");
+  const imageId=await exec("document.querySelector('[data-project-image]').dataset.projectImage");
+  if(!(await readFile(join(smokeRoot,'assets','images',imageId+'.png'))).equals(tinyPng()))throw Error('Imported image bytes differ');
+  await exec("document.querySelector('#image-copy').click()");
+  await exec("document.querySelector('#import-image').click()");
+  await until("document.querySelector('#status').textContent.includes('登録済み') && !document.querySelector('#open').disabled");
+  if(!await exec("document.querySelectorAll('[data-project-image]').length===1"))throw Error('Duplicate image catalog entry');
+  await exec("document.querySelector('#image-manager').click()");
+  await until("!document.querySelector('#import-image')");
   await exec("document.querySelector('[data-section=chapter]').click()");
   await until("document.querySelector('#source')?.value.includes('見出し')");
   await exec("document.querySelector('#preview-button').click()");
