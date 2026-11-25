@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="ja">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>BookCreator | 実測プレビュー PoC</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:system-ui,sans-serif;color:#18232e;background:#edf1f4}header{padding:18px 24px;background:#172c3e;color:white}h1{font-size:20px;margin:0}header p{margin:5px 0 0;font-size:13px;color:#c4d4df}main{display:grid;grid-template-columns:minmax(260px,1fr) minmax(0,1.3fr);min-height:85vh;gap:1px;background:#c9d2da}.editor,.paper{background:#f8fafb;padding:20px;min-width:0}label{font-weight:600;font-size:14px}textarea{display:block;width:100%;min-height:420px;resize:vertical;font:14px/1.65 monospace;margin:10px 0;padding:12px;border:1px solid #aab7c2;border-radius:4px}input{width:90px;padding:6px}button{background:#174b70;color:white;border:0;border-radius:4px;padding:9px 14px;font-weight:600;cursor:pointer}button:disabled{opacity:.5}#status{white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px}#preview{overflow:auto;padding:12px 0;max-height:75vh}#smoke{white-space:pre-wrap}small{display:block;color:#506476;line-height:1.6;margin:10px 0} @media(max-width:760px){main{grid-template-columns:1fr}}
+</style></head>
+<body><header><h1>BookCreator / 実測プレビュー</h1><p>開発用プロトタイプ · 正式出版・保存には非対応</p></header>
+<main><section class="editor"><label for="source">BCM 原稿</label><textarea id="source" spellcheck="false"></textarea>
+<label for="width">本文幅 (mm)</label> <input id="width" type="number" min="30" max="250" value="100">
+<label for="height">本文高 (mm)</label> <input id="height" type="number" min="30" max="300" value="75">
+<p><button id="render">組版プレビュー</button></p><small>平文の見出しと、原稿上で1行の段落のみ。空行で区切ります。紙面の断片を選ぶと対応する原稿範囲を選択します。</small><div id="status" role="status" aria-live="polite"></div></section>
+<section class="paper"><label>紙面プレビュー（本文領域）</label><div id="preview"></div><pre id="smoke" hidden>RUNNING</pre></section></main>
+<script type="module" src="/demo/preview.mjs"></script></body></html>

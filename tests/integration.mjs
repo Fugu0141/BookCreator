@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
-import {editDocument,compileMeasuredManuscript,canReviewLayout} from '../dist/index.js';
+import {editDocument,compileMeasuredManuscript,canReviewLayout,prepareBrowserPreview} from '../dist/index.js';
 const load = (variable, fallback) => import(pathToFileURL(resolve(process.env[variable] ?? fallback)).href);
 const bcm = await load('BCM_DIST', '../BookCreator_Markdown/dist/index.js');
 const engine = await load('ENGINE_DIST', '../BookCreator_LayoutEngine/dist/index.js');
@@ -65,4 +65,18 @@ test('BCM schema validation and Inspector connected at application boundary',()=
   assert.equal(inspected.ok,true);assert.equal(inspected.plan.completeness,'full');
   assert.equal(inspected.plan.pages[0].fragments[0].rect.width,50);
   assert.equal(inspected.plan.publicationReady,false);
+});
+
+test('browser preview preparation separates parsing from measurement and verifies exact source offsets',()=>{
+  const source='# 見出し\r\n\r\nCafé and 日本語。\r\n';
+  const doc={documentId:'preview',revision:'3',source,startOn:'page'};
+  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds};
+  const result=prepareBrowserPreview(doc,'3','fixture',{width:100000,height:70000},deps);
+  assert.deepEqual(result.diagnostics,[]);
+  const blocks=result.options.blocks;assert.equal(blocks.length,2);
+  assert.equal(blocks[0].startPosition,'page-top');
+  for(const b of blocks)assert.equal(source.slice(b.sourceTextStart,b.sourceTextStart+b.request.text.length),b.request.text);
+  assert.equal(result.publicationReady,false);
+  assert.equal(prepareBrowserPreview({...doc,source:'::figure{src="a.png"}\n'},'3','fixture',{width:100000,height:70000},deps).options,undefined);
+  assert.equal(prepareBrowserPreview({...doc,source:'One\nTwo\n'},'3','fixture',{width:100000,height:70000},deps).options,undefined);
 });
