@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
-import {editDocument,compileMeasuredManuscript,canReviewLayout,prepareBrowserPreview,prepareBookBrowserPreview,defaultHeadingDesign,previewSourceRange} from '../dist/index.js';
+import {editDocument,compileMeasuredManuscript,canReviewLayout,prepareBrowserPreview,prepareBookBrowserPreview,defaultHeadingDesign,previewSourceRange,planInlineFormat} from '../dist/index.js';
 const load = (variable, fallback) => import(pathToFileURL(resolve(process.env[variable] ?? fallback)).href);
 const bcm = await load('BCM_DIST', '../BookCreator_Markdown/dist/index.js');
 const engine = await load('ENGINE_DIST', '../BookCreator_LayoutEngine/dist/index.js');
@@ -375,4 +375,44 @@ test('emphasis in headings, paragraphs and named study slots keeps logical and r
   assert.equal(raw.slice(slotRange.start,slotRange.end),'*ヒント*');
   const one=prepareBrowserPreview(doc,'1','rich',{width:100000,height:100000},deps,undefined,library);
   assert.deepEqual(one.diagnostics,[]);assert.deepEqual(one.options.blocks[1].sourceMap,body.sourceMap);
+});
+
+test('local inline format patches use real BCM scanner and preserve logical text and surrounding source',()=>{
+  const source='# 見出し\r\n\r\n変数とは値を保存する領域です。\r\n\r\n::::component{name="exercise" #q-1}\r\n:::slot{name="content"}\r\n問題文。\r\n:::\r\n\r\n:::slot{name="hint"}\r\n重要なヒント。\r\n:::\r\n::::\r\n';
+  const apply=(s,plan)=>bcm.applyPatches(s,[plan.patch]);
+  let start=source.indexOf('値を保存する領域'),end=start+'値を保存する領域'.length;
+  const bold=planInlineFormat(source,start,end,'bold',bcm.scanDocument);
+  assert.equal(bold.action,'apply');assert.equal(bold.patch.expected,'値を保存する領域');
+  const b=apply(source,bold);assert.equal(b,source.replace('値を保存する領域','**値を保存する領域**'));
+  const ital=planInlineFormat(b,bold.selection.start,bold.selection.end,'italic',bcm.scanDocument);
+  assert.equal(ital.action,'replace');const i=apply(b,ital);assert.equal(i,source.replace('値を保存する領域','*値を保存する領域*'));
+  const clear=planInlineFormat(i,ital.selection.start-1,ital.selection.end+1,'italic',bcm.scanDocument);
+  assert.equal(clear.action,'remove');assert.equal(apply(i,clear),source);
+  for(const target of ['見出し','重要なヒント']){
+    const pos=source.indexOf(target),p=planInlineFormat(source,pos,pos+target.length,'bold',bcm.scanDocument);
+    assert.equal(apply(source,p),source.replace(target,'**'+target+'**'));
+  }
+  assert.throws(()=>planInlineFormat(b,bold.selection.start+1,bold.selection.end,'bold',bcm.scanDocument));
+  assert.throws(()=>planInlineFormat(source,source.indexOf('exercise'),source.indexOf('exercise')+8,'bold',bcm.scanDocument));
+  assert.throws(()=>planInlineFormat(source,source.indexOf('q-1'),source.indexOf('q-1')+3,'bold',bcm.scanDocument));
+  assert.throws(()=>planInlineFormat(source,start,source.indexOf('問題文')+3,'bold',bcm.scanDocument));
+});
+test('formatting refuses protected ranges, ambiguous markup, grapheme splits and empty selections',()=>{
+  for(const [raw,word] of [
+    ['\x60\x60\x60js\nhello\n\x60\x60\x60\n','hello'],
+    ['$$\nhello\n$$\n','hello'],
+    ['<!--\nhello\n-->\n','hello'],
+    ['- list\nhello\n','hello'],
+    ['[hello](target)\n','hello'],
+    [':::layout{}\nhello\n:::\n','hello'],
+    [':::component{name="exercise"}\nhello\n','hello'],
+    ['a **hello** b\n','ell'],
+    ['a **hello** b\n','a **hello'],
+    ['e\u0301x\n','e'],
+    ['hello world\n','hello '],
+    ['a,b\n',',']
+  ]){
+    const at=raw.indexOf(word);assert.throws(()=>planInlineFormat(raw,at,at+word.length,'bold',bcm.scanDocument),undefined,raw);
+  }
+  assert.throws(()=>planInlineFormat('hello',1,1,'bold',bcm.scanDocument));
 });
