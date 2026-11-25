@@ -1,0 +1,34 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {defaultStudyDesign,compileStudyBlock,resolveNamedSlotPresence,validateComponentDesign,conditionalSlotName,namedSlotDefinitions} from '../dist/index.js';
+const font={fontFamily:'serif',fontWeight:400},base=defaultStudyDesign('exercise');
+const hint={id:'hint',type:'slot',name:'hint',width:'fill',fontSize:3500,lineHeight:1.5,color:'#123456',optional:true};
+const label={id:'hint-label',type:'label',width:'fill',text:'ヒント',fontSize:3500,lineHeight:1.5,color:'#123456'};
+const group={id:'hint-group',type:'group',direction:'column',width:'fill',gap:1000,padding:2000,background:'#fff9eb',showWhenSlot:'hint',children:[label,hint]};
+const required={...hint,id:'answer',name:'answer',optional:false};
+const design={...base,children:[...base.children,group,required]};
+test('optional slot hides a complete conditional group without mutating the stored definition',()=>{
+  const compiled=compileStudyBlock('exercise',undefined,font,design);
+  const sources=[{name:'answer',text:'答え。',sourceTextStart:45}];
+  const omitted=resolveNamedSlotPresence(compiled,sources);
+  assert.deepEqual(omitted.component.children.map(n=>n.id),[...base.children.map(n=>n.id),'answer']);
+  assert.deepEqual(omitted.namedSlots.map(n=>n.name),['answer']);
+  const present=resolveNamedSlotPresence(compiled,[...sources,{name:'hint',text:'ヒント。',sourceTextStart:15}]);
+  assert.deepEqual(present.component.children.at(-2).children.map(n=>n.id),['hint-label','hint']);
+  assert.equal(present.component.children.at(-2).showWhenSlot,undefined);
+  assert.equal(present.component.children.at(-2).children[1].optional,undefined);
+  assert.equal(present.namedSlots[0].sourceTextStart,15);
+  assert.deepEqual(namedSlotDefinitions(design).map(n=>[n.name,n.optional]),[['hint',true],['answer',false]]);
+  assert.equal(design.children.at(-2).showWhenSlot,'hint');
+  for(const invalid of [[],[...sources,{name:'unknown',text:'x'}],[...sources,{name:'hint',text:''}],[...sources,...sources]])assert.throws(()=>resolveNamedSlotPresence(compiled,invalid),RangeError);
+});
+test('empty groups disappear, ordinary decorations remain, required slots cannot be conditionally hidden',()=>{
+  const {showWhenSlot,...ordinary}=group;
+  const compiled=compileStudyBlock('exercise',undefined,font,{...base,children:[...base.children,{...ordinary,children:[hint]}]});
+  assert.deepEqual(resolveNamedSlotPresence(compiled,[]).component.children.map(n=>n.id),base.children.map(n=>n.id));
+  const decorated=compileStudyBlock('exercise',undefined,font,{...base,children:[...base.children,ordinary]});
+  assert.deepEqual(resolveNamedSlotPresence(decorated,[]).component.children.at(-1).children.map(n=>n.id),['hint-label']);
+  assert.equal(conditionalSlotName(group.children),'hint');
+  for(const g of [{...group,showWhenSlot:'missing'},{...group,children:[label,{...hint,optional:false}]},{...group,children:[label,hint,required]},{...group,children:[hint,{id:'extra-primary',type:'content'}]},{...group,children:[{...hint,optional:'yes'}]}])assert.throws(()=>validateComponentDesign({...base,children:[...base.children,g]},'study'),RangeError);
+  assert.throws(()=>validateComponentDesign({...base,children:[...base.children,{...hint,optional:null}]},'study'),RangeError);
+});

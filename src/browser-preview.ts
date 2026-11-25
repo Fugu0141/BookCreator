@@ -1,5 +1,5 @@
 import {compileStudyBlock,compileCustomStudyBlock,createStudyNumbering,studyKindName,type StudyNumber,type StudyAnswer} from './study-blocks.js';
-import {compileHeadingDesign,compileParagraphDesign,validateHeadingLevels,compileNamedSlotRequests,type HeadingDesign,type HeadingLevel,type HeadingLevels,type HeadingContext,type StudyDesigns,type ComponentLibrary,validateComponentLibrary} from './preview-component.js';
+import {compileHeadingDesign,compileParagraphDesign,validateHeadingLevels,compileNamedSlotRequests,resolveNamedSlotPresence,type HeadingDesign,type HeadingLevel,type HeadingLevels,type HeadingContext,type StudyDesigns,type ComponentLibrary,validateComponentLibrary} from './preview-component.js';
 import {resolvePreviewTypography,type PreviewTypography} from './preview-typography.js';
 import {prepareManuscript,type Manuscript,type PreparationDependencies,type Scan,type SemanticItem} from './manuscript-poc.js';
 function resolveStudy(item:SemanticItem,body:ReturnType<typeof resolvePreviewTypography>['body'],designs?:StudyDesigns,library?:ComponentLibrary,number?:StudyNumber,answer?:StudyAnswer){
@@ -13,7 +13,7 @@ function resolveStudy(item:SemanticItem,body:ReturnType<typeof resolvePreviewTyp
 function slotRequests(item:SemanticItem,compiled:ReturnType<typeof compileHeadingDesign>,source:string){
   const slots=item.namedSlots??[];
   for(const s of slots)if(s.sourceTextStart===undefined||source.slice(s.sourceTextStart,s.sourceTextStart+s.text.length)!==s.text)throw RangeError('Cannot establish exact named slot source mapping');
-  return compileNamedSlotRequests(compiled,slots);
+  return resolveNamedSlotPresence(compiled,slots);
 }
 // Resolve all occurrence numbers before rendering so forward and cross-file links work.
 function indexAnswers(sections:readonly {blocks:readonly ({kind:'block';item:SemanticItem}|{kind:'pagebreak'})[]}[],library?:ComponentLibrary){
@@ -60,7 +60,7 @@ export function prepareBrowserPreview<S extends Scan>(document:Manuscript,revisi
     if(offset<0||raw.slice(offset,offset+item.text.length)!==item.text){reject(item.origin,'Cannot establish exact source mapping');continue;}
     if(item.kind==='heading')numbering.heading(item.level!);
     let study:ReturnType<typeof compileStudyBlock>|undefined,namedSlots:ReturnType<typeof compileNamedSlotRequests>=[];
-    if(item.kind==='study')try{study=resolveStudy(item,fonts.body,undefined,catalog,numbering.next(item.componentId??item.studyKind!),answerFor(item));namedSlots=slotRequests(item,study,document.source);}catch(e){reject(item.origin,String(e instanceof Error?e.message:e));continue;}
+    if(item.kind==='study')try{study=resolveStudy(item,fonts.body,undefined,catalog,numbering.next(item.componentId??item.studyKind!),answerFor(item));const resolved=slotRequests(item,study,document.source);study={...study,component:resolved.component};namedSlots=resolved.namedSlots;}catch(e){reject(item.origin,String(e instanceof Error?e.message:e));continue;}
     blocks.push({origin:item.origin,request:{text:item.text,width:block.width,fontSize:study?.fontSize??(item.kind==='heading'?6500:4200),...(study?.textStyle??(item.kind==='heading'?fonts.heading:fonts.body)),lineHeight:study?.lineHeight??1.8},splitPolicy:block.splitPolicy,...(study?{component:study.component}:{}),...(namedSlots.length?{namedSlots}:{}),
       sourceTextStart:item.origin.range.start+offset,...(block.startPosition?{startPosition:block.startPosition,startPositionSource:block.startPositionSource}:{})});
   }
@@ -100,7 +100,7 @@ export function prepareBookBrowserPreview<S extends Scan>(documents:readonly Man
         const number=numbering.next(item.componentId??item.studyKind!);
         if(!active){chapter=number.chapter;active=true;chapterTitle=undefined;counters.fill(0);counters[0]=chapter;}
         design=resolveStudy(item,fonts.body,studyDesigns,catalog,number,answerFor(item));
-        namedSlots=slotRequests(item,design,byId.get(item.origin.documentId)!.source);
+        const resolved=slotRequests(item,design,byId.get(item.origin.documentId)!.source);design={...design,component:resolved.component};namedSlots=resolved.namedSlots;
       }catch(e){diagnostics.push({code:'BC_PREVIEW_COMPONENT',message:String(e instanceof Error?e.message:e),documentId:item.origin.documentId,range:item.origin.range});continue;}
       if(item.kind==='heading'){
         const level=item.level!;

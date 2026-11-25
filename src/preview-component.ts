@@ -10,9 +10,9 @@ export type DynamicField=typeof dynamicFields[number]|typeof studyDynamicFields[
 export type HeadingContext=Readonly<Partial<Record<DynamicField,string>>>;
 export type DynamicLabel=Omit<FixedLabel,'type'|'text'>&{type:'dynamic';field:DynamicField;prefix:string;suffix:string;fallback:string};
 export interface ImageCrop {left:number;top:number;right:number;bottom:number}
-export type NamedSlot=Omit<FixedLabel,'type'|'text'>&{type:'slot';name:string};
+export type NamedSlot=Omit<FixedLabel,'type'|'text'>&{type:'slot';name:string;optional?:boolean};
 export const validNamedSlot=(v:unknown):v is string=>typeof v==='string'&&/^[a-z][a-z0-9-]{0,31}$/.test(v)&&v!=='content';
-export type HeadingChild=({id:string;type:'content';width?:number}|{id:string;type:'rect';width:number|'fill';height:number;color:string}|FixedLabel|DynamicLabel|NamedSlot|{id:string;type:'image';width:number|'fill';height:number;assetId:string;fit:'contain'|'cover';alt:string;crop?:ImageCrop}|{id:string;type:'group';width:number|'fill';direction:'row'|'column'|'canvas';height?:number;gap:number;padding:number;background:string;children:HeadingChild[]}) & {x?:number;y?:number};
+export type HeadingChild=({id:string;type:'content';width?:number}|{id:string;type:'rect';width:number|'fill';height:number;color:string}|FixedLabel|DynamicLabel|NamedSlot|{id:string;type:'image';width:number|'fill';height:number;assetId:string;fit:'contain'|'cover';alt:string;crop?:ImageCrop}|{id:string;type:'group';width:number|'fill';direction:'row'|'column'|'canvas';height?:number;gap:number;padding:number;background:string;showWhenSlot?:string;children:HeadingChild[]}) & {x?:number;y?:number};
 export interface HeadingDesign {
   schemaVersion:1;
   fontSize:number; lineHeight:number; font?:ComponentFont;
@@ -49,11 +49,15 @@ export function validateHeadingDesign(value:unknown,scope:'heading'|'study'='hea
     if(canvas&&(!len(child.x)||!len(child.y)||!len(child.width,1)))throw fail();
     if(child.type==='content'&&exact(child,['id','type',...pos,...(canvas?['width']:[])])){slots++;continue;}
     if(!(child.width==='fill'||len(child.width,1)))throw fail();
-    if(child.type==='group'&&exact(child,['id','type','width','direction','gap','padding','background','children',...pos,...(child.direction==='canvas'?['height']:[])])&&['row','column','canvas'].includes(String(child.direction))&&len(child.gap)&&len(child.padding)&&color(child.background)&&Array.isArray(child.children)){if(child.direction==='canvas'&&(!len(child.height,1)||child.height<=2*child.padding||child.gap!==0))throw fail();visit(child.children,depth+1,child.direction==='canvas');continue;}
+    if(child.type==='group'&&exact(child,['id','type','width','direction','gap','padding','background','children',...pos,...(child.direction==='canvas'?['height']:[])],['showWhenSlot'])&&['row','column','canvas'].includes(String(child.direction))&&len(child.gap)&&len(child.padding)&&color(child.background)&&Array.isArray(child.children)){if(child.direction==='canvas'&&(!len(child.height,1)||child.height<=2*child.padding||child.gap!==0))throw fail();visit(child.children,depth+1,child.direction==='canvas');
+      if(Object.hasOwn(child,'showWhenSlot')){
+        if(scope!=='study'||!validNamedSlot(child.showWhenSlot)||conditionalSlotName(child.children as HeadingChild[])!==child.showWhenSlot)throw fail();
+      }
+      continue;}
     if(child.type==='image'&&exact(child,['id','type','width','height','assetId','fit','alt',...pos],['crop'])&&len(child.height,1)&&typeof child.assetId==='string'&&/^[a-f0-9]{64}$/.test(child.assetId)&&['contain','cover'].includes(String(child.fit))&&typeof child.alt==='string'&&child.alt.length<=256&&(!Object.hasOwn(child,'crop')||validCrop(child.crop))&&!/[\p{Cc}\p{Cs}]/u.test(child.alt))continue;
     if(!color(child.color))throw fail();
     if(child.type==='rect'&&exact(child,['id','type','width','height','color',...pos])&&len(child.height,1))continue;
-    if(scope==='study'&&child.type==='slot'&&exact(child,['id','type','name','width','fontSize','lineHeight','color',...pos],['font'])&&validNamedSlot(child.name)&&!names.has(child.name)&&names.size<8&&len(child.fontSize,2000,30000)&&line(child.lineHeight)){
+    if(scope==='study'&&child.type==='slot'&&exact(child,['id','type','name','width','fontSize','lineHeight','color',...pos],['font','optional'])&&(!Object.hasOwn(child,'optional')||typeof child.optional==='boolean')&&validNamedSlot(child.name)&&!names.has(child.name)&&names.size<8&&len(child.fontSize,2000,30000)&&line(child.lineHeight)){
       names.add(child.name);if(Object.hasOwn(child,'font'))validateFont(child.font);continue;
     }
     if(child.type==='dynamic'&&exact(child,['id','type','width','field','prefix','suffix','fallback','fontSize','lineHeight','color',...pos],['font'])&&(scope==='study'?(studyDynamicFields as readonly string[]):(dynamicFields as readonly string[])).includes(String(child.field))&&plainLabel(child.prefix,0,64)&&plainLabel(child.suffix,0,64)&&plainLabel(child.fallback,1,64)&&len(child.fontSize,2000,30000)&&line(child.lineHeight)){
@@ -85,10 +89,13 @@ export function hasDynamicLabels(design:HeadingDesign|null|undefined):boolean{
 export function compileHeadingDesign(value:HeadingDesign,inherited:PreviewTextStyle={fontFamily:'sans-serif',fontWeight:400},context?:HeadingContext,scope:'heading'|'study'='heading'){
   const {schemaVersion:_,fontSize,lineHeight,font,children,...rest}=validateHeadingDesign(value,scope);
   const textStyle=resolveFont(font,inherited);
-  const slotStyles:{name:string;fontSize:number;lineHeight:number;textStyle:PreviewTextStyle}[]=[];
-  type CompiledChild=Exclude<HeadingChild,FixedLabel|DynamicLabel|NamedSlot|{type:'group'}>|Omit<NamedSlot,'font'|'fontSize'|'lineHeight'>|(Omit<FixedLabel,'font'>&PreviewTextStyle)|{id:string;type:'group';width:number|'fill';x?:number;y?:number;direction:'row'|'column'|'canvas';height?:number;gap:number;padding:number;background:string;children:CompiledChild[]};
+  const slotStyles:{name:string;fontSize:number;lineHeight:number;textStyle:PreviewTextStyle;optional?:boolean}[]=[],conditionalGroups:{id:string;name:string}[]=[];
+  type CompiledChild=Exclude<HeadingChild,FixedLabel|DynamicLabel|NamedSlot|{type:'group'}>|Omit<NamedSlot,'font'|'fontSize'|'lineHeight'|'optional'>|(Omit<FixedLabel,'font'>&PreviewTextStyle)|{id:string;type:'group';width:number|'fill';x?:number;y?:number;direction:'row'|'column'|'canvas';height?:number;gap:number;padding:number;background:string;children:CompiledChild[]};
   function compile(child:HeadingChild):CompiledChild{
-    if(child.type==='group')return {...child,children:child.children.map(compile)};
+    if(child.type==='group'){
+      const {showWhenSlot,...group}=child;if(showWhenSlot)conditionalGroups.push({id:child.id,name:showWhenSlot});
+      return {...group,children:child.children.map(compile)};
+    }
     if(child.type==='dynamic'){
       if(!context)throw Error('Dynamic heading label requires heading context');
       const {font,field,prefix,suffix,fallback,...label}=child;
@@ -98,14 +105,14 @@ export function compileHeadingDesign(value:HeadingDesign,inherited:PreviewTextSt
       return {...label,type:'label',text,...resolveFont(font,inherited)};
     }
     if(child.type==='slot'){
-      const {font,fontSize,lineHeight,...node}=child;
-      slotStyles.push({name:child.name,fontSize,lineHeight,textStyle:resolveFont(font,inherited)});return node;
+      const {font,fontSize,lineHeight,optional,...node}=child;
+      slotStyles.push({name:child.name,fontSize,lineHeight,textStyle:resolveFont(font,inherited),...(optional?{optional:true}:{})});return node;
     }
     if(child.type!=='label')return child;
     const {font,...label}=child;return {...label,...resolveFont(font,inherited)};
   }
   const component={...rest,children:children.map(compile)};
-  return {fontSize,lineHeight,textStyle,component,slotStyles};
+  return {fontSize,lineHeight,textStyle,component,slotStyles,conditionalGroups};
 }
 
 /** Experimental project-local component library. Usage is explicit for future expansion. */
@@ -207,17 +214,44 @@ export function resolveStudyDesigns(value:unknown,library:ComponentLibrary){
   return {studyDesigns,studyBindings};
 }
 
-export function namedSlotNames(design:HeadingDesign|undefined):string[]{
-  const names:string[]=[];
-  function visit(nodes:HeadingChild[]){for(const n of nodes){if(n.type==='slot')names.push(n.name);else if(n.type==='group')visit(n.children);}}
-  if(design)visit(design.children);return names;
+export function namedSlotDefinitions(design:HeadingDesign|undefined):NamedSlot[]{
+  const slots:NamedSlot[]=[];
+  function visit(nodes:HeadingChild[]){for(const n of nodes){if(n.type==='slot')slots.push(n);else if(n.type==='group')visit(n.children);}}
+  if(design)visit(design.children);return slots;
+}
+export function namedSlotNames(design:HeadingDesign|undefined):string[]{return namedSlotDefinitions(design).map(n=>n.name);}
+/** A conditional group may contain decorations and exactly one optional slot, never another source. */
+export function conditionalSlotName(children:HeadingChild[]):string|undefined{
+  let primary=false;const slots:NamedSlot[]=[];
+  function visit(nodes:HeadingChild[]){for(const n of nodes){if(n.type==='content')primary=true;else if(n.type==='slot')slots.push(n);else if(n.type==='group')visit(n.children);}}
+  visit(children);return !primary&&slots.length===1&&slots[0].optional?slots[0].name:undefined;
 }
 export interface NamedSlotSource {name:string;text:string;sourceTextStart?:number}
 export function compileNamedSlotRequests(compiled:ReturnType<typeof compileHeadingDesign>,sources:readonly NamedSlotSource[]){
   const byName=new Map(sources.map(s=>[s.name,s]));
-  if(byName.size!==sources.length||byName.size!==compiled.slotStyles.length)throw RangeError('Named slot set does not match component definition');
-  return compiled.slotStyles.map(s=>{
-    const source=byName.get(s.name);if(!source)throw RangeError('Missing named slot: '+s.name);
-    return {name:s.name,request:{text:source.text,fontSize:s.fontSize,lineHeight:s.lineHeight,...s.textStyle},...(source.sourceTextStart===undefined?{}:{sourceTextStart:source.sourceTextStart})};
+  const styles=new Set(compiled.slotStyles.map(s=>s.name));
+  if(byName.size!==sources.length||sources.some(s=>!styles.has(s.name)))throw RangeError('Named slot set does not match component definition');
+  return compiled.slotStyles.flatMap(s=>{
+    const source=byName.get(s.name);
+    if(!source){if(s.optional)return [];throw RangeError('Missing named slot: '+s.name);}
+    if(!source.text.length)throw RangeError('Empty named slot: '+s.name);
+    return [{name:s.name,request:{text:source.text,fontSize:s.fontSize,lineHeight:s.lineHeight,...s.textStyle},...(source.sourceTextStart===undefined?{}:{sourceTextStart:source.sourceTextStart})}];
   });
+}
+/** Derive an occurrence tree without mutating its stored design or inventing source text. */
+export function resolveNamedSlotPresence(compiled:ReturnType<typeof compileHeadingDesign>,sources:readonly NamedSlotSource[]){
+  const namedSlots=compileNamedSlotRequests(compiled,sources);
+  const present=new Set(namedSlots.map(s=>s.name)),conditions=new Map(compiled.conditionalGroups.map(g=>[g.id,g.name]));
+  type Child=typeof compiled.component.children[number];
+  function prune(nodes:Child[]):Child[]{
+    return nodes.flatMap((n):Child[]=>{
+      if(n.type==='slot')return present.has(n.name)?[n]:[];
+      if(n.type==='group'){
+        const condition=conditions.get(n.id);if(condition&&!present.has(condition))return [];
+        const children=prune(n.children);return children.length?[{...n,children}]:[];
+      }
+      return [n];
+    });
+  }
+  return {component:{...compiled.component,children:prune(compiled.component.children)},namedSlots};
 }
