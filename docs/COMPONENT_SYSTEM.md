@@ -89,3 +89,7 @@ CS-01 長いH1と縦線、CS-02 親テーマとvariant、CS-03 局所上書き�
 ## Typography extension
 
 See [TYPOGRAPHY_AND_FONTS.md](TYPOGRAPHY_AND_FONTS.md) for proposed font registration, role selection, local import and layout fingerprint contracts. Existing format stays unchanged until schema and fixtures are implemented.
+
+## Implemented Component Lab subset
+
+Experimental `previewComponents: {schemaVersion: 1, heading: ...}` lives in theme.yaml and is separate from the proposed full external component registry. One semantic content slot plus up to seven decorative rectangles; flat row or column, physical micrometre lengths, hex colors, gap/padding, font size and line-height multiplier. Heading role supplies font family/weight, including registered project fonts. The same compiler and Engine layoutTree/strict pagination serve sample and actual headings. Sample text is transient; Apply writes only the recognized subtree with hash conflict guard, Discard writes nothing. Requires a successful sample measurement before Apply; other actual headings can still overflow and report errors. Unknown component format refuses editing. All heading levels share the single design for now; nested trees, literal static text, Canvas, split components, full role/binding inheritance and Undo/Redo are future work. Publication remains disabled.

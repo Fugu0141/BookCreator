@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
-import {editDocument,compileMeasuredManuscript,canReviewLayout,prepareBrowserPreview,prepareBookBrowserPreview} from '../dist/index.js';
+import {editDocument,compileMeasuredManuscript,canReviewLayout,prepareBrowserPreview,prepareBookBrowserPreview,defaultHeadingDesign} from '../dist/index.js';
 const load = (variable, fallback) => import(pathToFileURL(resolve(process.env[variable] ?? fallback)).href);
 const bcm = await load('BCM_DIST', '../BookCreator_Markdown/dist/index.js');
 const engine = await load('ENGINE_DIST', '../BookCreator_LayoutEngine/dist/index.js');
@@ -101,4 +101,17 @@ test('book preview adapter preserves manuscript order, manual breaks and origins
   assert.deepEqual(r.options.sections.map(s=>[s.id,s.startOn]),[['a','page'],['b','continuous']]);
   assert.equal(r.options.sections[1].blocks[1].kind,'pagebreak');
   assert.equal(r.options.sections[1].blocks[2].origin.documentId,'b');
+});
+
+test('heading design compiler applies only to headings and leaves source text exact',()=>{
+  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds};
+  const design=defaultHeadingDesign();
+  const doc={documentId:'a',revision:'1',source:'# 見出し\n\n本文。\n',startOn:'page'};
+  const r=prepareBookBrowserPreview([doc],'1','lab',{width:100000,height:100000},deps,undefined,design);
+  assert.deepEqual(r.diagnostics,[]);
+  const [heading,body]=r.options.sections[0].blocks;
+  assert.equal(heading.component.direction,'row');
+  assert.equal(heading.request.fontSize,design.fontSize);
+  assert.equal(heading.request.text,'見出し');
+  assert.equal(body.component,undefined);
 });
