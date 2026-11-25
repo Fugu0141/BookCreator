@@ -244,3 +244,19 @@ test('custom component references use stable library identity, not the display n
   const wrong=run({schemaVersion:1,entries:[{id,name:'Heading',usage:'heading',design:defaultHeadingDesign()}]});
   assert.match(wrong.diagnostics[0].message,/usage/);assert.equal(wrong.options,undefined);
 });
+
+test('study numbering follows manuscript order and semantic identity, not shared visual template',()=>{
+  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds};
+  const id='component-00000000-0000-4000-8000-000000000001';
+  const design={...defaultHeadingDesign(),direction:'column',children:[...['study-number','study-sequence'].map((field,i)=>({id:'number'+i,type:'dynamic',field,prefix:'',suffix:'',fallback:'?',width:'fill',fontSize:3000,lineHeight:1.5,color:'#123456'})),{id:'content',type:'content'}]};
+  const library={schemaVersion:3,entries:[{id,name:'用語集',usage:'study',design}]};
+  const block=name=>':::component{name="'+name+'"}\n本文。\n:::\n\n';
+  const a={documentId:'a',revision:'1',source:'# 第一章\n\n'+block('example')+block('exercise')+block('example')+block(id),startOn:'page'};
+  const b={documentId:'b',revision:'1',source:block(id)+block('example')+'# 次章\n\n'+block('example'),startOn:'page'};
+  const run=docs=>prepareBookBrowserPreview(docs,'1','numbering',{width:100000,height:100000},deps,undefined,undefined,undefined,undefined,{example:design,exercise:design},library);
+  const labels=(result)=>result.options.sections.flatMap(s=>s.blocks.filter(b=>b.component).map(b=>b.component.children.slice(0,2).map(n=>n.text)));
+  const r=run([a,b]);assert.deepEqual(r.diagnostics,[]);
+  assert.deepEqual(labels(r),[['1.1','1'],['1.1','1'],['1.2','2'],['1.1','1'],['2.1','2'],['2.1','3'],['3.1','4']]);
+  assert.deepEqual(labels(run([b,a])),[['1.1','1'],['1.1','1'],['2.1','2'],['3.1','3'],['3.1','1'],['3.2','4'],['3.1','2']]);
+  for(const s of r.options.sections)for(const item of s.blocks.filter(b=>b.component)){const source=item.origin.documentId==='a'?a.source:b.source;assert.equal(item.request.text,'本文。');assert.equal(source.slice(item.sourceTextStart,item.sourceTextStart+item.request.text.length),'本文。');}
+});
