@@ -96,20 +96,21 @@ export function compileHeadingDesign(value:HeadingDesign,inherited:PreviewTextSt
 }
 
 /** Experimental project-local component library. Usage is explicit for future expansion. */
-export interface ComponentLibraryEntry {id:string;name:string;usage:'heading';design:HeadingDesign}
-export interface ComponentLibrary {schemaVersion:1;entries:ComponentLibraryEntry[]}
+export type ComponentUsage='heading'|'paragraph';
+export interface ComponentLibraryEntry {id:string;name:string;usage:ComponentUsage;design:HeadingDesign}
+export interface ComponentLibrary {schemaVersion:1|2;entries:ComponentLibraryEntry[]}
 export function emptyComponentLibrary():ComponentLibrary{return {schemaVersion:1,entries:[]};}
 export function validateComponentLibrary(value:unknown):ComponentLibrary{
-  if(!record(value)||!exact(value,['schemaVersion','entries'])||value.schemaVersion!==1||!Array.isArray(value.entries)||value.entries.length>32)throw RangeError('Invalid component library');
+  if(!record(value)||!exact(value,['schemaVersion','entries'])||![1,2].includes(Number(value.schemaVersion))||typeof value.schemaVersion!=='number'||!Array.isArray(value.entries)||value.entries.length>32)throw RangeError('Invalid component library');
   const ids=new Set<string>(),names=new Set<string>();
   const entries:ComponentLibraryEntry[]=value.entries.map(entry=>{
-    if(!record(entry)||!exact(entry,['id','name','usage','design'])||typeof entry.id!=='string'||!/^component-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(entry.id)||ids.has(entry.id)||!plainLabel(entry.name,1,80)||entry.name!==entry.name.trim()||entry.usage!=='heading')throw RangeError('Invalid component library entry');
+    if(!record(entry)||!exact(entry,['id','name','usage','design'])||typeof entry.id!=='string'||!/^component-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(entry.id)||ids.has(entry.id)||!plainLabel(entry.name,1,80)||entry.name!==entry.name.trim()||!(entry.usage==='heading'||(value.schemaVersion===2&&entry.usage==='paragraph')))throw RangeError('Invalid component library entry');
     const key=entry.name.normalize('NFC').toLowerCase();
     if(names.has(key))throw RangeError('Duplicate component name');
     ids.add(entry.id);names.add(key);
-    return {id:entry.id,name:entry.name,usage:'heading',design:validateHeadingDesign(entry.design)};
+    return {id:entry.id,name:entry.name,usage:entry.usage,design:entry.usage==='paragraph'?validateParagraphDesign(entry.design):validateHeadingDesign(entry.design)};
   });
-  return {schemaVersion:1,entries};
+  return {schemaVersion:value.schemaVersion as 1|2,entries};
 }
 
 export type HeadingTarget='default'|HeadingLevel;
@@ -126,6 +127,7 @@ export function resolveHeadingBindings(heading:HeadingDesign|null,levels:Heading
   for(const [target,id] of Object.entries(refs)){
     const entry=entries.find(e=>e.id===id);
     if(!entry)throw RangeError('Missing shared heading component: '+id);
+    if(entry.usage!=='heading')throw RangeError('Component usage does not match heading target');
     if(target==='default'){
       if(localHeading!==null)throw RangeError('Shared and local default heading conflict');
       headingDesign=structuredClone(entry.design);
@@ -149,4 +151,18 @@ export function validateParagraphDesign(value:unknown):HeadingDesign{
 }
 export function compileParagraphDesign(value:HeadingDesign,inherited:PreviewTextStyle){
   return compileHeadingDesign(validateParagraphDesign(value),inherited);
+}
+
+/** Old paragraph definitions are local v1; v2 is a reference only. */
+export function resolveParagraphBinding(value:unknown,library:ComponentLibrary){
+  if(value===undefined)return {paragraphDesign:null,paragraphBinding:null};
+  if(record(value)&&value.schemaVersion===2){
+    if(!exact(value,['schemaVersion','componentId']))throw RangeError('Invalid shared paragraph reference');
+    const id=validateHeadingBindings({default:value.componentId}).default!;
+    const entry=validateComponentLibrary(library).entries.find(e=>e.id===id);
+    if(!entry)throw RangeError('Missing shared paragraph component: '+id);
+    if(entry.usage!=='paragraph')throw RangeError('Component usage does not match paragraph target');
+    return {paragraphDesign:validateParagraphDesign(entry.design),paragraphBinding:id};
+  }
+  return {paragraphDesign:validateParagraphDesign(value),paragraphBinding:null};
 }

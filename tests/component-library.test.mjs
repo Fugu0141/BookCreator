@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {defaultHeadingDesign,validateComponentLibrary,emptyComponentLibrary} from '../dist/index.js';
+import {defaultHeadingDesign,defaultParagraphDesign,validateComponentLibrary,emptyComponentLibrary,resolveHeadingBindings,resolveParagraphBinding} from '../dist/index.js';
 const entry={id:'component-00000000-0000-4000-8000-000000000001',name:'章見出し',usage:'heading',design:defaultHeadingDesign()};
 test('library validates and clones independent definitions',()=>{
   const input={schemaVersion:1,entries:[entry]},copy=validateComponentLibrary(input);
@@ -11,5 +11,18 @@ test('library validates and clones independent definitions',()=>{
 test('reject duplicate normalized names, IDs, unsupported usage, malformed and oversize registry',()=>{
   const another={...entry,id:'component-00000000-0000-4000-8000-000000000002'};
   for(const entries of [[entry,another],[entry,{...entry,name:'別名'}],[{...entry,usage:'paragraph'}],[{...entry,name:' '}],[{...entry,id:'__proto__'}],[{...entry,design:{}}],[...Array(33).fill(entry)],[{...entry,name:'Café'},{...another,name:'Cafe\u0301'}]])assert.throws(()=>validateComponentLibrary({schemaVersion:1,entries}),RangeError);
-  assert.throws(()=>validateComponentLibrary({schemaVersion:2,entries:[]}),RangeError);
+  assert.throws(()=>validateComponentLibrary({schemaVersion:3,entries:[]}),RangeError);
+});
+
+test('version 2 permits mixed usage, with strict target compatibility',()=>{
+  const paragraph={id:'component-00000000-0000-4000-8000-000000000002',name:'本文',usage:'paragraph',design:defaultParagraphDesign()};
+  const library=validateComponentLibrary({schemaVersion:2,entries:[entry,paragraph]});
+  assert.equal(library.schemaVersion,2);
+  assert.deepEqual(resolveParagraphBinding({schemaVersion:2,componentId:paragraph.id},library),{paragraphDesign:paragraph.design,paragraphBinding:paragraph.id});
+  assert.deepEqual(resolveParagraphBinding(paragraph.design,library),{paragraphDesign:paragraph.design,paragraphBinding:null});
+  assert.throws(()=>resolveHeadingBindings(null,{}, {default:paragraph.id},library),/usage/);
+  assert.throws(()=>resolveParagraphBinding({schemaVersion:2,componentId:entry.id},library),/usage/);
+  assert.throws(()=>resolveParagraphBinding({schemaVersion:2,componentId:paragraph.id,extra:true},library),/reference/);
+  assert.throws(()=>validateComponentLibrary({schemaVersion:2,entries:[{...paragraph,design:entry.design}]}),/single content slot/);
+  assert.throws(()=>validateComponentLibrary({schemaVersion:1,entries:[paragraph]}),RangeError);
 });
