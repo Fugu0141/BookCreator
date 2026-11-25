@@ -416,3 +416,31 @@ test('formatting refuses protected ranges, ambiguous markup, grapheme splits and
   }
   assert.throws(()=>planInlineFormat('hello',1,1,'bold',bcm.scanDocument));
 });
+
+test('style toolbar planner composes and clears typed attributes while preserving all other source',()=>{
+  const original='# 見出し\n\n本文は重要です。\n';
+  let raw=original,range={start:raw.indexOf('重要'),end:raw.indexOf('重要')+2};
+  function step(format){
+    const p=planInlineFormat(raw,range.start,range.end,format,bcm.scanDocument);
+    raw=bcm.applyPatches(raw,[p.patch]);range=p.selection;
+    assert.equal(raw.slice(range.start,range.end),'重要');
+  }
+  step('bold');assert.ok(raw.includes('**重要**'));
+  step('underline');assert.ok(raw.includes(':style{text="重要" weight="700" underline="true"}'));
+  step('italic');step({color:'#abcdef'});step({font:'system-monospace',weight:700});
+  const expected=':style{text="重要" weight="700" italic="true" underline="true" color="#abcdef" font="system-monospace"}';
+  assert.equal(raw,original.replace('重要',expected));
+  const doc={documentId:'s',revision:'1',source:raw,startOn:'page'},deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds};
+  const preview=prepareBookBrowserPreview([doc],'1','style',{width:100000,height:100000},deps);
+  assert.deepEqual(preview.diagnostics,[]);
+  const block=preview.options.sections[0].blocks[1];
+  assert.equal(block.request.text,'本文は重要です。');
+  assert.deepEqual(block.request.inlineStyles,[{start:3,end:5,fontWeight:700,italic:true,underline:true,color:'#abcdef',fontFamily:'monospace'}]);
+  const slice=previewSourceRange(block,{textStart:3,textEnd:5});
+  assert.equal(raw.slice(slice.start,slice.end),expected);
+  step({color:null});step({font:null});step('italic');step('underline');
+  assert.equal(raw,original);
+  step('combined');assert.ok(raw.includes('weight="700" italic="true"'));step('combined');assert.equal(raw,original);
+  assert.throws(()=>planInlineFormat(raw,range.start,range.end,{font:'file:///tmp/a.ttf'},bcm.scanDocument));
+  assert.throws(()=>planInlineFormat('abcdef',1,3,'underline',bcm.scanDocument));
+});
