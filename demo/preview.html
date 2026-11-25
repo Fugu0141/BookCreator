@@ -8,6 +8,6 @@
 <main><section class="editor"><label for="source">BCM 原稿</label><textarea id="source" spellcheck="false"></textarea>
 <label for="width">本文幅 (mm)</label> <input id="width" type="number" min="30" max="250" value="100">
 <label for="height">本文高 (mm)</label> <input id="height" type="number" min="30" max="300" value="75">
-<p><button id="render">組版プレビュー</button></p><small>平文の見出しと、原稿上で1行の段落のみ。空行で区切ります。紙面の断片を選ぶと対応する原稿範囲を選択します。</small><div id="status" role="status" aria-live="polite"></div></section>
+<p><button id="render">組版プレビュー</button></p><small>見出し・複数段落と限定的な太字・斜体記法に対応。紙面の断片を選ぶと対応する原稿範囲を選択します。</small><div id="status" role="status" aria-live="polite"></div></section>
 <section class="paper"><label>紙面プレビュー（本文領域）</label><div id="preview"></div><pre id="smoke" hidden>RUNNING</pre></section></main>
 <script type="module" src="/demo/preview.mjs"></script></body></html>
