@@ -77,6 +77,7 @@ async function run(){
     const result=await current.importFont(chosen.filePaths[0],args[0]);
     const fonts=await loadProjectFonts(current);return {...result,fonts};
   });
+  handle('saveHeadingDesign',async(...args)=>{checkArgs(args,2);return requireWorkspace().saveHeadingDesign(...args);});
   handle('saveTypography',async(...args)=>{checkArgs(args,2);return requireWorkspace().saveTypography(...args);});
   handle('readBook',async(...args)=>{checkArgs(args,0);return requireWorkspace().readBook();});
   handle('saveBookSettings',async(...args)=>{checkArgs(args,2);return requireWorkspace().saveBookSettings(...args);});
@@ -155,7 +156,23 @@ async function smoke(){
   await exec("document.querySelector('#preview-book').click()");
   await until("!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-content-guide]')");
   if(!await exec("Math.abs(parseFloat(document.querySelector('#preview > div').shadowRoot.querySelector('[data-page]').style.width)-210*96/25.4)<0.1"))throw Error('Physical A4 preview width mismatch');
-  console.log('PASS book settings save and physical whole-book preview; imported project font, license metadata, theme selection, actual font rendering; Electron project creation, theme save/reopen, Electron sandbox, project open/read, React editing, bundled Noto, independent font roles, stale invalidation, measured preview, source selection and save');
+  await exec("document.querySelector('#component-lab').click()");
+  await until("!!document.querySelector('#lab-measure')");
+  await exec("document.querySelector('#lab-measure').click()");
+  await until("!document.querySelector('#lab-apply').disabled");
+  await exec("document.querySelector('#lab-cancel').click()");
+  await until("!document.querySelector('#lab-measure')");
+  if((await readFile(join(smokeRoot,'new-book','themes','default','theme.yaml'),'utf8')).includes('previewComponents'))throw Error('Discard saved component');
+  await exec("document.querySelector('#component-lab').click()");
+  await until("!!document.querySelector('#lab-measure')");
+  await exec("document.querySelector('#lab-measure').click()");
+  await until("!document.querySelector('#lab-apply').disabled");
+  await exec("document.querySelector('#lab-apply').click()");
+  await until("!document.querySelector('#open').disabled && !document.querySelector('#lab-measure')");
+  if(!(await readFile(join(smokeRoot,'new-book','themes','default','theme.yaml'),'utf8')).includes('previewComponents'))throw Error('Component not saved');
+  await exec("document.querySelector('#preview-book').click()");
+  await until("!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-component]')");
+  console.log('PASS Component Lab measure, discard, apply and actual book rendering; book settings save and physical whole-book preview; imported project font, license metadata, theme selection, actual font rendering; Electron project creation, theme save/reopen, Electron sandbox, project open/read, React editing, bundled Noto, independent font roles, stale invalidation, measured preview, source selection and save');
   closing=true;win.destroy();await rm(smokeRoot,{recursive:true,force:true});app.exit(0);
 }
 app.on('window-all-closed',()=>{if(!SMOKE)app.quit();});

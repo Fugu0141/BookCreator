@@ -43,3 +43,7 @@ Added restricted static TTF/OTF import with SHA-256 per-face catalog, user right
 ## M04 — physical book composition
 
 Added A4/A5/JIS B5 paper presets and physical margins, first interior side, manuscript ordering/start mode editing, conflict-checked manifest save, multi-manuscript preview including unsaved selected text, explicit pagebreak and alternating margins. Whole-book preview rejects unsupported cover/blank/physical-side starts and unsupported BCM. No creation/removal of additional sections, spread view, numbering, complete theme compilation or PDF. Cross-file fragment selection reports document ID rather than automatically switching. Snapshot is not a disk watcher; only preview. CI pending.
+
+## M04 — Component Lab heading PoC
+
+Added a shared strict flat row/column heading design compiler, live measured sample, decoration rectangles, editable physical spacing/color/size, explicit discard and apply to theme. Actual book preview consumes saved definition and uses same Engine measurement/placement. Heading typography inherited. One content slot, no nested nodes, free canvas, extra text, multiple component bindings or arbitrary BCM overrides. CI pending.

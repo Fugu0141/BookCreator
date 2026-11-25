@@ -100,3 +100,19 @@ test('paper and ordered section settings roundtrip with preserved metadata and s
 test('whole-book preview refuses unsupported cover instead of dropping it',async t=>{
   const f=await fixture(t);const w=await openWorkspace(f.book);await assert.rejects(w.readBook(),{code:'PREVIEW'});
 });
+
+test('component theme roundtrip preserves typography and rejects stale or invalid designs',async t=>{
+  const {defaultHeadingDesign}=await import('../../../dist/preview-component.js');
+  const parent=await mkdtemp(join(tmpdir(),'bc-component-'));t.after(()=>rm(parent,{recursive:true,force:true}));
+  const w=await createProject(parent,{title:'Components',folder:'book',size:'A5'});
+  const before=await w.typography(),design=defaultHeadingDesign();
+  assert.equal(before.headingDesign,null);assert.equal(before.componentEditable,true);
+  await assert.rejects(w.saveHeadingDesign(before.revision,{...design,children:[]}),RangeError);
+  const after=await w.saveHeadingDesign(before.revision,design);
+  assert.deepEqual(after.roles,before.roles);
+  const reopened=await openWorkspace(join(parent,'book','book.yaml'));
+  assert.deepEqual((await reopened.typography()).headingDesign,design);
+  await assert.rejects(w.saveHeadingDesign(before.revision,design),{code:'CONFLICT'});
+  const saved=await w.saveTypography(after.revision,{...after.roles,heading:{font:'system-serif',weight:700}});
+  assert.deepEqual(saved.headingDesign,design);
+});
