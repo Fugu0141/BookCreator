@@ -94,3 +94,20 @@ export function compileHeadingDesign(value:HeadingDesign,inherited:PreviewTextSt
   const component={...rest,children:children.map(compile)};
   return {fontSize,lineHeight,textStyle,component};
 }
+
+/** Experimental project-local component library. Usage is explicit for future expansion. */
+export interface ComponentLibraryEntry {id:string;name:string;usage:'heading';design:HeadingDesign}
+export interface ComponentLibrary {schemaVersion:1;entries:ComponentLibraryEntry[]}
+export function emptyComponentLibrary():ComponentLibrary{return {schemaVersion:1,entries:[]};}
+export function validateComponentLibrary(value:unknown):ComponentLibrary{
+  if(!record(value)||!exact(value,['schemaVersion','entries'])||value.schemaVersion!==1||!Array.isArray(value.entries)||value.entries.length>32)throw RangeError('Invalid component library');
+  const ids=new Set<string>(),names=new Set<string>();
+  const entries:ComponentLibraryEntry[]=value.entries.map(entry=>{
+    if(!record(entry)||!exact(entry,['id','name','usage','design'])||typeof entry.id!=='string'||!/^component-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(entry.id)||ids.has(entry.id)||!plainLabel(entry.name,1,80)||entry.name!==entry.name.trim()||entry.usage!=='heading')throw RangeError('Invalid component library entry');
+    const key=entry.name.normalize('NFC').toLowerCase();
+    if(names.has(key))throw RangeError('Duplicate component name');
+    ids.add(entry.id);names.add(key);
+    return {id:entry.id,name:entry.name,usage:'heading',design:validateHeadingDesign(entry.design)};
+  });
+  return {schemaVersion:1,entries};
+}
