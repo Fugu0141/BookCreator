@@ -27,3 +27,12 @@ test('measured alignment uses exact direct child height and excludes nested or m
   assert.deepEqual(measuredAlignment(root,parent,['a','b']),{rects:[a,b],bounds});
   assert.throws(()=>measuredAlignment(root,parent,['a','nested']));
 });
+
+test('distribution preserves end elements and makes equal physical gaps',()=>{
+  const c={id:'c',x:17000,y:8000,width:1000,height:1000};
+  const result=alignCanvasRects([b,c,a],'distribute-x',bounds);
+  assert.deepEqual(result,[{id:'b',x:7500,y:1000},{id:'c',x:17000,y:8000},{id:'a',x:1000,y:3000}]);
+  assert.deepEqual(alignCanvasRects([a,b,c],'distribute-y',bounds),[{id:'a',x:1000,y:3500},{id:'b',x:9000,y:1000},{id:'c',x:17000,y:8000}]);
+  assert.throws(()=>alignCanvasRects([a,b],'distribute-x',bounds),RangeError);
+  assert.throws(()=>alignCanvasRects([a,{...b,x:1000},{...c,x:1000}],'distribute-x',bounds),RangeError);
+});
