@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHistory,commitHistory,undoHistory,redoHistory} from '../lab-history.mjs';
-import {dragPosition,nudgePosition} from '../canvas-interaction.mjs';
+import {dragPosition,nudgePosition,resizeSize} from '../canvas-interaction.mjs';
 test('history preserves original and redo, new edits discard future',()=>{
   const initial={children:[{id:'a',x:0,y:0}]},a=createHistory(initial),b=commitHistory(a,{children:[{id:'a',x:3000,y:500}]}),c=commitHistory(b,{children:[{id:'a',x:8000,y:1500}]});
   assert.equal(undoHistory(c).present,b.present);
@@ -30,4 +30,13 @@ test('keyboard nudge preserves other axis, supports coarse step and clamps',()=>
   assert.deepEqual(nudgePosition(start,'ArrowDown',bounds,true),{x:3550,y:1500});
   assert.deepEqual(nudgePosition({x:50,y:20},'ArrowLeft',bounds),{x:0,y:20});
   assert.equal(nudgePosition(start,'Enter',bounds),null);
+});
+
+test('resize dimensions snap, clamp and do not invent text height',()=>{
+  const limits={minWidth:100,maxWidth:4300,minHeight:100,maxHeight:2200};
+  assert.deepEqual(resizeSize({width:3000},{x:142,y:999},limits),{width:3100});
+  assert.deepEqual(resizeSize({width:3000,height:1500},{x:9999,y:-9999},limits),{width:4300,height:100});
+  assert.deepEqual(resizeSize({width:3055,height:1555},{x:0,y:0},limits),{width:3055,height:1555});
+  assert.deepEqual(resizeSize({width:3000,height:1500},{x:0,y:1000},limits),{width:3000,height:2200});
+  assert.throws(()=>resizeSize({width:3000},{x:NaN,y:0},limits),RangeError);
 });
