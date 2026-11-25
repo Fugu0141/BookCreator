@@ -1,0 +1,30 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {createStudyNumbering,defaultStudyDesign,compileStudyBlock,compileCustomStudyBlock,hasStudyNumbering,validateComponentDesign} from '../dist/index.js';
+const id='component-00000000-0000-4000-8000-000000000001',font={fontFamily:'serif',fontWeight:400};
+test('independent semantic counters reset on chapter boundaries and maintain global sequences',()=>{
+  const n=createStudyNumbering();n.beginSection();
+  assert.deepEqual(n.next('example'),{chapter:1,index:1,sequence:1});
+  assert.deepEqual(n.next('exercise'),{chapter:1,index:1,sequence:1});
+  assert.equal(n.heading(2),1);
+  assert.deepEqual(n.next('example'),{chapter:1,index:2,sequence:2});
+  assert.deepEqual(n.next(id),{chapter:1,index:1,sequence:1});
+  assert.equal(n.heading(1),2);
+  assert.deepEqual(n.next('example'),{chapter:2,index:1,sequence:3});
+  assert.deepEqual(n.next(id),{chapter:2,index:1,sequence:2});
+  n.beginSection();n.beginSection();assert.equal(n.heading(2),3);
+  assert.deepEqual(n.next('exercise'),{chapter:3,index:1,sequence:2});
+  assert.throws(()=>n.next('constructor'),RangeError);
+});
+test('three study number fields are opt-in, scoped and do not mutate definitions',()=>{
+  const base=defaultStudyDesign('example'),label=base.children[0];
+  const design={...base,children:[...['study-number','study-index','study-sequence'].map((field,i)=>({...label,id:'n'+i,field,prefix:'No. ',fallback:'未定'})),base.children[1]]};
+  assert.equal(hasStudyNumbering(base),false);assert.equal(hasStudyNumbering(design),true);
+  const n={chapter:3,index:2,sequence:8};
+  const compiled=compileStudyBlock('example',undefined,font,design,n);
+  assert.deepEqual(compiled.component.children.slice(0,3).map(c=>c.text),['No. 3.2','No. 2','No. 8']);
+  assert.equal(compileStudyBlock('example',undefined,font,design).component.children[0].text,'No. 未定');
+  assert.deepEqual(compileCustomStudyBlock({id,name:'用語',usage:'study',design},undefined,font,n).component.children.slice(0,3).map(c=>c.text),['No. 3.2','No. 2','No. 8']);
+  assert.equal(design.children[0].type,'dynamic');assert.throws(()=>validateComponentDesign(design,'heading'),RangeError);
+  assert.throws(()=>compileStudyBlock('example',undefined,font,design,{...n,chapter:0}),RangeError);
+});

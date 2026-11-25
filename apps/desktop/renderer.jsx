@@ -1,6 +1,6 @@
 import React,{useState,useRef} from 'react';
 import {createRoot} from 'react-dom/client';
-import {prepareBrowserPreview,prepareBookBrowserPreview,hasDynamicLabels,studyTemplate,studyKinds,defaultStudyDesign,customStudyTemplate,isCustomComponentId} from '../../dist/index.js';
+import {prepareBrowserPreview,prepareBookBrowserPreview,hasDynamicLabels,hasStudyNumbering,studyTemplate,studyKinds,defaultStudyDesign,customStudyTemplate,isCustomComponentId} from '../../dist/index.js';
 import {scanDocument,validateScannedBlocks,indexBlockIds,applyPatches} from '../../../BookCreator_Markdown/dist/index.js';
 import {createPlainTextPagePreview} from '../../../BookCreator_LayoutEngine/dist/index.js';
 import {ParagraphLab} from './paragraph-lab.jsx';
@@ -102,7 +102,7 @@ function App(){
       if(Object.values(typography).some(v=>v.fontFamily.startsWith('BCFont_')&&v.fontFamily!==noto&&!fonts.some(f=>f.alias===v.fontFamily&&f.loaded)))throw Error('登録フォントを読み込めません。');
       const rev=String(job),fingerprint='desktop-poc-'+job+'-'+__BUNDLED_FONT_FINGERPRINT__+'-'+JSON.stringify(typography)+'-'+fonts.map(f=>f.sha256).join(',')+'-'+JSON.stringify({page,order,headingDesign:theme?.headingDesign,headingLevels:theme?.headingLevels,paragraphDesign:theme?.paragraphDesign,studyDesigns:theme?.studyDesigns,library:theme?.library});
       let documents;
-      const needsContext=hasDynamicLabels(theme?.headingDesign)||Object.values(theme?.headingLevels??{}).some(hasDynamicLabels);
+      const needsContext=hasDynamicLabels(theme?.headingDesign)||Object.values(theme?.headingLevels??{}).some(hasDynamicLabels)||Object.values(theme?.studyDesigns??{}).some(hasStudyNumbering)||(theme?.library?.entries??[]).some(e=>e.usage==='study'&&hasStudyNumbering(e.design));
       if(whole||needsContext){
         const snapshot=await unwrap(api.readBook());
         if(job!==generation.current)return;

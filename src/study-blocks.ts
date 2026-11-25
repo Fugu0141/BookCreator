@@ -1,4 +1,4 @@
-import {compileHeadingDesign,studyKinds,type StudyKind,type HeadingDesign,type ComponentLibraryEntry} from './preview-component.js';
+import {compileHeadingDesign,studyKinds,type StudyKind,type HeadingDesign,type ComponentLibraryEntry,type HeadingContext,type HeadingChild} from './preview-component.js';
 import type {PreviewTextStyle} from './preview-typography.js';
 export {type StudyKind} from './preview-component.js';
 const presets:Readonly<Record<StudyKind,{label:string;background:string;color:string}>>=Object.freeze({
@@ -26,10 +26,10 @@ export function defaultStudyDesign(kind:StudyKind):HeadingDesign{
     {id:'content',type:'content'}
   ]};
 }
-export function compileStudyBlock(kind:StudyKind,title:string|undefined,body:PreviewTextStyle,design?:HeadingDesign){
+export function compileStudyBlock(kind:StudyKind,title:string|undefined,body:PreviewTextStyle,design?:HeadingDesign,numbering?:StudyNumber){
   if(!studyKinds.includes(kind))throw RangeError('Unknown study block');
   const p=presets[kind];
-  return compileHeadingDesign(design??defaultStudyDesign(kind),body,{'study-label':title===undefined?p.label:p.label+'：'+title,'study-title':title,'study-kind':p.label},'study');
+  return compileHeadingDesign(design??defaultStudyDesign(kind),body,{'study-label':title===undefined?p.label:p.label+'：'+title,'study-title':title,'study-kind':p.label,...numberContext(numbering)},'study');
 }
 // Append only; the caller checks the scanner recognizes the new root container.
 export function studyTemplate(kind:StudyKind){
@@ -44,11 +44,39 @@ export function customStudyId(name:string,attrs:Readonly<Record<string,string>>)
   if(Object.hasOwn(attrs,'title')&&(!attrs.title.trim()||attrs.title.length>128||/[\p{Cc}\p{Cs}\p{Cf}\p{Zl}\p{Zp}]/u.test(attrs.title)))return;
   return attrs.name;
 }
-export function compileCustomStudyBlock(entry:ComponentLibraryEntry,title:string|undefined,body:PreviewTextStyle){
+export function compileCustomStudyBlock(entry:ComponentLibraryEntry,title:string|undefined,body:PreviewTextStyle,numbering?:StudyNumber){
   if(entry.usage!=='study'||!isCustomComponentId(entry.id))throw RangeError('Component usage does not match custom study block');
-  return compileHeadingDesign(entry.design,body,{'study-label':title===undefined?entry.name:entry.name+'：'+title,'study-title':title,'study-kind':entry.name},'study');
+  return compileHeadingDesign(entry.design,body,{'study-label':title===undefined?entry.name:entry.name+'：'+title,'study-title':title,'study-kind':entry.name,...numberContext(numbering)},'study');
 }
 export function customStudyTemplate(id:string){
   if(!isCustomComponentId(id))throw RangeError('Invalid custom component ID');
   return ':::component{name="'+id+'"}\n本文を入力してください。\n:::\n';
+}
+
+export interface StudyNumber {chapter:number;index:number;sequence:number}
+function numberContext(n?:StudyNumber):HeadingContext{
+  if(!n)return {};
+  if(![n.chapter,n.index,n.sequence].every(v=>Number.isSafeInteger(v)&&v>0))throw RangeError('Invalid study numbering context');
+  return {'study-number':n.chapter+'.'+n.index,'study-index':String(n.index),'study-sequence':String(n.sequence)};
+}
+export function hasStudyNumbering(design:HeadingDesign|null|undefined):boolean{
+  const visit=(nodes:HeadingChild[]):boolean=>nodes.some(n=>n.type==='dynamic'&&['study-number','study-index','study-sequence'].includes(n.field)||n.type==='group'&&visit(n.children));
+  return !!design&&visit(design.children);
+}
+/** Counts all occurrences by stable semantic key, regardless of the selected visual design. */
+export function createStudyNumbering(){
+  let chapter=0,active=false;
+  const local=new Map<string,number>(),global=new Map<string,number>();
+  function beginChapter(){chapter++;active=true;local.clear();}
+  return {
+    beginSection(){active=false;},
+    heading(level:number){if(level===1||!active)beginChapter();return chapter;},
+    next(key:string):StudyNumber{
+      if(!isCustomComponentId(key)&&!(studyKinds as readonly string[]).includes(key))throw RangeError('Invalid study counter key');
+      if(!active)beginChapter();
+      const index=(local.get(key)??0)+1,sequence=(global.get(key)??0)+1;
+      local.set(key,index);global.set(key,sequence);
+      return {chapter,index,sequence};
+    }
+  };
 }
