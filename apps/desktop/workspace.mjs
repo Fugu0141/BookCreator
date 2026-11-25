@@ -1,8 +1,8 @@
-import {open,lstat,realpath,rename,unlink} from 'node:fs/promises';
+import {open,lstat,realpath,rename,unlink,mkdir} from 'node:fs/promises';
 import {constants} from 'node:fs';
 import {dirname,join,resolve,relative,isAbsolute,basename} from 'node:path';
 import {createHash,randomUUID} from 'node:crypto';
-import {parseDocument,visit,isAlias} from 'yaml';
+import {parseDocument,visit,isAlias,stringify} from 'yaml';
 
 const MAX_SOURCE=4*1024*1024,MAX_MANIFEST=256*1024;
 const hash=b=>createHash('sha256').update(b).digest('hex');
@@ -37,14 +37,17 @@ async function readRegular(path,limit){
     return {bytes:bytes.subarray(0,used),mode:s.mode&0o777};
   }finally{await f.close();}
 }
-function parseManifest(raw){
+function safeYaml(raw){
   const doc=parseDocument(raw,{uniqueKeys:true,strict:true,schema:'core'});
   if(doc.errors.length||doc.warnings.length)fail('MANIFEST','Invalid or unsupported YAML');
   let nodes=0;
   visit(doc,(_key,node,path)=>{
     if(++nodes>10000||path.length>32||isAlias(node)||node?.tag||node?.anchor)fail('MANIFEST','Unsupported YAML tag, alias, anchor or complexity');
   });
-  const m=doc.toJS({maxAliasCount:0});
+  return doc;
+}
+function parseManifest(raw){
+  const m=safeYaml(raw).toJS({maxAliasCount:0});
   if(!record(m)||m.schemaVersion!==1||m.documentFormat?.name!=='bcm'||m.documentFormat?.version!==1)fail('FORMAT','Unsupported book format (not editable in this PoC)');
   if(typeof m.title!=='string'||!m.title.trim()||typeof m.language!=='string'||typeof m.theme!=='string'||!record(m.page)||!Array.isArray(m.sections)||!m.sections.length||m.sections.length>512)fail('MANIFEST','Required book metadata is missing or invalid');
   relativeParts(m.theme);
@@ -62,8 +65,53 @@ function parseManifest(raw){
     if(!['page','continuous','left','right','spread-start','spread-end'].includes(startOn))fail('MANIFEST','Invalid section start');
     sections.push({id:s.id,type:s.type,path:s.path,role:s.role,startOn,editable:true});
   }
-  return {title:m.title,language:m.language,sections};
+  return {title:m.title,language:m.language,sections,themePath:m.theme};
 }
+
+const FACE_IDS=new Map([['noto-sans-jp','BCFont_NotoSansJP'],['system-serif','serif'],['system-sans','sans-serif'],['system-monospace','monospace']]);
+const DEFAULT_ROLES={body:{font:'noto-sans-jp',weight:400},heading:{font:'noto-sans-jp',weight:700}};
+function checkedRoles(value){
+  if(!record(value)||Object.keys(value).some(k=>!['body','heading'].includes(k)))fail('THEME','Unsupported typography role');
+  const result={};
+  for(const role of ['body','heading']){
+    const v=value[role];
+    if(!record(v)||Object.keys(v).some(k=>!['font','weight'].includes(k))||!FACE_IDS.has(v.font)||![400,500,600,700].includes(v.weight))fail('THEME','Unsupported font ID or weight');
+    result[role]={font:v.font,weight:v.weight};
+  }
+  return result;
+}
+function readTypography(doc){
+  const t=doc.toJS({maxAliasCount:0});
+  if(!record(t)||t.schemaVersion!==1)fail('THEME','Unsupported theme format');
+  if(t.extends!==undefined||t.parent!==undefined)fail('THEME','Theme inheritance is not supported by this editor');
+  if(t.typography===undefined)return null;
+  if(!record(t.typography)||t.typography.schemaVersion!==1||Object.keys(t.typography).some(k=>!['schemaVersion','roles'].includes(k)))fail('THEME','Unsupported typography schema');
+  return checkedRoles(t.typography.roles);
+}
+async function writeNew(path,text){
+  const f=await open(path,'wx',0o644);
+  try{await f.writeFile(text,'utf8');await f.sync();}finally{await f.close();}
+}
+export async function createProject(parent,options){
+  if(!record(options)||typeof options.title!=='string'||!options.title.trim()||options.title.length>200||/[\p{Cc}\p{Cs}]/u.test(options.title)||
+    typeof options.folder!=='string'||!/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(options.folder)||!['A4','A5','B5'].includes(options.size))
+    fail('INPUT','Invalid new project title, folder or page size');
+  relativeParts(options.folder);
+  const dir=await realpath(parent),root=join(dir,options.folder);
+  // An existing directory or file is never overwritten.
+  await mkdir(root,{mode:0o755});
+  try{
+    for(const name of ['manuscript','assets','fonts','layouts','themes'])await mkdir(join(root,name));
+    await mkdir(join(root,'themes','default'));
+    await writeNew(join(root,'manuscript','chapter-01.md'),'# はじめに\n\nここから原稿を書き始めます。\n');
+    await writeNew(join(root,'themes','default','theme.yaml'),stringify({schemaVersion:1,id:'default',name:'Default',tokens:{color:{accent:'#315b86',text:'#222222'}},typography:{schemaVersion:1,roles:DEFAULT_ROLES},components:{},bindings:{},repeats:[]}));
+    await writeNew(join(root,'.gitignore'),'.bookcreator/\ndist/\n');
+    // Publish the manifest last. Partial creation remains visible for manual recovery.
+    await writeNew(join(root,'book.yaml'),stringify({schemaVersion:1,documentFormat:{name:'bcm',version:1},title:options.title.trim(),language:'ja',theme:'themes/default/theme.yaml',page:{size:options.size,binding:'left',firstInteriorSide:'right',defaultSectionStart:'page',margin:{top:'18mm',bottom:'20mm',inner:'23mm',outer:'18mm'}},sections:[{id:'chapter-01',type:'manuscript',role:'body',path:'manuscript/chapter-01.md'}]}));
+    return await openWorkspace(join(root,'book.yaml'));
+  }catch(e){fail('CREATE','Project creation incomplete; inspect the newly created folder '+root+' ('+String(e.message??e)+')');}
+}
+
 function sourceInfo(bytes){
   const raw=decode(bytes),bom=raw.startsWith('\uFEFF'),text=bom?raw.slice(1):raw;
   const crlf=(text.match(/\r\n/g)??[]).length;
@@ -100,8 +148,41 @@ export async function openWorkspace(manifestPath){
     const r=await readRegular(path,MAX_SOURCE);
     return {f,...r,info:sourceInfo(r.bytes),revision:hash(r.bytes)};
   }
+  async function readTheme(){
+    let path;
+    try{path=await inside(root,summary.themePath);}catch(e){if(e.code==='ENOENT')return {editable:false,roles:null,revision:null,message:'Theme file missing; preview defaults only'};throw e;}
+    const st=await lstat(path);if(!st.isFile()||st.nlink!==1||path===manifest||[...files.values()].some(f=>f.path===path))fail('THEME','Unsafe theme file');
+    const r=await readRegular(path,MAX_MANIFEST),doc=safeYaml(decode(r.bytes));
+    try{return {editable:true,roles:readTypography(doc),revision:hash(r.bytes),path,doc,...r};}
+    catch(e){if(e.code==='THEME')return {editable:false,roles:null,revision:null,message:e.message};throw e;}
+  }
+  function publicTheme(t){return {editable:t.editable,roles:t.roles,revision:t.revision,...(t.message?{message:t.message}:{})};}
   return {
     summary:structuredClone(summary),
+    async typography(){await checkManifest();return publicTheme(await readTheme());},
+    async saveTypography(expectedRevision,roles){
+      if(busy)fail('BUSY','Another write is in progress');
+      if(typeof expectedRevision!=='string'||!/^[a-f0-9]{64}$/.test(expectedRevision))fail('INPUT','Invalid theme revision');
+      const value=checkedRoles(roles);busy=true;let temp;
+      try{
+        await checkManifest();const t=await readTheme();
+        if(!t.editable||t.revision!==expectedRevision)fail('CONFLICT','Theme changed or is not editable; changes were not saved');
+        if(JSON.stringify(t.roles)===JSON.stringify(value))return publicTheme(t);
+        // Edit only the recognized subtree; YAML formatting may be normalized on serialization.
+        t.doc.set('typography',{schemaVersion:1,roles:value});
+        const info=sourceInfo(t.bytes);
+        if(!info.editable)fail('FORMAT','Mixed theme line endings are read-only');
+        const bytes=Buffer.from((info.bom?'\uFEFF':'')+t.doc.toString().replace(/\n/g,info.eol),'utf8');
+        if(bytes.length>MAX_MANIFEST)fail('INPUT','Theme too large');
+        temp=join(dirname(t.path),'.bookcreator-'+randomUUID()+'.tmp');
+        const f=await open(temp,'wx',t.mode);
+        try{await f.writeFile(bytes);await f.chmod(t.mode);await f.sync();}finally{await f.close();}
+        await checkManifest();const current=await readTheme();
+        if(!current.editable||current.path!==t.path||current.revision!==expectedRevision)fail('CONFLICT','Theme changed before replacement');
+        await rename(temp,t.path);temp=undefined;
+        return {editable:true,roles:value,revision:hash(bytes)};
+      }finally{if(temp)await unlink(temp).catch(()=>{});busy=false;}
+    },
     async read(id){
       await checkManifest();
       const r=await current(id);
