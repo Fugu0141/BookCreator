@@ -1,9 +1,9 @@
 import {prepareBrowserPreview,previewSourceRange} from '/app/dist/index.js';
-import {scanDocument,validateScannedBlocks,indexBlockIds} from '/bcm/dist/index.js';
+import {scanDocument,validateScannedBlocks,indexBlockIds,parseReferenceToken} from '/bcm/dist/index.js';
 import {createPlainTextPagePreview,parsePreviewMath} from '/engine/dist/index.js';
 const source=document.querySelector('#source'),width=document.querySelector('#width'),height=document.querySelector('#height');
 const button=document.querySelector('#render'),status=document.querySelector('#status'),target=document.querySelector('#preview');
-const deps={scan:scanDocument,validate:validateScannedBlocks,index:indexBlockIds,validateDisplayMath:parsePreviewMath,validateInlineMath:parsePreviewMath};
+const deps={scan:scanDocument,validate:validateScannedBlocks,index:indexBlockIds,validateDisplayMath:parsePreviewMath,validateInlineMath:parsePreviewMath,parseReference:parseReferenceToken};
 let revision=0,latest;
 source.value='# 実測組版の試作\n\n'+('日本語と English text を混在させた原稿です。ブラウザの実測値によって折り返し位置とページ分割を決定します。 '.repeat(14)).trim()+'\n\n## 原稿範囲の確認\n\n紙面の本文を選ぶと原稿の対応範囲を確認できます。';
 function invalidate(){revision++;latest=undefined;target.replaceChildren();status.textContent='未組版の変更があります。';button.disabled=false;}
