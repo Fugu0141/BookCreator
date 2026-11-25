@@ -61,13 +61,15 @@ export function prepareManuscript<S extends Scan>(documents:readonly Manuscript[
       items.push(item);
       section.blocks.push({kind:'block',origin:item.origin,width,item,splitPolicy:item.kind==='paragraph'||item.kind==='list'?'allow':'strict',...(item.kind==='heading'&&item.level===1?{startPosition:'page-top' as const,startPositionSource:'component' as const}:{})});
     };
-    // Restricted scanner-owned list subset: one raw line per item.
+    // One scanner-owned raw line per item. Indentation must match the parent's
+    // actual content column (marker width + one space), not a fixed two spaces.
     const listLine=(b:ScanBlock|undefined)=>{
       if(b?.kind!=='raw')return;
-      const line=stripEnd(doc.source.slice(b.range.start,b.range.end));
-      const m=/^( {2})?([-+*]|[1-9][0-9]{0,2}\.) (\S.*)$/.exec(line);
+      const raw=doc.source.slice(b.range.start,b.range.end),line=stripEnd(raw);
+      if(/\r(?!\n)/.test(raw))return;
+      const m=/^( {0,3})([-+*]|[1-9][0-9]{0,2}\.) (\S.*)$/.exec(line);
       if(!m)return;
-      return {depth:m[1]?1:0,marker:m[2],body:m[3],start:b.range.start+(m[1]?.length??0)+m[2].length+1};
+      return {indent:m[1].length,marker:m[2],body:m[3],start:b.range.start+m[1].length+m[2].length+1};
     };
     for(let n=0;n<scan.blocks.length;n++){
       const b=scan.blocks[n],text=stripEnd(doc.source.slice(b.range.start,b.range.end));
@@ -77,24 +79,30 @@ export function prepareManuscript<S extends Scan>(documents:readonly Manuscript[
         if(!match||!plainBody(match[2])){unsupported(b.range,'Only supported inline text in ATX headings');continue;}
         emit({kind:'heading',origin:origin(b.range),level:match[1].length,text:match[2]},content.width);
       }else if(b.kind==='raw'&&listLine(b)){
-        const counters:({kind:'bullet'}|{kind:'ordered';number:number}|undefined)[]=[];
-        let previousDepth=-1;
+        let root:{marker:string;number:number;contentIndent:number}|undefined;
+        let child:{marker:string;number:number}|undefined;
         do{
           const entry=scan.blocks[n],line=listLine(entry)!;
-          const {depth,marker,body,start}=line;
-          if(depth>previousDepth+1||!plainBody(body)){
+          const {indent,marker,body,start}=line,kind=marker.endsWith('.')?'ordered':'bullet';
+          const markerKind=kind==='ordered'?'.':marker;
+          if(!plainBody(body)||(indent!==0&&(!root||indent!==root.contentIndent))){
             unsupported(entry.range,'Unsupported list indentation or inline body');break;
           }
-          counters.length=depth+1;
-          const prev=counters[depth];
-          const kind=marker.endsWith('.')?'ordered':'bullet';
-          const number=kind==='ordered'?(prev?.kind==='ordered'?prev.number+1:Number(marker.slice(0,-1))):0;
+          const depth=indent===0?0:1,prev=depth===0?root:child;
+          const number=kind==='ordered'?(prev?.marker===markerKind?prev.number+1:Number(marker.slice(0,-1))):0;
           if(number>999){unsupported(entry.range,'List numbering exceeds supported range');break;}
+          if(depth===0){root={marker:markerKind,number,contentIndent:marker.length+1};child=undefined;}
+          else child={marker:markerKind,number};
           const descriptor=kind==='ordered'?{kind,number} as const:{kind} as const;
-          counters[depth]=descriptor;previousDepth=depth;
           emit({kind:'list',origin:origin(entry.range),text:body,sourceTextStart:start,listItem:{...descriptor,depth}},content.width);
-          if(!listLine(scan.blocks[n+1]))break;
-          n++;
+          let j=n+1;
+          while(scan.blocks[j]?.kind==='blank')j++;
+          const next=listLine(scan.blocks[j]);
+          if(!next)break;
+          // Loose root siblings retain the counter. Blank-separated nested
+          // items are not supported by this scanner subset.
+          if(j!==n+1&&next.indent!==0){unsupported(scan.blocks[j].range,'Blank-separated nested list items are not supported');break;}
+          n=j;
         }while(n<scan.blocks.length);
         if(scan.blocks[n+1]?.kind==='raw'&&!listLine(scan.blocks[n+1]))unsupported(scan.blocks[n+1].range,'List continuation requires an explicit blank line');
       }else if(b.kind==='raw'){
