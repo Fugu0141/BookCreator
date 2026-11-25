@@ -1,6 +1,6 @@
 import React,{useState,useRef} from 'react';
 import {createRoot} from 'react-dom/client';
-import {prepareBrowserPreview,prepareBookBrowserPreview} from '../../dist/index.js';
+import {prepareBrowserPreview,prepareBookBrowserPreview,hasDynamicLabels} from '../../dist/index.js';
 import {scanDocument,validateScannedBlocks,indexBlockIds} from '../../../BookCreator_Markdown/dist/index.js';
 import {createPlainTextPagePreview} from '../../../BookCreator_LayoutEngine/dist/index.js';
 import {ComponentLab} from './component-lab.jsx';
@@ -81,7 +81,8 @@ function App(){
       if(Object.values(typography).some(v=>v.fontFamily.startsWith('BCFont_')&&v.fontFamily!==noto&&!fonts.some(f=>f.alias===v.fontFamily&&f.loaded)))throw Error('登録フォントを読み込めません。');
       const rev=String(job),fingerprint='desktop-poc-'+job+'-'+__BUNDLED_FONT_FINGERPRINT__+'-'+JSON.stringify(typography)+'-'+fonts.map(f=>f.sha256).join(',')+'-'+JSON.stringify({page,order,headingDesign:theme?.headingDesign,headingLevels:theme?.headingLevels});
       let documents;
-      if(whole){
+      const needsContext=hasDynamicLabels(theme?.headingDesign)||Object.values(theme?.headingLevels??{}).some(hasDynamicLabels);
+      if(whole||needsContext){
         const snapshot=await unwrap(api.readBook());
         if(job!==generation.current)return;
         const byId=new Map(snapshot.map(d=>[d.documentId,d]));
@@ -97,7 +98,8 @@ function App(){
       }
       const prepared=prepareBookBrowserPreview(documents,rev,fingerprint,geometry.content,deps,typography,theme?.headingDesign,theme?.headingLevels);
       if(!prepared.options)throw Error(prepared.diagnostics.map(d=>d.code+' '+d.message).join('\n'));
-      const result=await createPlainTextPagePreview(document,{...prepared.options,paper:geometry.paper,resolveImage});
+      const options=!whole&&needsContext?{...prepared.options,sections:prepared.options.sections.filter(s=>s.id===file.id)}:prepared.options;
+      const result=await createPlainTextPagePreview(document,{...options,paper:geometry.paper,resolveImage});
       if(job!==generation.current)return;
       preview.current.append(result.element);
       [...result.element.shadowRoot.querySelectorAll('[data-block]')].forEach((el,i)=>{
