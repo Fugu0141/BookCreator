@@ -1,4 +1,4 @@
-import {validateHeadingDesign,validateHeadingLevels} from '../../dist/preview-component.js';
+import {validateHeadingDesign,validateHeadingLevels,validateComponentLibrary,emptyComponentLibrary} from '../../dist/preview-component.js';
 import {resolvePageSettings,paperGeometry,marginString} from './book-settings.mjs';
 import {projectImages} from './project-images.mjs';
 import {projectFonts} from './project-fonts.mjs';
@@ -183,10 +183,13 @@ export async function openWorkspace(manifestPath){
         for(const design of [headingDesign,...Object.values(headingLevels)].filter(Boolean))checkComponentFonts(design,faces);
         await checkComponentImages([headingDesign,...Object.values(headingLevels)],imageStore);
       }catch(e){componentEditable=false;componentMessage=e.message;headingDesign=null;headingLevels={};}}
-      return {editable:true,roles,headingDesign,headingLevels,componentEditable,componentMessage,revision:hash(r.bytes),path,doc,...r};}
+      let library=emptyComponentLibrary(),libraryEditable=true,libraryMessage;
+      try{const rawLibrary=doc.toJS({maxAliasCount:0}).previewComponentLibrary;if(rawLibrary!==undefined)library=validateComponentLibrary(rawLibrary);}
+      catch(e){libraryEditable=false;libraryMessage=e.message;}
+      return {editable:true,roles,headingDesign,headingLevels,componentEditable,componentMessage,library,libraryEditable,libraryMessage,revision:hash(r.bytes),path,doc,...r};}
     catch(e){if(e.code==='THEME')return {editable:false,roles:null,revision:null,message:e.message};throw e;}
   }
-  function publicTheme(t){return {editable:t.editable,roles:t.roles,revision:t.revision,headingDesign:t.headingDesign??null,headingLevels:t.headingLevels??{},componentMessage:t.componentMessage,componentEditable:t.componentEditable===true,...(t.message?{message:t.message}:{})};}
+  function publicTheme(t){return {editable:t.editable,roles:t.roles,revision:t.revision,headingDesign:t.headingDesign??null,headingLevels:t.headingLevels??{},componentMessage:t.componentMessage,componentEditable:t.componentEditable===true,library:t.library??emptyComponentLibrary(),libraryEditable:t.libraryEditable===true,libraryMessage:t.libraryMessage,...(t.message?{message:t.message}:{})};}
   function settingsView(){return {revision:manifestHash,page:summary.pageSettings,sections:structuredClone(summary.sections),message:summary.pageMessage};}
   return {
     get summary(){return structuredClone(summary);},
@@ -264,6 +267,44 @@ export async function openWorkspace(manifestPath){
         if(!current.editable||current.path!==t.path||current.revision!==expectedRevision)fail('CONFLICT','Theme changed before replacement');
         await rename(temp,t.path);temp=undefined;
         return {...publicTheme(t),roles:value,revision:hash(bytes)};
+      }finally{if(temp)await unlink(temp).catch(()=>{});busy=false;}
+    },
+    async changeComponentLibrary(expectedRevision,action){
+      if(busy)fail('BUSY','Another write is in progress');
+      if(!record(action)||!['add','rename','replace','delete'].includes(action.type))fail('INPUT','Invalid library operation');
+      const keys=action.type==='add'?['type','name','design']:action.type==='rename'?['type','id','name']:action.type==='replace'?['type','id','design']:['type','id'];
+      if(Object.keys(action).length!==keys.length||!keys.every(k=>Object.hasOwn(action,k)))fail('INPUT','Invalid library operation fields');
+      busy=true;let temp;
+      try{
+        await checkManifest();const t=await readTheme();
+        if(!t.editable||!t.libraryEditable||t.revision!==expectedRevision)fail('CONFLICT','Theme or library changed or unsupported');
+        const entries=structuredClone(t.library.entries);
+        if(action.type==='add')entries.push({id:'component-'+randomUUID(),name:action.name,usage:'heading',design:validateHeadingDesign(action.design)});
+        else{
+          const i=entries.findIndex(e=>e.id===action.id);if(i<0)fail('INPUT','Component not found');
+          if(action.type==='delete')entries.splice(i,1);
+          else if(action.type==='rename')entries[i].name=action.name;
+          else entries[i].design=validateHeadingDesign(action.design);
+        }
+        const library=validateComponentLibrary({schemaVersion:1,entries});
+        if(action.type==='add'||action.type==='replace'){
+          const design=action.type==='add'?library.entries.at(-1).design:library.entries.find(e=>e.id===action.id).design;
+          checkComponentFonts(design,await fontStore.list());await checkComponentImages([design],imageStore);
+        }
+        if(JSON.stringify(library)===JSON.stringify(t.library))return publicTheme(t);
+        t.doc.set('previewComponentLibrary',library);
+        const info=sourceInfo(t.bytes);if(!info.editable)fail('FORMAT','Mixed theme line endings are read-only');
+        const bytes=Buffer.from((info.bom?'\uFEFF':'')+t.doc.toString().replace(/\n/g,info.eol),'utf8');
+        if(bytes.length>MAX_MANIFEST)fail('INPUT','Theme too large');
+        // Refuse a write that the bounded YAML reader cannot subsequently reopen.
+        validateComponentLibrary(safeYaml(decode(bytes)).toJS({maxAliasCount:0}).previewComponentLibrary);
+        temp=join(dirname(t.path),'.bookcreator-'+randomUUID()+'.tmp');
+        const f=await open(temp,'wx',t.mode);
+        try{await f.writeFile(bytes);await f.chmod(t.mode);await f.sync();}finally{await f.close();}
+        await checkManifest();const current=await readTheme();
+        if(!current.editable||!current.libraryEditable||current.path!==t.path||current.revision!==expectedRevision)fail('CONFLICT','Theme changed before replacement');
+        await rename(temp,t.path);temp=undefined;
+        return {...publicTheme(t),library,revision:hash(bytes)};
       }finally{if(temp)await unlink(temp).catch(()=>{});busy=false;}
     },
     async saveHeadingDesign(expectedRevision,value,level='default'){
