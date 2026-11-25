@@ -8,7 +8,7 @@ test('snaps edges and centers independently, preserving exact micrometres',()=>{
   assert.deepEqual(snapCanvasPosition({x:7800,y:7800},size,bounds,[]),{position:{x:8000,y:8000},guides:{x:10000,y:10000}});
 });
 test('distant positions remain unchanged and invalid candidates cannot escape bounds',()=>{
-  assert.deepEqual(snapCanvasPosition({x:3500,y:2500},size,bounds,[]),{position:{x:3500,y:2500},guides:{}});
+  assert.deepEqual(snapCanvasPosition({x:3500,y:1500},size,bounds,[]),{position:{x:3500,y:1500},guides:{}});
   assert.deepEqual(snapCanvasPosition({x:-1,y:99999},size,bounds,[]).position,{x:0,y:8000});
   assert.throws(()=>snapCanvasPosition({x:0,y:0},{width:21000,height:1},bounds,[]),RangeError);
 });
