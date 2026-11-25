@@ -444,3 +444,31 @@ test('style toolbar planner composes and clears typed attributes while preservin
   assert.throws(()=>planInlineFormat(raw,range.start,range.end,{font:'file:///tmp/a.ttf'},bcm.scanDocument));
   assert.throws(()=>planInlineFormat('abcdef',1,3,'underline',bcm.scanDocument));
 });
+
+test('inline size and baseline editing preserve manuscript and compile into variable metric runs',()=>{
+  const original='# 基本\n\nx2 と H2O。重要な語。\n';
+  let raw=original;
+  function apply(word,format,from=0){
+    const start=raw.indexOf(word,from),p=planInlineFormat(raw,start,start+word.length,format,bcm.scanDocument);
+    raw=bcm.applyPatches(raw,[p.patch]);
+    assert.equal(raw.slice(p.selection.start,p.selection.end),word);
+    return p.selection;
+  }
+  const x=apply('2',{baseline:'super'});
+  assert.ok(raw.includes('x^2^'));
+  apply('2',{baseline:'sub'},raw.indexOf('H'));
+  assert.ok(raw.includes('H~2~O'));
+  apply('重要な語',{fontSize:6500});
+  apply('重要な語',{baseline:'super'});
+  const doc={documentId:'s',revision:'1',source:raw,startOn:'page'},deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds};
+  const result=prepareBookBrowserPreview([doc],'1','metrics',{width:100000,height:100000},deps);
+  assert.deepEqual(result.diagnostics,[]);
+  const block=result.options.sections[0].blocks[1];
+  assert.equal(block.request.text,'x2 と H2O。重要な語。');
+  assert.deepEqual(block.request.inlineStyles,[{start:1,end:2,baseline:'super'},{start:6,end:7,baseline:'sub'},{start:9,end:13,fontSize:6500,baseline:'super'}]);
+  const slice=previewSourceRange(block,{textStart:1,textEnd:2});
+  assert.equal(raw.slice(slice.start,slice.end),'^2^');
+  apply('重要な語',{fontSize:null});apply('重要な語',{baseline:null});
+  apply('2',{baseline:'sub'},raw.indexOf('H'));apply('2',{baseline:'super'});
+  assert.equal(raw,original);
+});
