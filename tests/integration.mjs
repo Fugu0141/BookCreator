@@ -1,0 +1,26 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {resolve} from 'node:path';
+import {pathToFileURL} from 'node:url';
+import {editDocument} from '../dist/index.js';
+const load = (variable, fallback) => import(pathToFileURL(resolve(process.env[variable] ?? fallback)).href);
+const bcm = await load('BCM_DIST', '../BookCreator_Markdown/dist/index.js');
+const engine = await load('ENGINE_DIST', '../BookCreator_LayoutEngine/dist/index.js');
+test('BCM attribute edit -> document revision -> geometry', () => {
+  const source = '::figure{#fig-unity width="75%" alt="日本語😀"}\r\n';
+  const snapshot = {documentId:'chapter-1', revision:1, source};
+  const parsed = bcm.parseDirectiveHeader(source.trimEnd());
+  assert.equal(parsed.diagnostics.length,0);
+  const attr = parsed.directives[0].attributes.find(a=>a.key==='width');
+  assert.equal(attr.value,'75%');
+  const old = source.slice(attr.range.start,attr.range.end);
+  const next = editDocument(snapshot,1,[{start:attr.range.start,end:attr.range.end,expected:old,replacement:'width="50%"'}],(s,edits)=>bcm.applyPatches(s,edits.map(e=>({range:{start:e.start,end:e.end},expected:e.expected,replacement:e.replacement}))));
+  assert.equal(next.source, source.replace('75%','50%'));
+  assert.equal(next.revision,2);
+  const updated = bcm.parseDirectiveHeader(next.source.trimEnd()).directives[0];
+  assert.equal(updated.id,'fig-unity');
+  const width = updated.attributes.find(a=>a.key==='width').value;
+  const available = engine.toMicrometres('160mm');
+  const rect = engine.layoutFlow('column',[{width:Math.round(available*parseFloat(width)/100),height:engine.toMicrometres('20mm')}],0,{width:available,height:engine.toMicrometres('100mm')})[0];
+  assert.deepEqual(rect,{x:0,y:0,width:80000,height:20000});
+});
