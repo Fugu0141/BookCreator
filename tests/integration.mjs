@@ -288,3 +288,21 @@ test('custom question and custom answer resolve target metadata by instance ID r
   const r=prepareBookBrowserPreview([{documentId:'custom',revision:'1',source,startOn:'page'}],'1','custom-links',{width:100000,height:100000},deps,undefined,undefined,undefined,undefined,undefined,library);
   assert.deepEqual(r.diagnostics,[]);assert.deepEqual(r.options.sections[0].blocks.map(b=>b.component.children[0].text),['なし','自作問題']);
 });
+
+test('named study slots preserve independent exact source offsets and reject mismatched schemas',()=>{
+  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds};
+  const id='component-00000000-0000-4000-8000-000000000001';
+  const design={...defaultHeadingDesign(),direction:'column',children:[{id:'content',type:'content'},{id:'hint',type:'slot',name:'hint',width:'fill',fontSize:3500,lineHeight:1.5,color:'#123456',font:{id:'system-monospace',weight:700}}]};
+  const library={schemaVersion:3,entries:[{id,name:'自作問題',usage:'study',design}]};
+  const source='::::component{name="'+id+'" #q-1}\r\n:::slot{name="hint"}\r\n同じ文章。\r\n:::\r\n\r\n:::slot{name="content"}\r\n同じ文章。\r\n:::\r\n::::\r\n';
+  const doc={documentId:'s',revision:'1',source,startOn:'page'},size={width:100000,height:100000};
+  const run=(raw,lib=library)=>prepareBookBrowserPreview([{...doc,source:raw}],'1','slots',size,deps,undefined,undefined,undefined,undefined,undefined,lib);
+  const r=run(source);assert.deepEqual(r.diagnostics,[]);
+  const b=r.options.sections[0].blocks[0];
+  assert.equal(b.origin.persistentId,'q-1');assert.equal(b.splitPolicy,'strict');
+  assert.equal(b.sourceTextStart,source.lastIndexOf('同じ文章。'));assert.equal(b.namedSlots[0].sourceTextStart,source.indexOf('同じ文章。'));
+  assert.equal(b.namedSlots[0].request.text,'同じ文章。');assert.equal(b.namedSlots[0].request.fontFamily,'monospace');
+  const one=prepareBrowserPreview(doc,'1','one',size,deps,undefined,library);assert.deepEqual(one.diagnostics,[]);assert.deepEqual(one.options.blocks[0].namedSlots,b.namedSlots);
+  for(const bad of [source.replace('name="hint"','name="unknown"'),source.replace('name="hint"','name="content"'),source.replace('同じ文章。\r\n:::','**強調**\r\n:::'),':::component{name="'+id+'"}\n本文。\n:::\n'])assert.equal(run(bad).options,undefined,bad);
+  assert.equal(run(source,{...library,entries:[{...library.entries[0],design:defaultHeadingDesign()}]}).options,undefined);
+});

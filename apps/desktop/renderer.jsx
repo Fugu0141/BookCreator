@@ -1,6 +1,6 @@
 import React,{useState,useRef} from 'react';
 import {createRoot} from 'react-dom/client';
-import {prepareBrowserPreview,prepareBookBrowserPreview,hasDynamicLabels,hasStudyNumbering,studyTemplate,studyKinds,defaultStudyDesign,customStudyTemplate,isCustomComponentId,linkedStudyTemplate} from '../../dist/index.js';
+import {prepareBrowserPreview,prepareBookBrowserPreview,hasDynamicLabels,hasStudyNumbering,studyTemplate,studyKinds,defaultStudyDesign,customStudyTemplate,isCustomComponentId,linkedStudyTemplate,slottedStudyTemplate,namedSlotNames} from '../../dist/index.js';
 import {scanDocument,validateScannedBlocks,indexBlockIds,applyPatches} from '../../../BookCreator_Markdown/dist/index.js';
 import {createPlainTextPagePreview} from '../../../BookCreator_LayoutEngine/dist/index.js';
 import {ParagraphLab} from './paragraph-lab.jsx';
@@ -85,13 +85,14 @@ function App(){
     if(busy||!file?.editable)return;
     try{
       if(isCustomComponentId(studyChoice)&&!theme?.library?.entries.some(e=>e.id===studyChoice&&e.usage==='study'))throw Error('登録部品が見つかりません。');
-      const template=linkedStudyTemplate(studyChoice,studyInstanceId.trim()||undefined,canLink?answerTo.trim()||undefined:undefined),separator=!text||text.endsWith('\n\n')?'':text.endsWith('\n')?'\n':'\n\n',start=text.length+separator.length;
+      const definition=isCustomComponentId(studyChoice)?theme?.library?.entries.find(e=>e.id===studyChoice)?.design:theme?.studyDesigns?.[studyChoice];
+      const names=namedSlotNames(definition),template=slottedStudyTemplate(studyChoice,studyInstanceId.trim()||undefined,canLink?answerTo.trim()||undefined:undefined,names),separator=!text||text.endsWith('\n\n')?'':text.endsWith('\n')?'\n':'\n\n',start=text.length+separator.length;
       const next=applyPatches(text,[{range:{start:text.length,end:text.length},expected:'',replacement:separator+template}]);
       const parsed=scanDocument(next),last=parsed.blocks.at(-1);
       if(!last||last.kind!=='directive'||!last.closed||last.range.start!==start||last.range.end!==next.length||parsed.diagnostics.length)throw Error('末尾が未閉鎖のブロック内にあるか、原稿の構文を確認してください。');
       if(indexBlockIds([{documentId:file.id,revision:file.revision,parsed}]).diagnostics.length)throw Error('原稿内で部品IDが重複しています。');
       edit(next);setStudyInstanceId('');setAnswerTo('');setStatus('参考書部品を原稿末尾へ追加しました（未保存）。');
-      requestAnimationFrame(()=>{if(textarea.current){const p=start+template.indexOf('\n')+1;textarea.current.focus();textarea.current.setSelectionRange(p,p+template.split('\n')[1].length);}});
+      requestAnimationFrame(()=>{if(textarea.current){const lines=template.split('\n'),line=names.length?2:1,p=start+lines.slice(0,line).join('\n').length+1;textarea.current.focus();textarea.current.setSelectionRange(p,p+lines[line].length);}});
     }catch(e){setStatus(String(e.message??e));}
   }
   async function render(whole=false){
@@ -127,10 +128,13 @@ function App(){
       if(job!==generation.current)return;
       preview.current.append(result.element);
       [...result.element.shadowRoot.querySelectorAll('[data-block]')].forEach((el,i)=>{
-        const slice=result.slices[i],range=slice?.sourceSlice;if(!range)return;
-        el.tabIndex=0;el.style.cursor='pointer';
-        const focus=()=>{if(job!==generation.current)return;if(slice.origin.documentId!==file?.id){setStatus('この断片は '+slice.origin.documentId+' の原稿です。左の原稿一覧から開いてください。');return;}textarea.current.focus();textarea.current.setSelectionRange(range.start,range.end);};
-        el.addEventListener('click',focus);el.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();focus();}});
+        const slice=result.slices[i];if(!slice)return;
+        const bind=(node,range)=>{if(!range)return;node.tabIndex=0;node.style.cursor='pointer';
+          const focus=()=>{if(job!==generation.current)return;if(slice.origin.documentId!==file?.id){setStatus('この断片は '+slice.origin.documentId+' の原稿です。左の原稿一覧から開いてください。');return;}textarea.current.focus();textarea.current.setSelectionRange(range.start,range.end);};
+          node.addEventListener('click',e=>{e.stopPropagation();focus();});node.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();e.stopPropagation();focus();}});
+        };
+        bind(el,slice.sourceSlice);
+        for(const node of el.querySelectorAll('[data-named-slot]'))bind(node,slice.namedSlots?.find(s=>s.name===node.dataset.namedSlot)?.sourceSlice);
       });
       setStatus(result.plan.pages.length+' ページ · '+(whole?'書籍全体':'選択原稿')+' · 実測プレビュー（出版不可）');
     }catch(e){if(job===generation.current)setStatus(String(e.message??e));}

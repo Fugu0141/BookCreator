@@ -10,7 +10,9 @@ export type DynamicField=typeof dynamicFields[number]|typeof studyDynamicFields[
 export type HeadingContext=Readonly<Partial<Record<DynamicField,string>>>;
 export type DynamicLabel=Omit<FixedLabel,'type'|'text'>&{type:'dynamic';field:DynamicField;prefix:string;suffix:string;fallback:string};
 export interface ImageCrop {left:number;top:number;right:number;bottom:number}
-export type HeadingChild=({id:string;type:'content';width?:number}|{id:string;type:'rect';width:number|'fill';height:number;color:string}|FixedLabel|DynamicLabel|{id:string;type:'image';width:number|'fill';height:number;assetId:string;fit:'contain'|'cover';alt:string;crop?:ImageCrop}|{id:string;type:'group';width:number|'fill';direction:'row'|'column'|'canvas';height?:number;gap:number;padding:number;background:string;children:HeadingChild[]}) & {x?:number;y?:number};
+export type NamedSlot=Omit<FixedLabel,'type'|'text'>&{type:'slot';name:string};
+export const validNamedSlot=(v:unknown):v is string=>typeof v==='string'&&/^[a-z][a-z0-9-]{0,31}$/.test(v)&&v!=='content';
+export type HeadingChild=({id:string;type:'content';width?:number}|{id:string;type:'rect';width:number|'fill';height:number;color:string}|FixedLabel|DynamicLabel|NamedSlot|{id:string;type:'image';width:number|'fill';height:number;assetId:string;fit:'contain'|'cover';alt:string;crop?:ImageCrop}|{id:string;type:'group';width:number|'fill';direction:'row'|'column'|'canvas';height?:number;gap:number;padding:number;background:string;children:HeadingChild[]}) & {x?:number;y?:number};
 export interface HeadingDesign {
   schemaVersion:1;
   fontSize:number; lineHeight:number; font?:ComponentFont;
@@ -36,7 +38,7 @@ export function validateHeadingDesign(value:unknown,scope:'heading'|'study'='hea
   const fail=()=>{throw RangeError('Invalid experimental heading component');};
   if(!record(value)||!exact(value,['schemaVersion','fontSize','lineHeight','direction','gap','padding','background','textColor','children'],['font'])||value.schemaVersion!==1||!len(value.fontSize,2000,30000)||!line(value.lineHeight)||!['row','column'].includes(String(value.direction))||!len(value.gap)||!len(value.padding)||!color(value.background)||!color(value.textColor)||!Array.isArray(value.children)||value.children.length<1||value.children.length>8)throw fail();
   if(Object.hasOwn(value,'font'))validateFont(value.font);
-  const ids=new Set<string>();let slots=0,count=0;
+  const ids=new Set<string>(),names=new Set<string>();let slots=0,count=0;
   function visit(children:unknown[],depth:number,canvas=false){
   if(depth>4||children.length<1||children.length>8)throw fail();
   for(const child of children){
@@ -51,6 +53,9 @@ export function validateHeadingDesign(value:unknown,scope:'heading'|'study'='hea
     if(child.type==='image'&&exact(child,['id','type','width','height','assetId','fit','alt',...pos],['crop'])&&len(child.height,1)&&typeof child.assetId==='string'&&/^[a-f0-9]{64}$/.test(child.assetId)&&['contain','cover'].includes(String(child.fit))&&typeof child.alt==='string'&&child.alt.length<=256&&(!Object.hasOwn(child,'crop')||validCrop(child.crop))&&!/[\p{Cc}\p{Cs}]/u.test(child.alt))continue;
     if(!color(child.color))throw fail();
     if(child.type==='rect'&&exact(child,['id','type','width','height','color',...pos])&&len(child.height,1))continue;
+    if(scope==='study'&&child.type==='slot'&&exact(child,['id','type','name','width','fontSize','lineHeight','color',...pos],['font'])&&validNamedSlot(child.name)&&!names.has(child.name)&&names.size<8&&len(child.fontSize,2000,30000)&&line(child.lineHeight)){
+      names.add(child.name);if(Object.hasOwn(child,'font'))validateFont(child.font);continue;
+    }
     if(child.type==='dynamic'&&exact(child,['id','type','width','field','prefix','suffix','fallback','fontSize','lineHeight','color',...pos],['font'])&&(scope==='study'?(studyDynamicFields as readonly string[]):(dynamicFields as readonly string[])).includes(String(child.field))&&plainLabel(child.prefix,0,64)&&plainLabel(child.suffix,0,64)&&plainLabel(child.fallback,1,64)&&len(child.fontSize,2000,30000)&&line(child.lineHeight)){
       if(Object.hasOwn(child,'font'))validateFont(child.font);continue;
     }
@@ -80,7 +85,8 @@ export function hasDynamicLabels(design:HeadingDesign|null|undefined):boolean{
 export function compileHeadingDesign(value:HeadingDesign,inherited:PreviewTextStyle={fontFamily:'sans-serif',fontWeight:400},context?:HeadingContext,scope:'heading'|'study'='heading'){
   const {schemaVersion:_,fontSize,lineHeight,font,children,...rest}=validateHeadingDesign(value,scope);
   const textStyle=resolveFont(font,inherited);
-  type CompiledChild=Exclude<HeadingChild,FixedLabel|DynamicLabel|{type:'group'}>|(Omit<FixedLabel,'font'>&PreviewTextStyle)|{id:string;type:'group';width:number|'fill';x?:number;y?:number;direction:'row'|'column'|'canvas';height?:number;gap:number;padding:number;background:string;children:CompiledChild[]};
+  const slotStyles:{name:string;fontSize:number;lineHeight:number;textStyle:PreviewTextStyle}[]=[];
+  type CompiledChild=Exclude<HeadingChild,FixedLabel|DynamicLabel|NamedSlot|{type:'group'}>|Omit<NamedSlot,'font'|'fontSize'|'lineHeight'>|(Omit<FixedLabel,'font'>&PreviewTextStyle)|{id:string;type:'group';width:number|'fill';x?:number;y?:number;direction:'row'|'column'|'canvas';height?:number;gap:number;padding:number;background:string;children:CompiledChild[]};
   function compile(child:HeadingChild):CompiledChild{
     if(child.type==='group')return {...child,children:child.children.map(compile)};
     if(child.type==='dynamic'){
@@ -91,11 +97,15 @@ export function compileHeadingDesign(value:HeadingDesign,inherited:PreviewTextSt
       if(!plainLabel(text,1,256))throw RangeError('Resolved dynamic label exceeds supported text limits');
       return {...label,type:'label',text,...resolveFont(font,inherited)};
     }
+    if(child.type==='slot'){
+      const {font,fontSize,lineHeight,...node}=child;
+      slotStyles.push({name:child.name,fontSize,lineHeight,textStyle:resolveFont(font,inherited)});return node;
+    }
     if(child.type!=='label')return child;
     const {font,...label}=child;return {...label,...resolveFont(font,inherited)};
   }
   const component={...rest,children:children.map(compile)};
-  return {fontSize,lineHeight,textStyle,component};
+  return {fontSize,lineHeight,textStyle,component,slotStyles};
 }
 
 /** Experimental project-local component library. Usage is explicit for future expansion. */
@@ -192,6 +202,22 @@ export function resolveStudyDesigns(value:unknown,library:ComponentLibrary){
       if(entry.usage!=='study')throw RangeError('Component usage does not match study target');
       studyBindings[kind]=id;studyDesigns[kind]=validateHeadingDesign(entry.design,'study');
     }else studyDesigns[kind]=validateHeadingDesign(raw,'study');
+    if(['note','tip','warning','important'].includes(kind)&&namedSlotNames(studyDesigns[kind]).length)throw RangeError('Named slots require component syntax');
   }
   return {studyDesigns,studyBindings};
+}
+
+export function namedSlotNames(design:HeadingDesign|undefined):string[]{
+  const names:string[]=[];
+  function visit(nodes:HeadingChild[]){for(const n of nodes){if(n.type==='slot')names.push(n.name);else if(n.type==='group')visit(n.children);}}
+  if(design)visit(design.children);return names;
+}
+export interface NamedSlotSource {name:string;text:string;sourceTextStart?:number}
+export function compileNamedSlotRequests(compiled:ReturnType<typeof compileHeadingDesign>,sources:readonly NamedSlotSource[]){
+  const byName=new Map(sources.map(s=>[s.name,s]));
+  if(byName.size!==sources.length||byName.size!==compiled.slotStyles.length)throw RangeError('Named slot set does not match component definition');
+  return compiled.slotStyles.map(s=>{
+    const source=byName.get(s.name);if(!source)throw RangeError('Missing named slot: '+s.name);
+    return {name:s.name,request:{text:source.text,fontSize:s.fontSize,lineHeight:s.lineHeight,...s.textStyle},...(source.sourceTextStart===undefined?{}:{sourceTextStart:source.sourceTextStart})};
+  });
 }
