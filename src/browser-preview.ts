@@ -21,3 +21,27 @@ export function prepareBrowserPreview<S extends Scan>(document:Manuscript,revisi
   if(diagnostics.length)return {diagnostics,publicationReady:false as const};
   return {options:{revision,fingerprint,width:content.width,height:content.height,blocks},diagnostics,publicationReady:false as const};
 }
+
+/** Whole-book PoC; preserve section ordering, explicit breaks and exact source ranges. */
+export function prepareBookBrowserPreview<S extends Scan>(documents:readonly Manuscript[],revision:string,fingerprint:string,content:{width:number;height:number},deps:PreparationDependencies<S>,typography?:PreviewTypography){
+  const fonts=resolvePreviewTypography(typography),prepared=prepareManuscript(documents,revision,fingerprint,content,deps),diagnostics=[...prepared.diagnostics];
+  if(!prepared.input)return {diagnostics,publicationReady:false as const};
+  const byId=new Map(documents.map(d=>[d.documentId,d]));
+  const sections=prepared.input.sections.map(section=>{
+    const blocks:(NonNullable<ReturnType<typeof prepareBrowserPreview<S>>['options']>['blocks'][number]|Extract<typeof section.blocks[number],{kind:'pagebreak'}>)[]=[];
+    for(const block of section.blocks){
+      if(block.kind==='pagebreak'){blocks.push(block);continue;}
+      const {item}=block;
+      const raw=byId.get(item.origin.documentId)!.source.slice(item.origin.range.start,item.origin.range.end);
+      const offset=item.kind==='heading'?raw.indexOf(item.text):0;
+      if(item.kind==='figure'||/[\r\n]/.test(item.text)||offset<0||raw.slice(offset,offset+item.text.length)!==item.text){
+        diagnostics.push({code:'BC_PREVIEW_UNSUPPORTED',message:'Only contiguous plain paragraphs and headings are supported',documentId:item.origin.documentId,range:item.origin.range});continue;
+      }
+      blocks.push({origin:item.origin,request:{text:item.text,width:block.width,fontSize:item.kind==='heading'?6500:4200,...(item.kind==='heading'?fonts.heading:fonts.body),lineHeight:1.8},splitPolicy:block.splitPolicy,sourceTextStart:item.origin.range.start+offset,...(block.startPosition?{startPosition:block.startPosition,startPositionSource:block.startPositionSource}:{})});
+    }
+    return {id:section.id,startOn:section.startOn,blocks};
+  });
+  if(!sections.some(s=>s.blocks.some(b=>!('kind' in b))))diagnostics.push({code:'BC_PREVIEW_EMPTY',message:'No supported content to preview',documentId:documents[0]?.documentId??'',range:{start:0,end:0}});
+  if(diagnostics.length)return {diagnostics,publicationReady:false as const};
+  return {options:{revision,fingerprint,width:content.width,height:content.height,sections},diagnostics,publicationReady:false as const};
+}
