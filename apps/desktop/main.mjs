@@ -435,7 +435,25 @@ async function smoke(){
   await until("!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-component-image] canvas')");
   if(!await exec("document.querySelector('#preview > div').shadowRoot.querySelector('[data-component-image] canvas').getContext('2d').getImageData(0,0,1,1).data[2]===255"))throw Error('Saved crop not rendered');
   if(!(await readFile(join(smokeRoot,'new-book','assets','images',imageId+'.png'))).equals(tinyPng()))throw Error('Source image modified by crop');
-  console.log('PASS image ratio lock, non-destructive crop and history; image component asset, actual pixels, theme and paper; component duplication and lock guards; Canvas smart guide cancellation and equal-gap distribution; Canvas multi-selection, alignment, history and persisted geometry; Canvas resize, undo/redo and persisted width; Canvas actual mouse drag, undo/redo and persisted paper; Canvas numeric coordinates and actual paper rendering; nested component grouping and actual book preview; H1-specific fixed label and independent font; Component Lab measure, discard, apply and actual book rendering; book settings save and physical whole-book preview; imported project font, license metadata, theme selection, actual font rendering; Electron project creation, theme save/reopen, Electron sandbox, project open/read, React editing, bundled Noto, independent font roles, stale invalidation, measured preview, source selection and save');
+  // Dynamic labels resolve sample context separately from actual manuscript context.
+  await exec("document.querySelector('#component-lab').click()");
+  await until("!!document.querySelector('#lab-add-dynamic')");
+  await exec("document.querySelector('[data-lab-node=content]').click()");
+  await until("!document.querySelector('#lab-add-dynamic').disabled");
+  await exec("document.querySelector('#lab-add-dynamic').click()");
+  await until("!!document.querySelector('#lab-dynamic-field')");
+  await exec("document.querySelector('#lab-measure').click()");
+  await until("!document.querySelector('#lab-apply').disabled");
+  if(!await exec("Array.from(document.querySelector('#lab-preview > div').shadowRoot.querySelectorAll('[data-fixed-label]')).some(e=>e.dataset.componentNode.startsWith('dynamic-')&&e.textContent==='第3章')"))throw Error('Dynamic sample context mismatch');
+  await exec("document.querySelector('#lab-apply').click()");
+  await until("!document.querySelector('#open').disabled && !document.querySelector('#lab-measure')");
+  await exec("document.querySelector('#preview-book').click()");
+  await until("Array.from(document.querySelector('#preview > div')?.shadowRoot?.querySelectorAll('[data-fixed-label]')??[]).some(e=>e.dataset.componentNode.startsWith('dynamic-')&&e.textContent==='第1章')");
+  await exec("document.querySelector('#preview-button').click()");
+  await until("Array.from(document.querySelector('#preview > div')?.shadowRoot?.querySelectorAll('[data-fixed-label]')??[]).some(e=>e.dataset.componentNode.startsWith('dynamic-')&&e.textContent==='第1章')");
+  const themeText=await readFile(join(smokeRoot,'new-book','themes','default','theme.yaml'),'utf8');
+  if(!themeText.includes('type: dynamic')||!themeText.includes('field: chapter-number'))throw Error('Dynamic definition not persisted');
+  console.log('PASS dynamic sample and manuscript context, theme and paper; image ratio lock, non-destructive crop and history; image component asset, actual pixels, theme and paper; component duplication and lock guards; Canvas smart guide cancellation and equal-gap distribution; Canvas multi-selection, alignment, history and persisted geometry; Canvas resize, undo/redo and persisted width; Canvas actual mouse drag, undo/redo and persisted paper; Canvas numeric coordinates and actual paper rendering; nested component grouping and actual book preview; H1-specific fixed label and independent font; Component Lab measure, discard, apply and actual book rendering; book settings save and physical whole-book preview; imported project font, license metadata, theme selection, actual font rendering; Electron project creation, theme save/reopen, Electron sandbox, project open/read, React editing, bundled Noto, independent font roles, stale invalidation, measured preview, source selection and save');
   closing=true;win.destroy();await rm(smokeRoot,{recursive:true,force:true,maxRetries:10,retryDelay:100});app.exit(0);
 }
 app.on('window-all-closed',()=>{if(!SMOKE)app.quit();});
