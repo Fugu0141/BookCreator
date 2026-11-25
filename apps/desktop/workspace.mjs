@@ -296,6 +296,8 @@ export async function openWorkspace(manifestPath){
         const info=sourceInfo(t.bytes);if(!info.editable)fail('FORMAT','Mixed theme line endings are read-only');
         const bytes=Buffer.from((info.bom?'\uFEFF':'')+t.doc.toString().replace(/\n/g,info.eol),'utf8');
         if(bytes.length>MAX_MANIFEST)fail('INPUT','Theme too large');
+        // Refuse a write that the bounded YAML reader cannot subsequently reopen.
+        validateComponentLibrary(safeYaml(decode(bytes)).toJS({maxAliasCount:0}).previewComponentLibrary);
         temp=join(dirname(t.path),'.bookcreator-'+randomUUID()+'.tmp');
         const f=await open(temp,'wx',t.mode);
         try{await f.writeFile(bytes);await f.chmod(t.mode);await f.sync();}finally{await f.close();}
