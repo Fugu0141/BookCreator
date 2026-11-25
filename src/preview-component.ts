@@ -2,7 +2,7 @@ import type {PreviewTextStyle,PreviewFontFamily} from './preview-typography.js';
 // Persist stable resource IDs, not browser CSS identifiers.
 export interface ComponentFont {id:string;weight:number}
 export interface FixedLabel {x?:number;y?:number;id:string;type:'label';width:number|'fill';text:string;fontSize:number;lineHeight:number;color:string;font?:ComponentFont}
-export type HeadingChild=({id:string;type:'content';width?:number}|{id:string;type:'rect';width:number|'fill';height:number;color:string}|FixedLabel|{id:string;type:'group';width:number|'fill';direction:'row'|'column'|'canvas';height?:number;gap:number;padding:number;background:string;children:HeadingChild[]}) & {x?:number;y?:number};
+export type HeadingChild=({id:string;type:'content';width?:number}|{id:string;type:'rect';width:number|'fill';height:number;color:string}|FixedLabel|{id:string;type:'image';width:number|'fill';height:number;assetId:string;fit:'contain'|'cover';alt:string}|{id:string;type:'group';width:number|'fill';direction:'row'|'column'|'canvas';height?:number;gap:number;padding:number;background:string;children:HeadingChild[]}) & {x?:number;y?:number};
 export interface HeadingDesign {
   schemaVersion:1;
   fontSize:number; lineHeight:number; font?:ComponentFont;
@@ -36,6 +36,7 @@ export function validateHeadingDesign(value:unknown):HeadingDesign{
     if(child.type==='content'&&exact(child,['id','type',...pos,...(canvas?['width']:[])])){slots++;continue;}
     if(!(child.width==='fill'||len(child.width,1)))throw fail();
     if(child.type==='group'&&exact(child,['id','type','width','direction','gap','padding','background','children',...pos,...(child.direction==='canvas'?['height']:[])])&&['row','column','canvas'].includes(String(child.direction))&&len(child.gap)&&len(child.padding)&&color(child.background)&&Array.isArray(child.children)){if(child.direction==='canvas'&&(!len(child.height,1)||child.height<=2*child.padding||child.gap!==0))throw fail();visit(child.children,depth+1,child.direction==='canvas');continue;}
+    if(child.type==='image'&&exact(child,['id','type','width','height','assetId','fit','alt',...pos])&&len(child.height,1)&&typeof child.assetId==='string'&&/^[a-f0-9]{64}$/.test(child.assetId)&&['contain','cover'].includes(String(child.fit))&&typeof child.alt==='string'&&child.alt.length<=256&&!/[\p{Cc}\p{Cs}]/u.test(child.alt))continue;
     if(!color(child.color))throw fail();
     if(child.type==='rect'&&exact(child,['id','type','width','height','color',...pos])&&len(child.height,1))continue;
     if(child.type==='label'&&exact(child,['id','type','width','text','fontSize','lineHeight','color',...pos],['font'])&&typeof child.text==='string'&&child.text.length>=1&&child.text.length<=256&&!/[\p{Cc}\p{Cs}\p{Cf}\p{Zl}\p{Zp}]/u.test(child.text)&&len(child.fontSize,2000,30000)&&line(child.lineHeight)){
