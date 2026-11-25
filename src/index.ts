@@ -32,3 +32,5 @@ export {prepareBookBrowserPreview} from './browser-preview.js';
 export * from './preview-component.js';
 
 export * from './study-blocks.js';
+
+export * from './inline-preview.js';
