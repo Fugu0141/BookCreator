@@ -1,5 +1,6 @@
 import {validateHeadingDesign,validateHeadingLevels} from '../../dist/preview-component.js';
 import {resolvePageSettings,paperGeometry,marginString} from './book-settings.mjs';
+import {projectImages} from './project-images.mjs';
 import {projectFonts} from './project-fonts.mjs';
 import {open,lstat,realpath,rename,unlink,mkdir} from 'node:fs/promises';
 import {constants} from 'node:fs';
@@ -148,7 +149,7 @@ export async function openWorkspace(manifestPath){
     seen.add(identity);files.set(s.id,{path,relativePath:s.path});
   }
   let busy=false;
-  const fontStore=projectFonts(root);
+  const fontStore=projectFonts(root),imageStore=projectImages(root);
   async function checkManifest(){
     const latest=await readRegular(await inside(root,'book.yaml'),MAX_MANIFEST);
     if(hash(latest.bytes)!==manifestHash)fail('CONFLICT','book.yaml changed externally; reopen the project');
@@ -229,6 +230,9 @@ export async function openWorkspace(manifestPath){
         summary=next;manifestHash=hash(bytes);return settingsView();
       }finally{if(temp)await unlink(temp).catch(()=>{});busy=false;}
     },
+    async images(){await checkManifest();return imageStore.list();},
+    async image(id){await checkManifest();return imageStore.read(id);},
+    async importImage(path){if(busy)fail('BUSY','Another write is in progress');busy=true;try{await checkManifest();return await imageStore.add(path);}finally{busy=false;}},
     async fonts(includeBytes=false){await checkManifest();return fontStore.list({includeBytes});},
     async importFont(path,rights){if(busy)fail('BUSY','Another write is in progress');busy=true;try{await checkManifest();return await fontStore.add(path,rights);}finally{busy=false;}},
     async typography(){await checkManifest();return publicTheme(await readTheme());},
