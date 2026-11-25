@@ -1,7 +1,7 @@
 // Restricted preview subset, not a general CommonMark parser.
 // Raw UTF-16 offsets remain authoritative; delimiters never enter logical text.
 import type {PreviewFontFamily} from './preview-typography.js';
-export interface InlineStyle {fontWeight?:number;italic?:boolean;underline?:boolean;color?:string;fontFamily?:PreviewFontFamily}
+export interface InlineStyle {fontWeight?:number;italic?:boolean;underline?:boolean;color?:string;fontFamily?:PreviewFontFamily;fontSize?:number;baseline?:'normal'|'super'|'sub'}
 export interface InlineRun extends InlineStyle {start:number;end:number}
 const fontIds:Readonly<Record<string,PreviewFontFamily>>=Object.freeze({'noto-sans-jp':'BCFont_NotoSansJP','system-serif':'serif','system-sans':'sans-serif','system-monospace':'monospace'});
 export function inlineFontFamily(id:string):PreviewFontFamily{
@@ -16,12 +16,14 @@ function inlineFontId(family:PreviewFontFamily){
 }
 /** Canonical typed style, omitting inherited properties. */
 export function normalizeInlineStyle(value:InlineStyle):InlineStyle{
-  if(Object.keys(value).some(k=>!['fontWeight','italic','underline','color','fontFamily'].includes(k)))throw RangeError('Unknown inline style');
+  if(Object.keys(value).some(k=>!['fontWeight','italic','underline','color','fontFamily','fontSize','baseline'].includes(k)))throw RangeError('Unknown inline style');
   const out:InlineStyle={};
   if(value.fontWeight!==undefined){if(!Number.isInteger(value.fontWeight)||value.fontWeight<100||value.fontWeight>900)throw RangeError('Invalid inline weight');out.fontWeight=value.fontWeight;}
   for(const key of ['italic','underline'] as const){if(value[key]!==undefined&&typeof value[key]!=='boolean')throw RangeError('Invalid inline boolean');if(value[key])out[key]=true;}
   if(value.color!==undefined){if(typeof value.color!=='string'||!/^#[0-9a-fA-F]{6}$/.test(value.color))throw RangeError('Invalid inline color');out.color=value.color.toLowerCase();}
   if(value.fontFamily!==undefined){inlineFontId(value.fontFamily);out.fontFamily=value.fontFamily;}
+  if(value.fontSize!==undefined){if(!Number.isSafeInteger(value.fontSize)||value.fontSize<1000||value.fontSize>30000)throw RangeError('Invalid inline font size');out.fontSize=value.fontSize;}
+  if(value.baseline!==undefined){if(!['normal','super','sub'].includes(value.baseline))throw RangeError('Invalid inline baseline');if(value.baseline!=='normal')out.baseline=value.baseline;}
   return out;
 }
 export function serializeInlineStyle(text:string,style:InlineStyle,preferSpan=false){
@@ -29,8 +31,9 @@ export function serializeInlineStyle(text:string,style:InlineStyle,preferSpan=fa
   if(!allowed(text)||!text.trim()||text.trim()!==text)throw RangeError('Invalid inline style text');
   const keys=Object.keys(s);
   if(!keys.length)return {raw:text,innerOffset:0};
+  if(keys.length===1&&s.baseline&&/^[0-9]{1,32}$/.test(text)){const mark=s.baseline==='super'?'^':'~';return {raw:mark+text+mark,innerOffset:1};}
   if(!preferSpan&&keys.length===1&&(s.fontWeight===700||s.italic)){const mark=s.italic?'*':'**';return {raw:mark+text+mark,innerOffset:mark.length};}
-  const attributes=[s.fontWeight===undefined?'':' weight="'+s.fontWeight+'"',s.italic?' italic="true"':'',s.underline?' underline="true"':'',s.color?' color="'+s.color+'"':'',s.fontFamily?' font="'+inlineFontId(s.fontFamily)+'"':''].join('');
+  const attributes=[s.fontWeight===undefined?'':' weight="'+s.fontWeight+'"',s.italic?' italic="true"':'',s.underline?' underline="true"':'',s.color?' color="'+s.color+'"':'',s.fontFamily?' font="'+inlineFontId(s.fontFamily)+'"':'',s.fontSize!==undefined?' font-size="'+(s.fontSize/1000)+'mm"':'',s.baseline?' baseline="'+s.baseline+'"':''].join('');
   return {raw:':style{text="'+text+'"'+attributes+'}',innerOffset:13};
 }
 export interface InlineSourceSegment {start:number;end:number;rawStart:number;outerStart:number;outerEnd:number}
@@ -58,12 +61,18 @@ export function parsePreviewInline(raw:string,offset=0){
     let i=0;
     while(i<line.length){
       const start=i;
+      if(line[i]==='^'||line[i]==='~'){
+        const mark=line[i],match=/^([~^])([0-9]{1,32})\1/.exec(line.slice(i));
+        if(!match||line[i-1]===mark||line[i+match[0].length]===mark)throw RangeError('Unsupported script shorthand');
+        append(cursor+i+1,cursor+i+1+match[2].length,cursor+i,cursor+i+match[0].length,{baseline:mark==='^'?'super':'sub'});
+        i+=match[0].length;if(inlineStyles.length>128)throw RangeError('Too many inline styles');continue;
+      }
       if(line.startsWith(':style{',i)){
         if(/[A-Za-z0-9_:]/.test(line[i-1]??''))throw RangeError('Unsupported inline directive boundary');
-        const match=/^:style\{text="([^"]+)"((?: [a-z]+="[^"]*")*)\}/.exec(line.slice(i));
+        const match=/^:style\{text="([^"]+)"((?: [a-z]+(?:-[a-z]+)*="[^"]*")*)\}/.exec(line.slice(i));
         if(!match||!allowed(match[1])||!match[1].trim()||match[1].trim()!==match[1])throw RangeError('Invalid inline style text');
         const style:InlineStyle={},seen=new Set<string>();
-        for(const attr of match[2].matchAll(/ ([a-z]+)="([^"]*)"/g)){
+        for(const attr of match[2].matchAll(/ ([a-z]+(?:-[a-z]+)*)="([^"]*)"/g)){
           const [,key,value]=attr;
           if(seen.has(key))throw RangeError('Duplicate inline style attribute');seen.add(key);
           if(key==='weight'&&/^[1-9]\d{2}$/.test(value))style.fontWeight=Number(value);
@@ -71,6 +80,8 @@ export function parsePreviewInline(raw:string,offset=0){
           else if(key==='underline'&&value==='true')style.underline=true;
           else if(key==='color')style.color=value;
           else if(key==='font')style.fontFamily=inlineFontFamily(value);
+          else if(key==='font-size'&&/^(?:[1-9]|[12][0-9]|30)(?:\.[0-9]{1,3})?mm$/.test(value))style.fontSize=Math.round(Number(value.slice(0,-2))*1000);
+          else if(key==='baseline'&&(value==='super'||value==='sub'))style.baseline=value;
           else throw RangeError('Unsupported inline style attribute');
         }
         const normalized=normalizeInlineStyle(style);
@@ -82,7 +93,7 @@ export function parsePreviewInline(raw:string,offset=0){
         continue;
       }
       if(line[i]!=='*'){
-        while(i<line.length&&line[i]!=='*'&&!line.startsWith(':style{',i))i++;
+        while(i<line.length&&line[i]!=='*'&&line[i]!=='^'&&line[i]!=='~'&&!line.startsWith(':style{',i))i++;
         if(!allowed(line.slice(start,i)))throw RangeError('Unsupported inline syntax');
         append(cursor+start,cursor+i);continue;
       }
