@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
-import {editDocument,compileMeasuredManuscript,canReviewLayout,prepareBrowserPreview,prepareBookBrowserPreview,defaultHeadingDesign,previewSourceRange,planInlineFormat,planListFormat} from '../dist/index.js';
+import {editDocument,compileMeasuredManuscript,canReviewLayout,prepareBrowserPreview,prepareBookBrowserPreview,defaultHeadingDesign,previewSourceRange,planInlineFormat,planListFormat,planListIndent} from '../dist/index.js';
 const load = (variable, fallback) => import(pathToFileURL(resolve(process.env[variable] ?? fallback)).href);
 const bcm = await load('BCM_DIST', '../BookCreator_Markdown/dist/index.js');
 const engine = await load('ENGINE_DIST', '../BookCreator_LayoutEngine/dist/index.js');
@@ -515,5 +515,38 @@ test('isolated line list toolbar preserves exact CRLF source and selection',()=>
   for(const source of ['- one\n- two\n','- one\n\n- two\n','- one\n  - child\n','one\ntwo\n','    code\n',':::callout{kind="tip"}\none\n:::\n','- [one](url)\n']){
     const word=source.includes('one')?'one':'code',start=source.indexOf(word);
     assert.throws(()=>planListFormat(source,start,start+word.length,'ordered',bcm.scanDocument),RangeError,source);
+  }
+});
+
+test('list indent and outdent edit only leading whitespace, preserving CRLF and styled body',()=>{
+  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds};
+  for(const [parent,prefix] of [['- ','  '],['3. ','   ']]){
+    const source=parent+'親項目\r\n'+prefix+'- 既存の子\r\n- **重要**な項目\r\n- 次の項目\r\n';
+    const start=source.indexOf('重要'),end=start+2;
+    const p=planListIndent(source,start,end,'indent',bcm.scanDocument);
+    assert.deepEqual(p.patch,{range:{start:source.indexOf('- **'),end:source.indexOf('- **')},expected:'',replacement:prefix});
+    const next=bcm.applyPatches(source,[p.patch]);
+    assert.equal(next,source.replace('- **',prefix+'- **'));
+    assert.equal(next.slice(p.selection.start,p.selection.end),'重要');
+    const compiled=prepareBrowserPreview({documentId:'list',revision:'1',source:next,startOn:'page'},'1','indent',{width:100000,height:70000},deps);
+    assert.deepEqual(compiled.diagnostics,[]);
+    assert.deepEqual(compiled.options.blocks.map(b=>b.listItem.depth),[0,1,1,0]);
+    const out=planListIndent(next,p.selection.start,p.selection.end,'outdent',bcm.scanDocument);
+    assert.equal(bcm.applyPatches(next,[out.patch]),source);
+    assert.deepEqual(out.selection,{start,end});
+  }
+  for(const [source,word,dir] of [
+    ['- one\n- two\n','one','indent'],
+    ['- one\n\n- two\n','two','indent'],
+    ['- one\n  - two\n','one','indent'],
+    ['- one\n  - two\n  - three\n','two','outdent'],
+    ['12. one\n- two\n','two','indent'],
+    ['- one\n  - two\n','two','indent'],
+    ['- one\n- two\n','two','outdent'],
+    ['- one\n- two\ncontinuation\n','two','indent'],
+    [':::callout{kind="tip"}\n- one\n- two\n:::\n','two','indent']
+  ]){
+    const start=source.indexOf(word);
+    assert.throws(()=>planListIndent(source,start,start+word.length,dir,bcm.scanDocument),RangeError,source);
   }
 });
