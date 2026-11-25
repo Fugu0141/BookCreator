@@ -1,5 +1,4 @@
-import {prepareManuscript,type Manuscript,type PreparationDependencies} from './manuscript-poc.js';
-type Scan=Parameters<typeof prepareManuscript>[4] extends PreparationDependencies<infer S>?S:never;
+import {prepareManuscript,type Manuscript,type PreparationDependencies,type Scan} from './manuscript-poc.js';
 export function prepareBrowserPreview<S extends Scan>(document:Manuscript,revision:string,fingerprint:string,content:{width:number;height:number},deps:PreparationDependencies<S>){
   const result=prepareManuscript([document],revision,fingerprint,content,deps);
   const diagnostics=[...result.diagnostics];

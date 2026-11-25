@@ -2,14 +2,14 @@
 type Range={start:number;end:number};
 type Directive={kind:'leaf'|'container';name:string;id?:string;attributes:readonly {key:string;value:string}[];range:Range};
 type ScanBlock={kind:'raw'|'code'|'math'|'heading'|'blank';range:Range;level?:number}|{kind:'directive';header:Directive;range:Range;children:readonly ScanBlock[];closed:boolean};
-interface Scan {source:string;blocks:readonly ScanBlock[];diagnostics:readonly {code:string;range:Range;message:string}[]}
+export interface Scan {source:string;blocks:readonly ScanBlock[];diagnostics:readonly {code:string;range:Range;message:string}[]}
 export interface Manuscript {documentId:string;revision:string;source:string;startOn:'page'|'continuous'}
-interface Origin {documentId:string;revision:string;blockKey:string;range:Range;persistentId?:string}
+export interface Origin {documentId:string;revision:string;blockKey:string;range:Range;persistentId?:string}
 export interface SemanticItem {kind:'heading'|'paragraph'|'figure';origin:Origin;text:string;level?:number;attributes?:Readonly<Record<string,string>>}
 type MeasuredBlock={kind:'block';origin:Origin;width:number;unitHeights:readonly number[];splitPolicy:'allow'|'strict';startPosition?:'page-top';startPositionSource?:'component'};
 type Break={kind:'pagebreak';origin:Origin};
 interface Input {schemaVersion:1;revision:string;fingerprint:string;content:{width:number;height:number};sections:{id:string;startOn:'page'|'continuous';blocks:(MeasuredBlock|Break)[]}[]}
-interface Issue {code:string;message:string;documentId:string;range:Range}
+export interface Issue {code:string;message:string;documentId:string;range:Range}
 export interface PreparationDependencies<S extends Scan> {
   scan:(source:string)=>S;
   validate:(parsed:S)=>{diagnostics:readonly {code:string;range:Range;message:string}[]};
