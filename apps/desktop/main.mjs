@@ -592,7 +592,37 @@ async function smoke(){
   await until("Array.from(document.querySelector('#preview > div')?.shadowRoot?.querySelectorAll('[data-fixed-label]')??[]).some(e=>e.dataset.componentNode==='study-label'&&e.textContent==='確認：注意')");
   const studyYaml=await readFile(join(smokeRoot,'new-book','themes','default','theme.yaml'),'utf8');
   if(!studyYaml.includes('previewStudy:')||!studyYaml.includes('usage: study'))throw Error('Study shared design not persisted');
-  console.log('PASS custom study design, typed library and actual paper; study template, real paper and source selection; typed paragraph library, binding, usage filter and detach; paragraph frame fragmentation and theme/heading coexistence; shared binding, paper, impact and detach; named library registration, rename, independent draft copy and persistence; dynamic sample and manuscript context, theme and paper; image ratio lock, non-destructive crop and history; image component asset, actual pixels, theme and paper; component duplication and lock guards; Canvas smart guide cancellation and equal-gap distribution; Canvas multi-selection, alignment, history and persisted geometry; Canvas resize, undo/redo and persisted width; Canvas actual mouse drag, undo/redo and persisted paper; Canvas numeric coordinates and actual paper rendering; nested component grouping and actual book preview; H1-specific fixed label and independent font; Component Lab measure, discard, apply and actual book rendering; book settings save and physical whole-book preview; imported project font, license metadata, theme selection, actual font rendering; Electron project creation, theme save/reopen, Electron sandbox, project open/read, React editing, bundled Noto, independent font roles, stale invalidation, measured preview, source selection and save');
+  // Create a new named library component without assigning any built-in study kind.
+  await exec("(()=>{const e=document.querySelector('#study-design-kind');e.value='custom';e.dispatchEvent(new Event('change',{bubbles:true}));})()");
+  await exec("document.querySelector('#study-design-lab').click()");
+  await until("!!document.querySelector('#lab-library-name') && !document.querySelector('#lab-library-bind')");
+  await exec("(()=>{const e=document.querySelector('#lab-library-name');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,'用語解説');e.dispatchEvent(new Event('input',{bubbles:true}));})()");
+  await exec("document.querySelector('#lab-measure').click()");
+  await until("!document.querySelector('#lab-library-add').disabled");
+  if(!await exec("Array.from(document.querySelector('#lab-preview > div').shadowRoot.querySelectorAll('[data-fixed-label]')).some(e=>e.textContent==='用語解説：サンプル')"))throw Error('Custom component sample did not use its name');
+  await exec("document.querySelector('#lab-library-add').click()");
+  await until("Array.from(document.querySelector('#lab-library-select').options).some(e=>e.textContent==='用語解説') && !document.querySelector('#open').disabled");
+  const customId=await exec("Array.from(document.querySelector('#lab-library-select').options).find(e=>e.textContent==='用語解説').value");
+  await exec("document.querySelector('#lab-cancel').click()");
+  await until("!document.querySelector('#lab-measure')");
+  await exec("(()=>{const e=document.querySelector('#study-kind');e.value="+JSON.stringify(customId)+";e.dispatchEvent(new Event('change',{bubbles:true}));})()");
+  await exec("document.querySelector('#study-append').click()");
+  await until("document.querySelector('#source').value.includes("+JSON.stringify('name="'+customId+'"')+")");
+  await exec("document.querySelector('#preview-button').click()");
+  await until("Array.from(document.querySelector('#preview > div')?.shadowRoot?.querySelectorAll('[data-fixed-label]')??[]).some(e=>e.textContent==='用語解説')");
+  await exec("document.querySelector('#save').click()");
+  await until("document.querySelector('#save').disabled && !document.querySelector('#open').disabled");
+  await exec("document.querySelector('#study-design-lab').click()");
+  await until("Array.from(document.querySelector('#lab-library-select')?.options??[]).some(e=>e.textContent==='用語解説')");
+  await exec("(()=>{const e=document.querySelector('#lab-library-select');e.value="+JSON.stringify(customId)+";e.dispatchEvent(new Event('change',{bubbles:true}));})()");
+  await exec("(()=>{const e=document.querySelector('#lab-library-name');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,'用語集');e.dispatchEvent(new Event('input',{bubbles:true}));})()");
+  await exec("document.querySelector('#lab-library-rename').click()");
+  await until("Array.from(document.querySelector('#lab-library-select').options).some(e=>e.textContent==='用語集') && !document.querySelector('#open').disabled");
+  await exec("document.querySelector('#lab-cancel').click()");
+  await until("!document.querySelector('#lab-measure')");
+  await exec("document.querySelector('#preview-book').click()");
+  await until("Array.from(document.querySelector('#preview > div')?.shadowRoot?.querySelectorAll('[data-fixed-label]')??[]).some(e=>e.textContent==='用語集')");
+  console.log('PASS independently created custom component, direct insertion, rename and paper; custom study design, typed library and actual paper; study template, real paper and source selection; typed paragraph library, binding, usage filter and detach; paragraph frame fragmentation and theme/heading coexistence; shared binding, paper, impact and detach; named library registration, rename, independent draft copy and persistence; dynamic sample and manuscript context, theme and paper; image ratio lock, non-destructive crop and history; image component asset, actual pixels, theme and paper; component duplication and lock guards; Canvas smart guide cancellation and equal-gap distribution; Canvas multi-selection, alignment, history and persisted geometry; Canvas resize, undo/redo and persisted width; Canvas actual mouse drag, undo/redo and persisted paper; Canvas numeric coordinates and actual paper rendering; nested component grouping and actual book preview; H1-specific fixed label and independent font; Component Lab measure, discard, apply and actual book rendering; book settings save and physical whole-book preview; imported project font, license metadata, theme selection, actual font rendering; Electron project creation, theme save/reopen, Electron sandbox, project open/read, React editing, bundled Noto, independent font roles, stale invalidation, measured preview, source selection and save');
   closing=true;win.destroy();await rm(smokeRoot,{recursive:true,force:true,maxRetries:10,retryDelay:100});app.exit(0);
 }
 app.on('window-all-closed',()=>{if(!SMOKE)app.quit();});
