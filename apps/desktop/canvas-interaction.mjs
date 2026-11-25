@@ -19,22 +19,47 @@ export function nudgePosition(start,key,bounds,large=false){
     default:return null;
   }
 }
+// Width is always explicit in a Canvas; only rectangles and Canvas groups have fixed height.
+// Text and flow groups must be remeasured, not scaled.
+export function resizeSize(start,delta,limits,snap=100){
+  const axis=(value,d,min,max)=>{
+    if(![value,d,min,max,snap].every(Number.isFinite)||snap<=0||min<=0||max<min)throw RangeError('Invalid canvas resize geometry');
+    if(d===0)return value;
+    return Math.max(min,Math.min(Math.floor(max),Math.round((value+d)/snap)*snap));
+  };
+  const result={width:axis(start.width,delta.x,limits.minWidth,limits.maxWidth)};
+  if(start.height!==undefined)result.height=axis(start.height,delta.y,limits.minHeight,limits.maxHeight);
+  return result;
+}
 // The same actual measured preview DOM is used for hit testing, not a second renderer.
 export function installCanvasDrag(root,{lookup,onSelect,onActive,onCommit}){
   const cleanups=[];let active=null,disposed=false;
-  const restore=()=>{if(active){active.el.style.left=active.left;active.el.style.top=active.top;active.el.removeAttribute('data-lab-dragging');}};
+  const restore=()=>{if(active){active.el.style.left=active.left;active.el.style.top=active.top;active.el.removeAttribute('data-lab-dragging');if(active.ghost){active.ghost.style.display='none';}}};
   function end(commit,event){
     const a=active;if(!a||event&&event.pointerId!==a.pointerId)return;
     restore();active=null;
     try{if(a.el.hasPointerCapture(a.pointerId))a.el.releasePointerCapture(a.pointerId);}catch{}
     onActive(false);
-    if(commit&&a.position&&(a.position.x!==a.start.x||a.position.y!==a.start.y))onCommit(a.id,a.position);
+    if(commit&&a.position&&Object.keys(a.position).some(k=>a.position[k]!==a.start[k]))onCommit(a.id,a.position);
   }
   for(const canvas of root.querySelectorAll('[data-component-canvas]')){
     for(const el of canvas.children){
       const id=el.dataset.componentNode;if(!id)continue;
       const entry=lookup(id);if(!entry||entry.parent?.direction!=='canvas')continue;
       el.dataset.labDraggable='true';el.style.cursor='grab';el.style.touchAction='none';el.style.userSelect='none';
+      // These editor-only children never enter the book preview or the saved definition.
+      const fixedHeight=entry.node.type==='rect'||(entry.node.type==='group'&&entry.node.direction==='canvas');
+      const handle=el.ownerDocument.createElement('span');
+      handle.dataset.labResizeHandle=fixedHeight?'both':'width';
+      handle.setAttribute('aria-hidden','true');
+      handle.title=fixedHeight?'幅と高さを変更':'幅を変更（高さは自動）';
+      handle.style.cssText='all:initial;position:absolute;display:none;box-sizing:border-box;z-index:2147483647;right:0;width:10px;height:10px;background:#fff;border:2px solid #2679c7;touch-action:none;'+(fixedHeight?'bottom:0;cursor:nwse-resize;':'top:50%;transform:translateY(-50%);cursor:ew-resize;');
+      const ghost=el.ownerDocument.createElement('span');
+      ghost.setAttribute('aria-hidden','true');
+      ghost.style.cssText='all:initial;position:absolute;display:none;box-sizing:border-box;left:0;top:0;border:2px dashed #2679c7;pointer-events:none;z-index:2147483646;';
+      el.append(ghost,handle);
+      cleanups.push(()=>{ghost.remove();handle.remove();});
+      el.removeAttribute('aria-hidden');
       el.tabIndex=0;
       el.setAttribute('aria-label',id+'：矢印キーで移動、Shiftで1mm');
       const start={x:entry.node.x,y:entry.node.y},pad=entry.parent.padding;
@@ -57,7 +82,13 @@ export function installCanvasDrag(root,{lookup,onSelect,onActive,onCommit}){
         if(!Number.isFinite(sx)||!Number.isFinite(sy)||sx<=0||sy<=0)return;
         const b=bounds();
         if(![r.width,r.height,b.x,b.y].every(Number.isFinite))return;
-        active={id,el,pointerId:e.pointerId,cx:e.clientX,cy:e.clientY,sx,sy,start,bounds:b,left:el.style.left,top:el.style.top,position:null};
+        const resizing=e.target===handle;
+        const size={width:entry.node.width,...(fixedHeight?{height:entry.node.height}:{})};
+        const innerW=Math.floor(parseFloat(canvas.style.width)*UM_PER_CSS_PX+.1)-2*pad-start.x;
+        const innerH=Math.floor(parseFloat(canvas.style.height)*UM_PER_CSS_PX+.1)-2*pad-start.y;
+        const minimum=entry.node.type==='group'?2*entry.node.padding+1:1;
+        const limits={minWidth:Math.max(minimum,Math.min(100,size.width)),maxWidth:Math.min(100000,Math.max(size.width,innerW)),minHeight:Math.max(minimum,Math.min(100,size.height??100)),maxHeight:Math.min(100000,Math.max(size.height??0,innerH))};
+        active={id,el,pointerId:e.pointerId,cx:e.clientX,cy:e.clientY,sx,sy,start:resizing?size:start,bounds:b,left:el.style.left,top:el.style.top,position:null,resizing,limits,ghost};
         try{el.setPointerCapture(e.pointerId);}catch{active=null;return;}
         el.dataset.labDragging='true';el.focus({preventScroll:true});onSelect(id);onActive(true);
       };
@@ -66,6 +97,13 @@ export function installCanvasDrag(root,{lookup,onSelect,onActive,onCommit}){
         e.preventDefault();e.stopPropagation();
         const delta={x:(e.clientX-a.cx)*UM_PER_CSS_PX/a.sx,y:(e.clientY-a.cy)*UM_PER_CSS_PX/a.sy};
         if(!a.position&&Math.hypot(e.clientX-a.cx,e.clientY-a.cy)<2)return;
+        if(a.resizing){
+          a.position=resizeSize(a.start,delta,a.limits);
+          ghost.style.display='block';
+          ghost.style.width=a.position.width/UM_PER_CSS_PX+'px';
+          ghost.style.height=a.position.height===undefined?el.style.height:a.position.height/UM_PER_CSS_PX+'px';
+          return;
+        }
         a.position=dragPosition(a.start,delta,a.bounds);
         el.style.left=(parseFloat(a.left)+(a.position.x-a.start.x)/UM_PER_CSS_PX)+'px';
         el.style.top=(parseFloat(a.top)+(a.position.y-a.start.y)/UM_PER_CSS_PX)+'px';
@@ -82,6 +120,7 @@ export function highlightCanvasSelection(root,id){
     const selected=el.dataset.componentNode===id;
     el.style.outline=selected?'2px solid #2679c7':'';
     el.style.outlineOffset=selected?'-1px':'';
+    for(const child of el.children)if(child.dataset.labResizeHandle)child.style.display=selected?'block':'none';
   }
 }
 
