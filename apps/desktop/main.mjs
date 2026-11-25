@@ -326,7 +326,10 @@ async function smoke(){
   await until("!!document.querySelector('#lab-measure')");
   await exec("document.querySelector('[data-lab-node=content]').click()");
   await until("document.querySelector('#lab-duplicate').disabled");
-  await exec("Array.from(document.querySelectorAll('[data-lab-node]')).find(e=>e.textContent.includes('装飾矩形')&&e.dataset.labNode.startsWith('rect-')).click()");
+  await exec("document.querySelector('#lab-measure').click()");
+  await until("!document.querySelector('#lab-apply').disabled");
+  const directRectId=await exec("Array.from(document.querySelector('#lab-preview > div').shadowRoot.querySelector('[data-component-canvas]').children).find(e=>e.dataset.componentNode&&!e.hasAttribute('data-content-slot')&&!e.hasAttribute('data-fixed-label')&&!e.hasAttribute('data-component-group')).dataset.componentNode");
+  await exec("Array.from(document.querySelectorAll('[data-lab-node]')).find(e=>e.dataset.labNode==="+JSON.stringify(directRectId)+").click()");
   await until("!document.querySelector('#lab-duplicate').disabled && !!document.querySelector('#lab-canvas-y')");
   const originalId=await exec("document.querySelector('[data-lab-node].active').dataset.labNode");
   await exec("document.querySelector('#lab-duplicate').click()");
