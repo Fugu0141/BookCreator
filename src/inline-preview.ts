@@ -37,14 +37,14 @@ export function serializeInlineStyle(text:string,style:InlineStyle,preferSpan=fa
   const attributes=[s.fontWeight===undefined?'':' weight="'+s.fontWeight+'"',s.italic?' italic="true"':'',s.underline?' underline="true"':'',s.color?' color="'+s.color+'"':'',s.fontFamily?' font="'+inlineFontId(s.fontFamily)+'"':'',s.fontSize!==undefined?' font-size="'+(s.fontSize/1000)+'mm"':'',s.baseline?' baseline="'+s.baseline+'"':''].join('');
   return {raw:':style{text="'+text+'"'+attributes+'}',innerOffset:13};
 }
-export interface InlineSourceSegment {start:number;end:number;rawStart:number;outerStart:number;outerEnd:number}
+export interface InlineSourceSegment {start:number;end:number;rawStart:number;outerStart:number;outerEnd:number;derived?:true}
 export interface InlineSourceMap {length:number;segments:InlineSourceSegment[]}
 const allowed=(s:string)=>/^[\p{L}\p{M}\p{N} .,!?、。・「」『』（）！？　]+$/u.test(s);
 const whitespace=(c:string)=>!c||/\s/u.test(c);
 const punctuation=(c:string)=>/[\p{P}\p{S}]/u.test(c);
 const left=(a:string,b:string)=>!whitespace(b)&&(!punctuation(b)||whitespace(a)||punctuation(a));
 const right=(a:string,b:string)=>!whitespace(a)&&(!punctuation(a)||whitespace(b)||punctuation(b));
-export function parsePreviewInline(raw:string,offset=0,validateMath?:(formula:string)=>unknown){
+export function parsePreviewInline(raw:string,offset=0,validateMath?:(formula:string)=>unknown,resolveReference?:(token:string,offset:number)=>string){
   if(typeof raw!=='string'||!raw.length||raw.length>10000||!Number.isSafeInteger(offset)||offset<0||!Number.isSafeInteger(offset+raw.length)||/\r(?!\n)/.test(raw)||(raw.match(/\n/g)?.length??0)>255)throw RangeError('Unsupported inline source');
   let text='',cursor=0;
   const inlineStyles:InlineRun[]=[],inlineMath:InlineMathAtom[]=[],segments:InlineSourceSegment[]=[];
@@ -62,6 +62,16 @@ export function parsePreviewInline(raw:string,offset=0,validateMath?:(formula:st
     let i=0;
     while(i<line.length){
       const start=i;
+      if(line.startsWith(':ref{',i)){
+        if(!resolveReference)throw RangeError('Reference resolution unavailable');
+        const match=/^:ref\{(?:[a-z-]+="[^"{}\r\n]*" ?)+\}/.exec(line.slice(i));
+        if(!match)throw RangeError('Invalid reference token');
+        const token=match[0],label=resolveReference(token,offset+cursor+i);
+        if(typeof label!=='string'||!label.length||label.length>64||!/^(?:式 )?\([1-9][0-9]{0,5}\.[1-9][0-9]{0,5}\)$/.test(label))throw RangeError('Invalid resolved equation label');
+        const start=text.length;text+=label;
+        segments.push({start,end:text.length,rawStart:offset+cursor+i,outerStart:offset+cursor+i,outerEnd:offset+cursor+i+token.length,derived:true});
+        i+=token.length;continue;
+      }
       if(line.startsWith('\\$',i)){
         if(!validateMath)throw RangeError('Escaped dollar requires supported inline math context');
         append(cursor+i+1,cursor+i+2,cursor+i,cursor+i+2);i+=2;continue;
@@ -111,7 +121,7 @@ export function parsePreviewInline(raw:string,offset=0,validateMath?:(formula:st
         continue;
       }
       if(line[i]!=='*'){
-        while(i<line.length&&line[i]!=='*'&&line[i]!=='^'&&line[i]!=='~'&&line[i]!=='$'&&!line.startsWith('\\$',i)&&!line.startsWith(':style{',i))i++;
+        while(i<line.length&&line[i]!=='*'&&line[i]!=='^'&&line[i]!=='~'&&line[i]!=='$'&&!line.startsWith('\\$',i)&&!line.startsWith(':style{',i)&&!line.startsWith(':ref{',i))i++;
         if(!allowed(line.slice(start,i)))throw RangeError('Unsupported inline syntax');
         append(cursor+start,cursor+i);continue;
       }
@@ -138,5 +148,5 @@ export function inlineSourceRange(map:InlineSourceMap,start:number,end:number){
   if(!Number.isSafeInteger(start)||!Number.isSafeInteger(end)||start<0||end<=start||end>map.length)throw RangeError('Invalid logical source range');
   const first=map.segments.find(s=>s.start<=start&&start<s.end),last=map.segments.find(s=>s.start<end&&end<=s.end);
   if(!first||!last)throw RangeError('Incomplete inline source map');
-  return {start:start===first.start?first.outerStart:first.rawStart+start-first.start,end:end===last.end?last.outerEnd:last.rawStart+end-last.start};
+  return {start:first.derived||start===first.start?first.outerStart:first.rawStart+start-first.start,end:last.derived||end===last.end?last.outerEnd:last.rawStart+end-last.start};
 }
