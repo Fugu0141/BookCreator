@@ -247,3 +247,8 @@ The source toolbar adds indent/outdent for one existing list item. The exact BCM
 ### Whole-run list conversion (experimental)
 
 Selecting all bodies in an isolated run of 2–128 adjacent top-level raw lines enables the same bullet/ordered toolbar buttons for batch conversion. An entire supported plain paragraph run becomes one item per original source line; a homogeneous root list can change kind or remove its markers. New ordered markers use 1, 2, ...; existing numbers are intentionally regenerated only when converting to ordered. Original inline markup, body text, LF/CRLF, and surrounding source remain unchanged. Selection is restored across the converted run. The planner checks full scanner ranges and compiles both versions of the isolated run before applying one exact BCM patch. Partial runs, blank-separated selections, nested lists, mixed marker types, adjacent list groups, and protected code/directive contexts are refused. This does not move multiple items between levels or edit subtree structures. The single-item indent/outdent operation remains independently limited to one supported nested level. Core/BCM/Electron regression tests added; latest CI pending.
+
+
+### M04 — BCM 独立数式プレビュー（実験的）
+
+既存 BCM scanner が認識した `$$` フェンスのうち、本文が1行の独立数式を対象にする。LF/CRLFと式中の空白を保持し、式本体のUTF-16範囲を厳密に対応付ける。Engineの `parsePreviewMath` をホストから注入して検証し、未知コマンド・空式・複数行・未閉鎖フェンス・上限超過・validator未設定は診断で拒否。単独／全冊プレビュー共通で `displayMath: true` と `strict` を渡し、通常インライン書式や段落フレームを適用しない。プレビュー選択はレンダリングされたグリフではなく原稿の式本体へ戻る。フォントはEngineのnative MathMLフォールバック、初期サイズ4.2mm。GUI数式挿入、インライン数式、部品内数式、数式番号、専用数式フォントと出版検証は後続。CI未確認。
