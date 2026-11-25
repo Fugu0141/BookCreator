@@ -168,6 +168,17 @@ export async function openWorkspace(manifestPath){
     const r=await readRegular(path,MAX_SOURCE);
     return {f,...r,info:sourceInfo(r.bytes),revision:hash(r.bytes)};
   }
+  // Conservative deletion guard: an ID anywhere in a listed manuscript may be a reference.
+  // Never guess from a partially supported parser or silently ignore unreadable files.
+  async function assertNoManuscriptReference(id){
+    if(files.size>128)fail('THEME','Too many manuscripts to verify component deletion');
+    let total=0;
+    for(const key of files.keys()){
+      const r=await current(key);total+=r.bytes.length;
+      if(total>16*1024*1024)fail('THEME','Manuscript reference check exceeds size limit');
+      if(r.info.text.includes(id))fail('THEME','Cannot delete a component referenced in manuscript '+key);
+    }
+  }
   async function readTheme(){
     let path;
     try{path=await inside(root,summary.themePath);}catch(e){if(e.code==='ENOENT')return {editable:false,roles:null,revision:null,message:'Theme file missing; preview defaults only'};throw e;}
@@ -196,10 +207,12 @@ export async function openWorkspace(manifestPath){
       try{({studyDesigns,studyBindings}=resolveStudyDesigns(doc.toJS({maxAliasCount:0}).previewStudy,library));
         const faces=await fontStore.list();for(const design of Object.values(studyDesigns))checkComponentFonts(design,faces);await checkComponentImages(Object.values(studyDesigns),imageStore);
       }catch(e){studyDesigns={};studyEditable=false;studyMessage=e.message;}
-      return {editable:true,roles,studyDesigns,studyBindings,studyEditable,studyMessage,paragraphDesign,paragraphBinding,paragraphEditable,paragraphMessage,headingDesign,headingLevels,localHeading,localLevels,bindings,componentEditable,componentMessage,library,libraryEditable,libraryMessage,revision:hash(r.bytes),path,doc,...r};}
+      const studyResourceErrors={};
+      for(const e of library.entries.filter(e=>e.usage==='study'))try{checkComponentFonts(e.design,await fontStore.list());await checkComponentImages([e.design],imageStore);}catch(err){studyResourceErrors[e.id]=err.message;}
+      return {editable:true,roles,studyResourceErrors,studyDesigns,studyBindings,studyEditable,studyMessage,paragraphDesign,paragraphBinding,paragraphEditable,paragraphMessage,headingDesign,headingLevels,localHeading,localLevels,bindings,componentEditable,componentMessage,library,libraryEditable,libraryMessage,revision:hash(r.bytes),path,doc,...r};}
     catch(e){if(e.code==='THEME')return {editable:false,roles:null,revision:null,message:e.message};throw e;}
   }
-  function publicTheme(t){return {editable:t.editable,roles:t.roles,revision:t.revision,studyDesigns:t.studyDesigns??{},studyBindings:t.studyBindings??{},studyEditable:t.studyEditable===true,studyMessage:t.studyMessage,paragraphDesign:t.paragraphDesign??null,paragraphBinding:t.paragraphBinding??null,paragraphEditable:t.paragraphEditable===true,paragraphMessage:t.paragraphMessage,headingDesign:t.headingDesign??null,headingLevels:t.headingLevels??{},componentMessage:t.componentMessage,componentEditable:t.componentEditable===true,bindings:t.bindings??{},library:t.library??emptyComponentLibrary(),libraryEditable:t.libraryEditable===true,libraryMessage:t.libraryMessage,...(t.message?{message:t.message}:{})};}
+  function publicTheme(t){return {editable:t.editable,roles:t.roles,revision:t.revision,studyResourceErrors:t.studyResourceErrors??{},studyDesigns:t.studyDesigns??{},studyBindings:t.studyBindings??{},studyEditable:t.studyEditable===true,studyMessage:t.studyMessage,paragraphDesign:t.paragraphDesign??null,paragraphBinding:t.paragraphBinding??null,paragraphEditable:t.paragraphEditable===true,paragraphMessage:t.paragraphMessage,headingDesign:t.headingDesign??null,headingLevels:t.headingLevels??{},componentMessage:t.componentMessage,componentEditable:t.componentEditable===true,bindings:t.bindings??{},library:t.library??emptyComponentLibrary(),libraryEditable:t.libraryEditable===true,libraryMessage:t.libraryMessage,...(t.message?{message:t.message}:{})};}
   function settingsView(){return {revision:manifestHash,page:summary.pageSettings,sections:structuredClone(summary.sections),message:summary.pageMessage};}
   return {
     get summary(){return structuredClone(summary);},
@@ -288,7 +301,7 @@ export async function openWorkspace(manifestPath){
       try{
         await checkManifest();const t=await readTheme();
         if(!t.editable||!t.libraryEditable||t.revision!==expectedRevision)fail('CONFLICT','Theme or library changed or unsupported');
-        const entries=structuredClone(t.library.entries);
+        const entries=structuredClone(t.library.entries);let checkManuscripts=false;
         if(action.type==='add'){
           const usage=Object.hasOwn(action,'usage')?action.usage:'heading';
           if(!['heading','paragraph','study'].includes(usage))fail('INPUT','Unsupported component usage');
@@ -298,6 +311,8 @@ export async function openWorkspace(manifestPath){
           const i=entries.findIndex(e=>e.id===action.id);if(i<0)fail('INPUT','Component not found');
           if(action.type==='delete'){
             if(!t.componentEditable||!t.paragraphEditable||!t.studyEditable||Object.values(t.bindings).includes(action.id)||t.paragraphBinding===action.id||Object.values(t.studyBindings).includes(action.id))fail('THEME','Cannot delete a referenced component or one with unresolved bindings');
+            checkManuscripts=entries[i].usage==='study';
+            if(checkManuscripts)await assertNoManuscriptReference(action.id);
             entries.splice(i,1);
           }
           else if(action.type==='rename')entries[i].name=action.name;
@@ -337,6 +352,7 @@ export async function openWorkspace(manifestPath){
         try{await f.writeFile(bytes);await f.chmod(t.mode);await f.sync();}finally{await f.close();}
         await checkManifest();const current=await readTheme();
         if(!current.editable||!current.libraryEditable||current.path!==t.path||current.revision!==expectedRevision)fail('CONFLICT','Theme changed before replacement');
+        if(checkManuscripts)await assertNoManuscriptReference(action.id);
         await rename(temp,t.path);temp=undefined;
         return publicTheme(await readTheme());
       }finally{if(temp)await unlink(temp).catch(()=>{});busy=false;}
