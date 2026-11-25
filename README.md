@@ -75,3 +75,5 @@ Component Lab supports shared and H1–H6-specific heading designs, fixed labels
 Component Lab supports nested row/column groups with group/ungroup, width, padding, gap and background. Experimental strict heading components only.
 
 Nested groups can use bounded free-position Canvas with explicit physical X/Y coordinates and fixed height. Numeric editing only; whole-page Canvas is future work.
+
+Component Lab supports moving measured Canvas children by pointer drag and local draft undo/redo. Release commits one edit; Apply still requires a successful measurement.

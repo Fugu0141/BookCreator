@@ -218,7 +218,32 @@ async function smoke(){
   await exec("document.querySelector('#preview-book').click()");
   await until("!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-component-canvas]')");
   if(!await exec("Math.abs(parseFloat(document.querySelector('#preview > div').shadowRoot.querySelector('[data-component-canvas] [data-content-slot]').style.left)-3*96/25.4)<.02"))throw Error('Canvas x not preserved in book');
-  console.log('PASS Canvas numeric coordinates and actual paper rendering; nested component grouping and actual book preview; H1-specific fixed label and independent font; Component Lab measure, discard, apply and actual book rendering; book settings save and physical whole-book preview; imported project font, license metadata, theme selection, actual font rendering; Electron project creation, theme save/reopen, Electron sandbox, project open/read, React editing, bundled Noto, independent font roles, stale invalidation, measured preview, source selection and save');
+  await exec("document.querySelector('#component-lab').click()");
+  await until("!!document.querySelector('#lab-measure')");
+  await exec("document.querySelector('[data-lab-node=content]').click()");
+  await until("document.querySelector('#lab-canvas-x')?.value==='3'");
+  await exec("document.querySelector('#lab-measure').click()");
+  await until("!document.querySelector('#lab-apply').disabled");
+  // Actual Electron mouse events against the measured shadow DOM.
+  const point=await exec("(()=>{const el=document.querySelector('#lab-preview > div').shadowRoot.querySelector('[data-content-slot][data-lab-draggable]');el.scrollIntoView({block:'center',inline:'center'});const r=el.getBoundingClientRect();return {x:Math.round(r.left+8),y:Math.round(r.top+8)};})()");
+  win.webContents.sendInputEvent({type:'mouseMove',...point});
+  win.webContents.sendInputEvent({type:'mouseDown',...point,button:'left',clickCount:1});
+  win.webContents.sendInputEvent({type:'mouseMove',x:point.x+19,y:point.y+4,button:'left'});
+  win.webContents.sendInputEvent({type:'mouseUp',x:point.x+19,y:point.y+4,button:'left',clickCount:1});
+  await until("Number(document.querySelector('#lab-canvas-x')?.value)>3 && !document.querySelector('#lab-apply').disabled");
+  const draggedX=await exec("Number(document.querySelector('#lab-canvas-x').value)");
+  await exec("document.querySelector('#lab-undo').click()");
+  await until("document.querySelector('#lab-canvas-x')?.value==='3' && document.querySelector('#lab-apply').disabled");
+  await exec("document.querySelector('#lab-redo').click()");
+  await until("Number(document.querySelector('#lab-canvas-x')?.value)==="+draggedX+" && document.querySelector('#lab-apply').disabled");
+  await exec("document.querySelector('#lab-measure').click()");
+  await until("!document.querySelector('#lab-apply').disabled");
+  await exec("document.querySelector('#lab-apply').click()");
+  await until("!document.querySelector('#open').disabled && !document.querySelector('#lab-measure')");
+  await exec("document.querySelector('#preview-book').click()");
+  await until("!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-component-canvas]')");
+  if(!await exec("Math.abs(parseFloat(document.querySelector('#preview > div').shadowRoot.querySelector('[data-component-canvas] [data-content-slot]').style.left)-"+draggedX+"*96/25.4)<.02"))throw Error('Dragged coordinate not persisted');
+  console.log('PASS Canvas actual mouse drag, undo/redo and persisted paper; Canvas numeric coordinates and actual paper rendering; nested component grouping and actual book preview; H1-specific fixed label and independent font; Component Lab measure, discard, apply and actual book rendering; book settings save and physical whole-book preview; imported project font, license metadata, theme selection, actual font rendering; Electron project creation, theme save/reopen, Electron sandbox, project open/read, React editing, bundled Noto, independent font roles, stale invalidation, measured preview, source selection and save');
   closing=true;win.destroy();await rm(smokeRoot,{recursive:true,force:true});app.exit(0);
 }
 app.on('window-all-closed',()=>{if(!SMOKE)app.quit();});

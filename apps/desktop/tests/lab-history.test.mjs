@@ -1,0 +1,24 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {createHistory,commitHistory,undoHistory,redoHistory} from '../lab-history.mjs';
+import {dragPosition} from '../canvas-interaction.mjs';
+test('history preserves original and redo, new edits discard future',()=>{
+  const initial={children:[{id:'a',x:0,y:0}]},a=createHistory(initial),b=commitHistory(a,{children:[{id:'a',x:3000,y:500}]}),c=commitHistory(b,{children:[{id:'a',x:8000,y:1500}]});
+  assert.equal(undoHistory(c).present,b.present);
+  assert.equal(redoHistory(undoHistory(c)).present,c.present);
+  assert.equal(undoHistory(undoHistory(c)).present,initial);
+  assert.equal(commitHistory(c,structuredClone(c.present)),c);
+  assert.deepEqual(commitHistory(undoHistory(c),{children:[]}).future,[]);
+  assert.equal(initial.children[0].x,0);
+});
+test('history retains at most 64 past snapshots',()=>{
+  let h=createHistory({n:0});for(let i=1;i<=100;i++)h=commitHistory(h,{n:i});
+  assert.equal(h.past.length,64);
+  for(let i=0;i<100;i++)h=undoHistory(h);
+  assert.equal(h.present.n,36);
+});
+test('drag snaps and clamps to measured canvas bounds',()=>{
+  assert.deepEqual(dragPosition({x:3000,y:5000},{x:1457,y:-333},{x:20000,y:30000}),{x:4500,y:4700});
+  assert.deepEqual(dragPosition({x:3000,y:5000},{x:-99999,y:99999},{x:20000,y:25678}),{x:0,y:25678});
+  assert.throws(()=>dragPosition({x:0,y:0},{x:NaN,y:0},{x:10,y:10}),RangeError);
+});
