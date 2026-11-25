@@ -2,11 +2,12 @@ import type {PreviewTextStyle,PreviewFontFamily} from './preview-typography.js';
 // Persist stable resource IDs, not browser CSS identifiers.
 export interface ComponentFont {id:string;weight:number}
 export interface FixedLabel {id:string;type:'label';width:number|'fill';text:string;fontSize:number;lineHeight:number;color:string;font?:ComponentFont}
+export type HeadingChild={id:string;type:'content'}|{id:string;type:'rect';width:number|'fill';height:number;color:string}|FixedLabel|{id:string;type:'group';width:number|'fill';direction:'row'|'column';gap:number;padding:number;background:string;children:HeadingChild[]};
 export interface HeadingDesign {
   schemaVersion:1;
   fontSize:number; lineHeight:number; font?:ComponentFont;
   direction:'row'|'column'; gap:number; padding:number; background:string; textColor:string;
-  children:({id:string;type:'content'}|{id:string;type:'rect';width:number|'fill';height:number;color:string}|FixedLabel)[];
+  children:HeadingChild[];
 }
 export type HeadingLevel='1'|'2'|'3'|'4'|'5'|'6';
 export type HeadingLevels=Partial<Record<HeadingLevel,HeadingDesign>>;
@@ -23,18 +24,25 @@ export function validateHeadingDesign(value:unknown):HeadingDesign{
   const fail=()=>{throw RangeError('Invalid experimental heading component');};
   if(!record(value)||!exact(value,['schemaVersion','fontSize','lineHeight','direction','gap','padding','background','textColor','children'],['font'])||value.schemaVersion!==1||!len(value.fontSize,2000,30000)||!line(value.lineHeight)||!['row','column'].includes(String(value.direction))||!len(value.gap)||!len(value.padding)||!color(value.background)||!color(value.textColor)||!Array.isArray(value.children)||value.children.length<1||value.children.length>8)throw fail();
   if(Object.hasOwn(value,'font'))validateFont(value.font);
-  const ids=new Set<string>();let slots=0;
-  for(const child of value.children){
+  const ids=new Set<string>();let slots=0,count=0;
+  function visit(children:unknown[],depth:number){
+  if(depth>4||children.length<1||children.length>8)throw fail();
+  for(const child of children){
+    if(++count>32)throw fail();
     if(!record(child)||typeof child.id!=='string'||!/^[-A-Za-z0-9_]{1,64}$/.test(child.id)||child.id==='root'||ids.has(child.id))throw fail();
     ids.add(child.id);
     if(child.type==='content'&&exact(child,['id','type'])){slots++;continue;}
-    if(!color(child.color)||!(child.width==='fill'?value.direction==='column':len(child.width,1)))throw fail();
+    if(!(child.width==='fill'||len(child.width,1)))throw fail();
+    if(child.type==='group'&&exact(child,['id','type','width','direction','gap','padding','background','children'])&&['row','column'].includes(String(child.direction))&&len(child.gap)&&len(child.padding)&&color(child.background)&&Array.isArray(child.children)){visit(child.children,depth+1);continue;}
+    if(!color(child.color))throw fail();
     if(child.type==='rect'&&exact(child,['id','type','width','height','color'])&&len(child.height,1))continue;
     if(child.type==='label'&&exact(child,['id','type','width','text','fontSize','lineHeight','color'],['font'])&&typeof child.text==='string'&&child.text.length>=1&&child.text.length<=256&&!/[\p{Cc}\p{Cs}\p{Cf}\p{Zl}\p{Zp}]/u.test(child.text)&&len(child.fontSize,2000,30000)&&line(child.lineHeight)){
       if(Object.hasOwn(child,'font'))validateFont(child.font);continue;
     }
     throw fail();
   }
+  }
+  visit(value.children,0);
   if(slots!==1)throw fail();
   return structuredClone(value) as unknown as HeadingDesign;
 }
@@ -50,9 +58,12 @@ function resolveFont(font:ComponentFont|undefined,inherited:PreviewTextStyle):Pr
 export function compileHeadingDesign(value:HeadingDesign,inherited:PreviewTextStyle={fontFamily:'sans-serif',fontWeight:400}){
   const {schemaVersion:_,fontSize,lineHeight,font,children,...rest}=validateHeadingDesign(value);
   const textStyle=resolveFont(font,inherited);
-  const component={...rest,children:children.map(child=>{
+  type CompiledChild=Exclude<HeadingChild,FixedLabel|{type:'group'}>|(Omit<FixedLabel,'font'>&PreviewTextStyle)|{id:string;type:'group';width:number|'fill';direction:'row'|'column';gap:number;padding:number;background:string;children:CompiledChild[]};
+  function compile(child:HeadingChild):CompiledChild{
+    if(child.type==='group')return {...child,children:child.children.map(compile)};
     if(child.type!=='label')return child;
     const {font,...label}=child;return {...label,...resolveFont(font,inherited)};
-  })};
+  }
+  const component={...rest,children:children.map(compile)};
   return {fontSize,lineHeight,textStyle,component};
 }

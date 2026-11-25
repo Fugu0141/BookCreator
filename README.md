@@ -71,3 +71,5 @@ Desktop supports physical paper and margins from book.yaml, manuscript reorderin
 Component Lab prototype edits a shared heading component (row/column, text slot, decorative rectangles, size, gap, padding, color) with actual measurement and theme apply/discard. It is not the complete component editor yet.
 
 Component Lab supports shared and H1–H6-specific heading designs, fixed labels and independent font selection. Imported static faces use registered project IDs and exact weights.
+
+Component Lab supports nested row/column groups with group/ungroup, width, padding, gap and background. Experimental strict heading components only.

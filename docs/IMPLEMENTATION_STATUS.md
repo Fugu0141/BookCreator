@@ -51,3 +51,7 @@ Added a shared strict flat row/column heading design compiler, live measured sam
 ## M04 — per-level components and fixed labels
 
 H1–H6 design overrides with shared fallback, fixed label elements with independent font/color/size, content font override and reset. Existing schema v1 migrates to v2 on save. Theme validation and real browser/Electron tests added; CI pending. No nested layouts or arbitrary component binding yet.
+
+## M04 — nested component groups
+
+Recursive row/column groups with stable IDs, group/ungroup, sibling reorder, physical width/spacing/background, recursive font validation and actual measured page rendering. Existing designs remain readable. CI pending; no Canvas, dynamic slots or arbitrary component registry.

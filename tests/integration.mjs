@@ -127,3 +127,13 @@ test('level-specific heading style and independent label font resolve without so
   assert.equal(h2.request.fontFamily,'serif');assert.equal(h2.component.children[0].fontFamily,'monospace');
   assert.equal(h2.request.text,'小見出し');assert.equal(body.component,undefined);
 });
+
+test('nested component compiler resolves label fonts recursively',()=>{
+  const shared=defaultHeadingDesign();
+  const group={id:'group',type:'group',direction:'column',width:'fill',gap:1000,padding:1000,background:'#ffffff',children:[{id:'label',type:'label',width:'fill',text:'SECTION',fontSize:3000,lineHeight:1.5,color:'#123456',font:{id:'system-monospace',weight:400}},{id:'content',type:'content'}]};
+  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds};
+  const doc={documentId:'a',revision:'1',source:'# 見出し\n\n本文。\n',startOn:'page'};
+  const r=prepareBookBrowserPreview([doc],'1','nested',{width:100000,height:100000},deps,undefined,{...shared,children:[shared.children[0],group]});
+  assert.deepEqual(r.diagnostics,[]);
+  assert.equal(r.options.sections[0].blocks[0].component.children[1].children[0].fontFamily,'monospace');
+});

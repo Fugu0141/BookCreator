@@ -132,3 +132,16 @@ test('per-level registry preserves shared design and validates component font ID
   const reset=await w.saveHeadingDesign(second.revision,null,'2');
   assert.deepEqual(reset.headingLevels,{});assert.deepEqual(reset.headingDesign,shared);
 });
+
+test('nested component storage validates global content count and nested font references',async t=>{
+  const {defaultHeadingDesign}=await import('../../../dist/preview-component.js');
+  const parent=await mkdtemp(join(tmpdir(),'bc-nested-'));t.after(()=>rm(parent,{recursive:true,force:true}));
+  const w=await createProject(parent,{title:'Nested',folder:'book',size:'A5'}),initial=await w.typography(),shared=defaultHeadingDesign();
+  const label={id:'label',type:'label',width:'fill',text:'CHAPTER',fontSize:3000,lineHeight:1.5,color:'#315b86',font:{id:'system-monospace',weight:400}};
+  const group={id:'group',type:'group',direction:'column',width:'fill',gap:1000,padding:1000,background:'#ffffff',children:[label,{id:'content',type:'content'}]};
+  const design={...shared,children:[shared.children[0],group]};
+  const saved=await w.saveHeadingDesign(initial.revision,design,'2');
+  assert.deepEqual((await (await openWorkspace(join(parent,'book','book.yaml'))).typography()).headingLevels['2'],design);
+  await assert.rejects(w.saveHeadingDesign(saved.revision,{...design,children:[...design.children,{id:'duplicate',type:'content'}]},'2'),RangeError);
+  await assert.rejects(w.saveHeadingDesign(saved.revision,{...design,children:[{...group,children:[{...label,font:{id:'font-'+'a'.repeat(64),weight:400}},group.children[1]]}]},'2'),{code:'THEME'});
+});
