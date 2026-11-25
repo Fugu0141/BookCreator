@@ -3,7 +3,10 @@ import type {PreviewTextStyle,PreviewFontFamily} from './preview-typography.js';
 export interface ComponentFont {id:string;weight:number}
 export interface FixedLabel {x?:number;y?:number;id:string;type:'label';width:number|'fill';text:string;fontSize:number;lineHeight:number;color:string;font?:ComponentFont}
 export const dynamicFields=['chapter-number','chapter-title','heading-number','heading-title','heading-level'] as const;
-export type DynamicField=typeof dynamicFields[number];
+export const studyDynamicFields=['study-label','study-title','study-kind'] as const;
+export const studyKinds=['note','tip','warning','important','example','exercise','explanation'] as const;
+export type StudyKind=typeof studyKinds[number];
+export type DynamicField=typeof dynamicFields[number]|typeof studyDynamicFields[number];
 export type HeadingContext=Readonly<Partial<Record<DynamicField,string>>>;
 export type DynamicLabel=Omit<FixedLabel,'type'|'text'>&{type:'dynamic';field:DynamicField;prefix:string;suffix:string;fallback:string};
 export interface ImageCrop {left:number;top:number;right:number;bottom:number}
@@ -29,7 +32,7 @@ function validCrop(v:unknown){
 function validateFont(v:unknown){
   if(!record(v)||!exact(v,['id','weight'])||typeof v.id!=='string'||!(Object.hasOwn(builtin,v.id)||/^font-[a-f0-9]{64}$/.test(v.id))||!len(v.weight,100,900))throw RangeError('Invalid component font ID or weight');
 }
-export function validateHeadingDesign(value:unknown):HeadingDesign{
+export function validateHeadingDesign(value:unknown,scope:'heading'|'study'='heading'):HeadingDesign{
   const fail=()=>{throw RangeError('Invalid experimental heading component');};
   if(!record(value)||!exact(value,['schemaVersion','fontSize','lineHeight','direction','gap','padding','background','textColor','children'],['font'])||value.schemaVersion!==1||!len(value.fontSize,2000,30000)||!line(value.lineHeight)||!['row','column'].includes(String(value.direction))||!len(value.gap)||!len(value.padding)||!color(value.background)||!color(value.textColor)||!Array.isArray(value.children)||value.children.length<1||value.children.length>8)throw fail();
   if(Object.hasOwn(value,'font'))validateFont(value.font);
@@ -48,7 +51,7 @@ export function validateHeadingDesign(value:unknown):HeadingDesign{
     if(child.type==='image'&&exact(child,['id','type','width','height','assetId','fit','alt',...pos],['crop'])&&len(child.height,1)&&typeof child.assetId==='string'&&/^[a-f0-9]{64}$/.test(child.assetId)&&['contain','cover'].includes(String(child.fit))&&typeof child.alt==='string'&&child.alt.length<=256&&(!Object.hasOwn(child,'crop')||validCrop(child.crop))&&!/[\p{Cc}\p{Cs}]/u.test(child.alt))continue;
     if(!color(child.color))throw fail();
     if(child.type==='rect'&&exact(child,['id','type','width','height','color',...pos])&&len(child.height,1))continue;
-    if(child.type==='dynamic'&&exact(child,['id','type','width','field','prefix','suffix','fallback','fontSize','lineHeight','color',...pos],['font'])&&dynamicFields.includes(child.field as DynamicField)&&plainLabel(child.prefix,0,64)&&plainLabel(child.suffix,0,64)&&plainLabel(child.fallback,1,64)&&len(child.fontSize,2000,30000)&&line(child.lineHeight)){
+    if(child.type==='dynamic'&&exact(child,['id','type','width','field','prefix','suffix','fallback','fontSize','lineHeight','color',...pos],['font'])&&(scope==='study'?(studyDynamicFields as readonly string[]):(dynamicFields as readonly string[])).includes(String(child.field))&&plainLabel(child.prefix,0,64)&&plainLabel(child.suffix,0,64)&&plainLabel(child.fallback,1,64)&&len(child.fontSize,2000,30000)&&line(child.lineHeight)){
       if(Object.hasOwn(child,'font'))validateFont(child.font);continue;
     }
     if(child.type==='label'&&exact(child,['id','type','width','text','fontSize','lineHeight','color',...pos],['font'])&&typeof child.text==='string'&&child.text.length>=1&&child.text.length<=256&&!/[\p{Cc}\p{Cs}\p{Cf}\p{Zl}\p{Zp}]/u.test(child.text)&&len(child.fontSize,2000,30000)&&line(child.lineHeight)){
@@ -74,8 +77,8 @@ export function hasDynamicLabels(design:HeadingDesign|null|undefined):boolean{
   const visit=(nodes:HeadingChild[]):boolean=>nodes.some(n=>n.type==='dynamic'||(n.type==='group'&&visit(n.children)));
   return !!design&&visit(design.children);
 }
-export function compileHeadingDesign(value:HeadingDesign,inherited:PreviewTextStyle={fontFamily:'sans-serif',fontWeight:400},context?:HeadingContext){
-  const {schemaVersion:_,fontSize,lineHeight,font,children,...rest}=validateHeadingDesign(value);
+export function compileHeadingDesign(value:HeadingDesign,inherited:PreviewTextStyle={fontFamily:'sans-serif',fontWeight:400},context?:HeadingContext,scope:'heading'|'study'='heading'){
+  const {schemaVersion:_,fontSize,lineHeight,font,children,...rest}=validateHeadingDesign(value,scope);
   const textStyle=resolveFont(font,inherited);
   type CompiledChild=Exclude<HeadingChild,FixedLabel|DynamicLabel|{type:'group'}>|(Omit<FixedLabel,'font'>&PreviewTextStyle)|{id:string;type:'group';width:number|'fill';x?:number;y?:number;direction:'row'|'column'|'canvas';height?:number;gap:number;padding:number;background:string;children:CompiledChild[]};
   function compile(child:HeadingChild):CompiledChild{
@@ -96,21 +99,21 @@ export function compileHeadingDesign(value:HeadingDesign,inherited:PreviewTextSt
 }
 
 /** Experimental project-local component library. Usage is explicit for future expansion. */
-export type ComponentUsage='heading'|'paragraph';
+export type ComponentUsage='heading'|'paragraph'|'study';
 export interface ComponentLibraryEntry {id:string;name:string;usage:ComponentUsage;design:HeadingDesign}
-export interface ComponentLibrary {schemaVersion:1|2;entries:ComponentLibraryEntry[]}
+export interface ComponentLibrary {schemaVersion:1|2|3;entries:ComponentLibraryEntry[]}
 export function emptyComponentLibrary():ComponentLibrary{return {schemaVersion:1,entries:[]};}
 export function validateComponentLibrary(value:unknown):ComponentLibrary{
-  if(!record(value)||!exact(value,['schemaVersion','entries'])||![1,2].includes(Number(value.schemaVersion))||typeof value.schemaVersion!=='number'||!Array.isArray(value.entries)||value.entries.length>32)throw RangeError('Invalid component library');
+  if(!record(value)||!exact(value,['schemaVersion','entries'])||![1,2,3].includes(Number(value.schemaVersion))||typeof value.schemaVersion!=='number'||!Array.isArray(value.entries)||value.entries.length>32)throw RangeError('Invalid component library');
   const ids=new Set<string>(),names=new Set<string>();
   const entries:ComponentLibraryEntry[]=value.entries.map(entry=>{
-    if(!record(entry)||!exact(entry,['id','name','usage','design'])||typeof entry.id!=='string'||!/^component-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(entry.id)||ids.has(entry.id)||!plainLabel(entry.name,1,80)||entry.name!==entry.name.trim()||!(entry.usage==='heading'||(value.schemaVersion===2&&entry.usage==='paragraph')))throw RangeError('Invalid component library entry');
+    if(!record(entry)||!exact(entry,['id','name','usage','design'])||typeof entry.id!=='string'||!/^component-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(entry.id)||ids.has(entry.id)||!plainLabel(entry.name,1,80)||entry.name!==entry.name.trim()||!(entry.usage==='heading'||(Number(value.schemaVersion)>=2&&entry.usage==='paragraph')||(value.schemaVersion===3&&entry.usage==='study')))throw RangeError('Invalid component library entry');
     const key=entry.name.normalize('NFC').toLowerCase();
     if(names.has(key))throw RangeError('Duplicate component name');
     ids.add(entry.id);names.add(key);
-    return {id:entry.id,name:entry.name,usage:entry.usage,design:entry.usage==='paragraph'?validateParagraphDesign(entry.design):validateHeadingDesign(entry.design)};
+    return {id:entry.id,name:entry.name,usage:entry.usage,design:validateComponentDesign(entry.design,entry.usage)};
   });
-  return {schemaVersion:value.schemaVersion as 1|2,entries};
+  return {schemaVersion:value.schemaVersion as 1|2|3,entries};
 }
 
 export type HeadingTarget='default'|HeadingLevel;
@@ -165,4 +168,30 @@ export function resolveParagraphBinding(value:unknown,library:ComponentLibrary){
     return {paragraphDesign:validateParagraphDesign(entry.design),paragraphBinding:id};
   }
   return {paragraphDesign:validateParagraphDesign(value),paragraphBinding:null};
+}
+
+export function validateComponentDesign(value:unknown,usage:ComponentUsage):HeadingDesign{
+  if(usage==='paragraph')return validateParagraphDesign(value);
+  if(usage==='heading'||usage==='study')return validateHeadingDesign(value,usage);
+  throw RangeError('Unsupported component usage');
+}
+export type StudyDesigns=Partial<Record<StudyKind,HeadingDesign>>;
+export type StudyBindings=Partial<Record<StudyKind,string>>;
+export function resolveStudyDesigns(value:unknown,library:ComponentLibrary){
+  const studyDesigns:StudyDesigns={},studyBindings:StudyBindings={};
+  if(value===undefined)return {studyDesigns,studyBindings};
+  if(!record(value)||!exact(value,['schemaVersion','kinds'])||value.schemaVersion!==1||!record(value.kinds)||Object.keys(value.kinds).some(k=>!(studyKinds as readonly string[]).includes(k)))throw RangeError('Invalid study design registry');
+  const entries=validateComponentLibrary(library).entries;
+  for(const [key,raw] of Object.entries(value.kinds)){
+    const kind=key as StudyKind;
+    if(record(raw)&&Object.hasOwn(raw,'componentId')){
+      if(!exact(raw,['componentId']))throw RangeError('Invalid study reference');
+      const id=validateHeadingBindings({default:raw.componentId}).default!;
+      const entry=entries.find(e=>e.id===id);
+      if(!entry)throw RangeError('Missing shared study component: '+id);
+      if(entry.usage!=='study')throw RangeError('Component usage does not match study target');
+      studyBindings[kind]=id;studyDesigns[kind]=validateHeadingDesign(entry.design,'study');
+    }else studyDesigns[kind]=validateHeadingDesign(raw,'study');
+  }
+  return {studyDesigns,studyBindings};
 }
