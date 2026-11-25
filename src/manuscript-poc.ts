@@ -12,6 +12,7 @@ interface Input {schemaVersion:1;revision:string;fingerprint:string;content:{wid
 interface Issue {code:string;message:string;documentId:string;range:Range}
 interface Dependencies<S extends Scan> {
   scan:(source:string)=>S;
+  validate:(parsed:S)=>{diagnostics:readonly {code:string;range:Range;message:string}[]};
   index:(docs:readonly {documentId:string;revision:string;parsed:S}[])=>{diagnostics:readonly {code:string;occurrence:{documentId:string;range:Range}}[]};
   // Called with resolved width. Explicit test measurement only.
   measure:(item:SemanticItem,width:number)=>readonly number[];
@@ -28,7 +29,7 @@ export function compileMeasuredManuscript<S extends Scan>(documents:readonly Man
   }
   if(!revision||!fingerprint||!Number.isSafeInteger(content.width)||content.width<=0||!Number.isSafeInteger(content.height)||content.height<=0)throw new Error('Invalid fixture input');
   const parsed=documents.map(doc=>({documentId:doc.documentId,revision:doc.revision,parsed:deps.scan(doc.source)}));
-  for(const doc of parsed)for(const d of doc.parsed.diagnostics)diagnostics.push({...d,documentId:doc.documentId});
+  for(const doc of parsed)for(const d of deps.validate(doc.parsed).diagnostics)diagnostics.push({...d,documentId:doc.documentId});
   if(diagnostics.length)return failed();
   for(const d of deps.index(parsed).diagnostics)diagnostics.push({code:d.code,message:'Duplicate block ID',...d.occurrence});
   if(diagnostics.length)return failed();

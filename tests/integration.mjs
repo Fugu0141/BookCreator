@@ -36,7 +36,7 @@ test('real scanner -> compiler -> measured pagination, preserving source and fig
   const a='# Chapter A\n\nOne\nTwo\n\n::figure{#fig-a src="a.png" width="75%"}\n';
   const b='# Chapter B\n\nText\n\n# Next\n\n::pagebreak{side="any"}\n\nEnd\n';
   const docs=[{documentId:'a',revision:'1',source:a,startOn:'page'},{documentId:'b',revision:'1',source:b,startOn:'continuous'}];
-  const deps={scan:bcm.scanDocument,index:bcm.indexBlockIds,measure:item=>item.kind==='heading'?[20]:item.kind==='figure'?[30]:item.text.split('\n').map(()=>10)};
+  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds,measure:item=>item.kind==='heading'?[20]:item.kind==='figure'?[30]:item.text.split('\n').map(()=>10)};
   const compiled=compileMeasuredManuscript(docs,'1','fixture',{width:100,height:100},deps);
   assert.deepEqual(compiled.diagnostics,[]);assert.equal(compiled.publicationReady,false);
   const plan=engine.paginateMeasured(compiled.input);
@@ -48,9 +48,21 @@ test('real scanner -> compiler -> measured pagination, preserving source and fig
   assert.equal(fig.rect.width,75);assert.equal(a.slice(fig.origin.range.start,fig.origin.range.end),'::figure{#fig-a src="a.png" width="75%"}\n');
 });
 test('unsupported content and duplicate IDs do not produce layout input',()=>{
-  const deps={scan:bcm.scanDocument,index:bcm.indexBlockIds,measure:()=>[10]};
+  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds,measure:()=>[10]};
   const run=(...sources)=>compileMeasuredManuscript(sources.map((source,i)=>({documentId:String(i),revision:'1',source,startOn:'page'})),'1','fixture',{width:100,height:100},deps);
   assert.equal(run('**bold**\n').input,undefined);
   assert.equal(run('::pagebreak{side="right"}\n').input,undefined);
   assert.equal(run('::figure{#id src="a.png"}\n','::figure{#id src="b.png"}\n').diagnostics[0].code,'BCM_DUPLICATE_BLOCK_ID');
+});
+
+test('BCM schema validation and Inspector connected at application boundary',()=>{
+  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds,measure:()=>[10]};
+  const run=source=>compileMeasuredManuscript([{documentId:'a',revision:'1',source,startOn:'page'}],'1','fixture',{width:100,height:100},deps);
+  const bad=run('::figure{src="https://example.test/image.png"}\n');
+  assert.equal(bad.input,undefined);assert.equal(bad.diagnostics[0].code,'BCM_ATTRIBUTE_VALUE');
+  const good=run('::figure{src="../assets/a.png" width="50%"}\n');
+  const inspected=engine.inspectMeasuredInput(good.input);
+  assert.equal(inspected.ok,true);assert.equal(inspected.plan.completeness,'full');
+  assert.equal(inspected.plan.pages[0].fragments[0].rect.width,50);
+  assert.equal(inspected.plan.publicationReady,false);
 });
