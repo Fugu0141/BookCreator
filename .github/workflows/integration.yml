@@ -34,3 +34,6 @@ jobs:
           done
       - run: node --test tests/integration.mjs
         working-directory: BookCreator
+
+      - run: google-chrome --version && npm run preview:smoke
+        working-directory: BookCreator
