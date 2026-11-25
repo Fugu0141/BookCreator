@@ -74,6 +74,7 @@ async function run(){
     if(selected.canceled)return null;
     const next=await createProject(selected.filePaths[0],args[0]);const typography=await next.typography(),fonts=await loadProjectFonts(next);workspace=next;return {...next.summary,typography,fonts,settings:await next.bookSettings()};
   });
+  handle('readImage',async(...args)=>{checkArgs(args,1);const image=await requireWorkspace().image(args[0]);return new Uint8Array(image.bytes);});
   handle('listImages',async(...args)=>{checkArgs(args,0);return requireWorkspace().images();});
   handle('importImage',async(...args)=>{
     checkArgs(args,1);if(args[0]!==true)throw Error('Confirm permission to copy and share the image');const current=requireWorkspace();
@@ -387,7 +388,32 @@ async function smoke(){
   await exec("document.querySelector('#preview-book').click()");
   await until("!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-component-canvas]')");
   if(!await exec("Array.from(document.querySelector('#preview > div').shadowRoot.querySelectorAll('[data-component-node]')).some(e=>e.dataset.componentNode==="+JSON.stringify(copyId)+") && !document.querySelector('#preview > div').shadowRoot.querySelector('[data-lab-locked]')"))throw Error('Duplicate not persisted or lock marker leaked');
-  console.log('PASS component duplication and lock guards; Canvas smart guide cancellation and equal-gap distribution; Canvas multi-selection, alignment, history and persisted geometry; Canvas resize, undo/redo and persisted width; Canvas actual mouse drag, undo/redo and persisted paper; Canvas numeric coordinates and actual paper rendering; nested component grouping and actual book preview; H1-specific fixed label and independent font; Component Lab measure, discard, apply and actual book rendering; book settings save and physical whole-book preview; imported project font, license metadata, theme selection, actual font rendering; Electron project creation, theme save/reopen, Electron sandbox, project open/read, React editing, bundled Noto, independent font roles, stale invalidation, measured preview, source selection and save');
+  // Import into the current project, add an image to the saved Canvas, then apply.
+  await exec("document.querySelector('#image-manager').click()");
+  await until("!!document.querySelector('#import-image')");
+  await exec("document.querySelector('#image-copy').click()");
+  await until("!document.querySelector('#import-image').disabled");
+  await exec("document.querySelector('#import-image').click()");
+  await until("!!document.querySelector('[data-project-image] img') && document.querySelector('[data-project-image] img').naturalWidth===2 && !document.querySelector('#open').disabled");
+  await exec("document.querySelector('#image-manager').click()");
+  await exec("document.querySelector('#component-lab').click()");
+  await until("!!document.querySelector('#lab-add-image')");
+  await exec("document.querySelector('[data-lab-node=content]').click()");
+  await until("!document.querySelector('#lab-add-image').disabled");
+  await exec("document.querySelector('#lab-add-image').click()");
+  await until("!!document.querySelector('#lab-image-fit')");
+  await exec("(()=>{const e=document.querySelector('#lab-image-fit');e.value='cover';e.dispatchEvent(new Event('change',{bubbles:true}));})()");
+  await exec("(()=>{const e=document.querySelector('#lab-image-alt');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,'Test illustration');e.dispatchEvent(new Event('input',{bubbles:true}));})()");
+  await exec("document.querySelector('#lab-measure').click()");
+  await until("!document.querySelector('#lab-apply').disabled && !!document.querySelector('#lab-preview > div').shadowRoot.querySelector('[data-component-image] canvas')");
+  if(!await exec("(()=>{const c=document.querySelector('#lab-preview > div').shadowRoot.querySelector('[data-component-image] canvas');return c.getAttribute('aria-label')==='Test illustration'&&c.getContext('2d').getImageData(0,0,1,1).data[0]===255;})()"))throw Error('Image preview pixels or alt mismatch');
+  await exec("document.querySelector('#lab-apply').click()");
+  await until("!document.querySelector('#open').disabled && !document.querySelector('#lab-measure')");
+  await exec("document.querySelector('#preview-book').click()");
+  await until("!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-component-image] canvas')");
+  if(!await exec("document.querySelector('#preview > div').shadowRoot.querySelector('[data-component-image] canvas').getAttribute('aria-label')==='Test illustration'"))throw Error('Image absent from saved paper');
+  if(!(await readFile(join(smokeRoot,'new-book','themes','default','theme.yaml'),'utf8')).includes(imageId))throw Error('Stable image ID not saved');
+  console.log('PASS image component asset, actual pixels, theme and paper; component duplication and lock guards; Canvas smart guide cancellation and equal-gap distribution; Canvas multi-selection, alignment, history and persisted geometry; Canvas resize, undo/redo and persisted width; Canvas actual mouse drag, undo/redo and persisted paper; Canvas numeric coordinates and actual paper rendering; nested component grouping and actual book preview; H1-specific fixed label and independent font; Component Lab measure, discard, apply and actual book rendering; book settings save and physical whole-book preview; imported project font, license metadata, theme selection, actual font rendering; Electron project creation, theme save/reopen, Electron sandbox, project open/read, React editing, bundled Noto, independent font roles, stale invalidation, measured preview, source selection and save');
   closing=true;win.destroy();await rm(smokeRoot,{recursive:true,force:true,maxRetries:10,retryDelay:100});app.exit(0);
 }
 app.on('window-all-closed',()=>{if(!SMOKE)app.quit();});

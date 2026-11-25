@@ -53,7 +53,7 @@ export function installCanvasDrag(root,{lookup,onSelect,onActive,onCommit,smartS
       const entry=lookup(id);if(!entry||entry.parent?.direction!=='canvas')continue;
       el.dataset.labDraggable='true';el.style.cursor='grab';el.style.touchAction='none';el.style.userSelect='none';
       // These editor-only children never enter the book preview or the saved definition.
-      const fixedHeight=entry.node.type==='rect'||(entry.node.type==='group'&&entry.node.direction==='canvas');
+      const fixedHeight=entry.node.type==='rect'||entry.node.type==='image'||(entry.node.type==='group'&&entry.node.direction==='canvas');
       const handle=el.ownerDocument.createElement('span');
       handle.dataset.labResizeHandle=fixedHeight?'both':'width';
       handle.setAttribute('aria-hidden','true');
