@@ -1,9 +1,9 @@
 import {prepareBrowserPreview,previewSourceRange} from '/app/dist/index.js';
 import {scanDocument,validateScannedBlocks,indexBlockIds} from '/bcm/dist/index.js';
-import {createPlainTextPagePreview} from '/engine/dist/index.js';
+import {createPlainTextPagePreview,parsePreviewMath} from '/engine/dist/index.js';
 const source=document.querySelector('#source'),width=document.querySelector('#width'),height=document.querySelector('#height');
 const button=document.querySelector('#render'),status=document.querySelector('#status'),target=document.querySelector('#preview');
-const deps={scan:scanDocument,validate:validateScannedBlocks,index:indexBlockIds};
+const deps={scan:scanDocument,validate:validateScannedBlocks,index:indexBlockIds,validateDisplayMath:parsePreviewMath};
 let revision=0,latest;
 source.value='# 実測組版の試作\n\n'+('日本語と English text を混在させた原稿です。ブラウザの実測値によって折り返し位置とページ分割を決定します。 '.repeat(14)).trim()+'\n\n## 原稿範囲の確認\n\n紙面の本文を選ぶと原稿の対応範囲を確認できます。';
 function invalidate(){revision++;latest=undefined;target.replaceChildren();status.textContent='未組版の変更があります。';button.disabled=false;}
@@ -46,6 +46,15 @@ if(new URLSearchParams(location.search).has('smoke')){
     fragment.click();
     if(source.selectionStart!==slice.start||source.selectionEnd!==slice.end||source.value.slice(slice.start,slice.end)!==fragment.textContent)throw Error('Source mapping mismatch');
     const pages=latest.plan.pages.length;
+    const formula='\\frac{a^2}{b}';
+    source.value='導入。\n\n$\n'+formula+'\n$\n\n結び。';
+    source.dispatchEvent(new Event('input'));await render();
+    const math=latest?.element.shadowRoot.querySelector('[data-display-math]');
+    if(!math?.querySelector('math mfrac msup'))throw Error('Display math not rendered as MathML');
+    math.click();
+    if(source.value.slice(source.selectionStart,source.selectionEnd)!==formula)throw Error('Display math source mapping mismatch');
+    source.value='$\n\\input{secret}\n$\n';source.dispatchEvent(new Event('input'));await render();
+    if(latest||target.children.length)throw Error('Unsafe formula rendered');
     source.value='[unsupported](https://example.invalid)';source.dispatchEvent(new Event('input'));if(target.children.length)throw Error('Stale preview remained');
     await render();if(latest||target.children.length)throw Error('Unsupported input rendered');
     report.textContent='PASS '+JSON.stringify({pages,sourceMapping:true,staleGuard:true});
