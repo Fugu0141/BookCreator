@@ -87,7 +87,7 @@ function checkedRoles(value,faces=[]){
   return result;
 }
 function checkComponentFonts(design,faces){
-  function collect(children){return children.flatMap(c=>c.type==='group'?collect(c.children):c.type==='label'&&c.font?[c.font]:[]);}
+  function collect(children){return children.flatMap(c=>c.type==='group'?collect(c.children):(c.type==='label'||c.type==='dynamic')&&c.font?[c.font]:[]);}
   for(const f of [design.font,...collect(design.children)].filter(Boolean)){
     if(!(FACE_IDS.has(f.id)?[400,500,600,700].includes(f.weight):faces.some(face=>face.id===f.id&&face.weight===f.weight)))fail('THEME','Unknown component font or unsupported weight');
   }
