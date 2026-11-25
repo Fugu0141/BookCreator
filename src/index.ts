@@ -24,3 +24,4 @@ export function canAcceptLayout(current: Pick<LayoutTicket,'revision'|'fingerpri
 export function canReviewLayout(current: Pick<LayoutTicket,'revision'|'fingerprint'>, result: LayoutTicket): boolean {
   return canAcceptLayout(current,result) && result.completeness === 'full';
 }
+export {compileMeasuredManuscript, type Manuscript, type SemanticItem} from './manuscript-poc.js';

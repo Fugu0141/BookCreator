@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
-import {editDocument} from '../dist/index.js';
+import {editDocument,compileMeasuredManuscript} from '../dist/index.js';
 const load = (variable, fallback) => import(pathToFileURL(resolve(process.env[variable] ?? fallback)).href);
 const bcm = await load('BCM_DIST', '../BookCreator_Markdown/dist/index.js');
 const engine = await load('ENGINE_DIST', '../BookCreator_LayoutEngine/dist/index.js');
@@ -30,4 +30,27 @@ test('nested BCM component -> measured hybrid heading tree',()=>{
   const heading=parsed.blocks[0].children[0].children[0];assert.equal(heading.kind,'heading');assert.equal(source.slice(heading.range.start,heading.range.end),'# 日本語\n');
   const tree={id:'heading',type:'stack',width:'fill',height:'auto',children:[{id:'row',type:'row',width:'fill',height:'auto',gap:3000,children:[{id:'bar',type:'leaf',width:2000,height:'fill'},{id:'text',type:'leaf',width:'fill',height:'auto',natural:{width:30000,height:12000}}]},{id:'overlay',type:'canvas',role:'overlay',width:'fill',height:'fill',children:[{id:'dot',type:'leaf',width:2000,height:2000,anchorX:'end',x:1000,y:1000}]}]};
   const result=engine.layoutTree(tree,{width:160000,height:100000});assert.equal(result.rect.height,12000);assert.equal(result.children[0].children[0].rect.height,12000);assert.equal(result.children[1].children[0].rect.x,157000);
+});
+
+test('real scanner -> compiler -> measured pagination, preserving source and figure width',()=>{
+  const a='# Chapter A\n\nOne\nTwo\n\n::figure{#fig-a src="a.png" width="75%"}\n';
+  const b='# Chapter B\n\nText\n\n# Next\n\n::pagebreak{side="any"}\n\nEnd\n';
+  const docs=[{documentId:'a',revision:'1',source:a,startOn:'page'},{documentId:'b',revision:'1',source:b,startOn:'continuous'}];
+  const deps={scan:bcm.scanDocument,index:bcm.indexBlockIds,measure:item=>item.kind==='heading'?[20]:item.kind==='figure'?[30]:item.text.split('\n').map(()=>10)};
+  const compiled=compileMeasuredManuscript(docs,'1','fixture',{width:100,height:100},deps);
+  assert.deepEqual(compiled.diagnostics,[]);assert.equal(compiled.publicationReady,false);
+  const plan=engine.paginateMeasured(compiled.input);
+  assert.equal(plan.completeness,'full');assert.equal(plan.publicationReady,false);
+  assert.deepEqual(plan.pages.map(p=>p.fragments.map(f=>f.origin.documentId+':'+f.origin.blockKey)),[
+    ["a:0","a:13","a:22","b:0","b:13"],["b:19"],["b:52"]
+  ]);
+  const fig=plan.pages[0].fragments.find(f=>f.origin.persistentId==='fig-a');
+  assert.equal(fig.rect.width,75);assert.equal(a.slice(fig.origin.range.start,fig.origin.range.end),'::figure{#fig-a src="a.png" width="75%"}\n');
+});
+test('unsupported content and duplicate IDs do not produce layout input',()=>{
+  const deps={scan:bcm.scanDocument,index:bcm.indexBlockIds,measure:()=>[10]};
+  const run=(...sources)=>compileMeasuredManuscript(sources.map((source,i)=>({documentId:String(i),revision:'1',source,startOn:'page'})),'1','fixture',{width:100,height:100},deps);
+  assert.equal(run('**bold**\n').input,undefined);
+  assert.equal(run('::pagebreak{side="right"}\n').input,undefined);
+  assert.equal(run('::figure{#id src="a.png"}\n','::figure{#id src="b.png"}\n').diagnostics[0].code,'BCM_DUPLICATE_BLOCK_ID');
 });
