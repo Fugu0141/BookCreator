@@ -33,7 +33,7 @@ export function resizeSize(start,delta,limits,snap=100){
   return result;
 }
 // The same actual measured preview DOM is used for hit testing, not a second renderer.
-export function installCanvasDrag(root,{lookup,onSelect,onActive,onCommit,smartSnap=()=>true}){
+export function installCanvasDrag(root,{lookup,onSelect,onActive,onCommit,smartSnap=()=>true,isLocked=()=>false}){
   const cleanups=[];let active=null,disposed=false;
   const restore=()=>{if(active){active.el.style.left=active.left;active.el.style.top=active.top;active.el.removeAttribute('data-lab-dragging');if(active.ghost){active.ghost.style.display='none';}active.guides?.show({});}};
   function end(commit,event){
@@ -74,6 +74,7 @@ export function installCanvasDrag(root,{lookup,onSelect,onActive,onCommit,smartS
         if(disposed)return;
         if(e.key==='Escape'&&active?.el===el){e.preventDefault();e.stopPropagation();end(false);return;}
         if(active||e.ctrlKey||e.metaKey||e.altKey||!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key))return;
+        if(isLocked(id)){e.preventDefault();e.stopPropagation();return;}
         const b=bounds();if(![b.x,b.y].every(Number.isFinite))return;
         e.preventDefault();e.stopPropagation();
         const next=nudgePosition(start,e.key,b,e.shiftKey);
@@ -82,6 +83,7 @@ export function installCanvasDrag(root,{lookup,onSelect,onActive,onCommit,smartS
       const down=e=>{
         if(disposed||active||e.button!==0||!e.isPrimary)return;
         e.preventDefault();e.stopPropagation();
+        if(isLocked(id)){el.focus({preventScroll:true});onSelect(id);return;}
         const c=canvas.getBoundingClientRect(),r=el.getBoundingClientRect();
         const sx=c.width/parseFloat(canvas.style.width),sy=c.height/parseFloat(canvas.style.height);
         if(!Number.isFinite(sx)||!Number.isFinite(sy)||sx<=0||sy<=0)return;
@@ -128,13 +130,15 @@ export function installCanvasDrag(root,{lookup,onSelect,onActive,onCommit,smartS
   }
   return ()=>{disposed=true;end(false);for(const cleanup of cleanups)cleanup();};
 }
-export function highlightCanvasSelection(root,id){
+export function highlightCanvasSelection(root,id,isLocked=()=>false){
   const ids=Array.isArray(id)?id:[id];
   for(const el of root.querySelectorAll('[data-lab-draggable]')){
     const selected=ids.includes(el.dataset.componentNode);
-    el.style.outline=selected?'2px solid #2679c7':'';
+    const locked=isLocked(el.dataset.componentNode);
+    el.dataset.labLocked=String(locked);el.style.cursor=locked?'not-allowed':'grab';
+    el.style.outline=selected?(locked?'2px dashed #64748b':'2px solid #2679c7'):'';
     el.style.outlineOffset=selected?'-1px':'';
-    for(const child of el.children)if(child.dataset.labResizeHandle)child.style.display=selected&&ids.length===1?'block':'none';
+    for(const child of el.children)if(child.dataset.labResizeHandle)child.style.display=selected&&!locked&&ids.length===1?'block':'none';
   }
 }
 
