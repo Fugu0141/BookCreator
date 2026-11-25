@@ -1,3 +1,4 @@
+import {snapCanvasPosition,installSnapGuides} from './canvas-snap.mjs';
 const UM_PER_CSS_PX=25400/96;
 const clamp=(v,max)=>Math.max(0,Math.min(max,v));
 // Coordinates are micrometres. Use measured bounding boxes, not a guessed text height.
@@ -32,9 +33,9 @@ export function resizeSize(start,delta,limits,snap=100){
   return result;
 }
 // The same actual measured preview DOM is used for hit testing, not a second renderer.
-export function installCanvasDrag(root,{lookup,onSelect,onActive,onCommit}){
+export function installCanvasDrag(root,{lookup,onSelect,onActive,onCommit,smartSnap=()=>true}){
   const cleanups=[];let active=null,disposed=false;
-  const restore=()=>{if(active){active.el.style.left=active.left;active.el.style.top=active.top;active.el.removeAttribute('data-lab-dragging');if(active.ghost){active.ghost.style.display='none';}}};
+  const restore=()=>{if(active){active.el.style.left=active.left;active.el.style.top=active.top;active.el.removeAttribute('data-lab-dragging');if(active.ghost){active.ghost.style.display='none';}active.guides?.show({});}};
   function end(commit,event){
     const a=active;if(!a||event&&event.pointerId!==a.pointerId)return;
     restore();active=null;
@@ -43,7 +44,11 @@ export function installCanvasDrag(root,{lookup,onSelect,onActive,onCommit}){
     if(commit&&a.position&&Object.keys(a.position).some(k=>a.position[k]!==a.start[k]))onCommit(a.id,a.position);
   }
   for(const canvas of root.querySelectorAll('[data-component-canvas]')){
-    for(const el of canvas.children){
+    const direct=Array.from(canvas.children).filter(el=>el.dataset.componentNode);
+    const parent=lookup(direct[0]?.dataset.componentNode)?.parent;
+    if(!parent||parent.direction!=='canvas')continue;
+    const guides=installSnapGuides(canvas,parent.padding);cleanups.push(()=>guides.dispose());
+    for(const el of direct){
       const id=el.dataset.componentNode;if(!id)continue;
       const entry=lookup(id);if(!entry||entry.parent?.direction!=='canvas')continue;
       el.dataset.labDraggable='true';el.style.cursor='grab';el.style.touchAction='none';el.style.userSelect='none';
@@ -88,7 +93,11 @@ export function installCanvasDrag(root,{lookup,onSelect,onActive,onCommit}){
         const innerH=Math.floor(parseFloat(canvas.style.height)*UM_PER_CSS_PX+.1)-2*pad-start.y;
         const minimum=entry.node.type==='group'?2*entry.node.padding+1:1;
         const limits={minWidth:Math.max(minimum,Math.min(100,size.width)),maxWidth:Math.min(100000,Math.max(size.width,innerW)),minHeight:Math.max(minimum,Math.min(100,size.height??100)),maxHeight:Math.min(100000,Math.max(size.height??0,innerH))};
-        active={id,el,pointerId:e.pointerId,cx:e.clientX,cy:e.clientY,sx,sy,start:resizing?size:start,bounds:b,left:el.style.left,top:el.style.top,position:null,resizing,limits,ghost};
+        const um=v=>Math.round(parseFloat(v)*UM_PER_CSS_PX);
+        const snapBounds={width:um(canvas.style.width)-2*pad,height:um(canvas.style.height)-2*pad};
+        const measuredSize={width:entry.node.width,height:um(el.style.height)};
+        const targets=direct.filter(n=>n!==el).map(n=>{const v=lookup(n.dataset.componentNode)?.node;return {id:n.dataset.componentNode,x:v?.x,y:v?.y,width:v?.width,height:um(n.style.height)};});
+        active={guides,snapBounds,measuredSize,targets,id,el,pointerId:e.pointerId,cx:e.clientX,cy:e.clientY,sx,sy,start:resizing?size:start,bounds:b,left:el.style.left,top:el.style.top,position:null,resizing,limits,ghost};
         try{el.setPointerCapture(e.pointerId);}catch{active=null;return;}
         el.dataset.labDragging='true';el.focus({preventScroll:true});onSelect(id);onActive(true);
       };
@@ -105,6 +114,10 @@ export function installCanvasDrag(root,{lookup,onSelect,onActive,onCommit}){
           return;
         }
         a.position=dragPosition(a.start,delta,a.bounds);
+        if(smartSnap()&&!e.altKey&&a.snapBounds.width>=a.measuredSize.width&&a.snapBounds.height>=a.measuredSize.height&&Object.values(a.measuredSize).every(n=>Number.isFinite(n)&&n>0)){
+          const snapped=snapCanvasPosition(a.position,a.measuredSize,a.snapBounds,a.targets);
+          a.position=snapped.position;a.guides.show(snapped.guides);
+        }else a.guides.show({});
         el.style.left=(parseFloat(a.left)+(a.position.x-a.start.x)/UM_PER_CSS_PX)+'px';
         el.style.top=(parseFloat(a.top)+(a.position.y-a.start.y)/UM_PER_CSS_PX)+'px';
       };
