@@ -1,3 +1,4 @@
+import {proportionalImageSize} from './image-frame.mjs';
 import {snapCanvasPosition,installSnapGuides} from './canvas-snap.mjs';
 const UM_PER_CSS_PX=25400/96;
 const clamp=(v,max)=>Math.max(0,Math.min(max,v));
@@ -33,7 +34,7 @@ export function resizeSize(start,delta,limits,snap=100){
   return result;
 }
 // The same actual measured preview DOM is used for hit testing, not a second renderer.
-export function installCanvasDrag(root,{lookup,onSelect,onActive,onCommit,smartSnap=()=>true,isLocked=()=>false}){
+export function installCanvasDrag(root,{lookup,onSelect,onActive,onCommit,smartSnap=()=>true,isLocked=()=>false,ratioLocked=()=>false}){
   const cleanups=[];let active=null,disposed=false;
   const restore=()=>{if(active){active.el.style.left=active.left;active.el.style.top=active.top;active.el.removeAttribute('data-lab-dragging');if(active.ghost){active.ghost.style.display='none';}active.guides?.show({});}};
   function end(commit,event){
@@ -109,7 +110,12 @@ export function installCanvasDrag(root,{lookup,onSelect,onActive,onCommit,smartS
         const delta={x:(e.clientX-a.cx)*UM_PER_CSS_PX/a.sx,y:(e.clientY-a.cy)*UM_PER_CSS_PX/a.sy};
         if(!a.position&&Math.hypot(e.clientX-a.cx,e.clientY-a.cy)<2)return;
         if(a.resizing){
-          a.position=resizeSize(a.start,delta,a.limits);
+          if(entry.node.type==='image'&&ratioLocked(id)){
+            const axis=Math.abs(delta.x/a.start.width)>=Math.abs(delta.y/a.start.height)?'width':'height';
+            const d=axis==='width'?delta.x:delta.y;
+            const requested=Math.round((a.start[axis]+d)/100)*100;
+            a.position=proportionalImageSize(a.start,requested,a.limits,axis);
+          }else a.position=resizeSize(a.start,delta,a.limits);
           ghost.style.display='block';
           ghost.style.width=a.position.width/UM_PER_CSS_PX+'px';
           ghost.style.height=a.position.height===undefined?el.style.height:a.position.height/UM_PER_CSS_PX+'px';
