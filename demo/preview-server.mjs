@@ -6,7 +6,7 @@ const add=(prefix,root,files)=>{for(const f of files)entries.set(prefix+f,new UR
 add('/demo/','../demo/',['preview.html','preview.mjs']);
 add('/app/dist/','../dist/',['index.js','manuscript-poc.js','browser-preview.js','preview-typography.js','preview-component.js']);
 add('/bcm/dist/','../../BookCreator_Markdown/dist/',['index.js','document.js','block-ids.js','validation.js']);
-add('/engine/dist/','../../BookCreator_LayoutEngine/dist/',['index.js','tree.js','pagination.js','inspector.js','browser-measurement.js','browser-lines.js','preview-font.js']);
+add('/engine/dist/','../../BookCreator_LayoutEngine/dist/',['index.js','tree.js','pagination.js','inspector.js','browser-measurement.js','browser-lines.js','preview-font.js','image-crop.js']);
 export function startPreviewServer(port=4173){
   const server=createServer(async(req,res)=>{
     try{
