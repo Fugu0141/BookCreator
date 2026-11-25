@@ -65,3 +65,5 @@ Desktop preview includes locally bundled Noto Sans JP Variable (SIL OFL 1.1, Fon
 Desktop can create a new book in a selected parent folder and save supported body/heading typography to the theme YAML. Page dimensions in preview are still independent experimental settings. Existing folders are never overwritten.
 
 Desktop font manager can copy explicitly shareable static upright TTF/OTF faces into the current project, retain license metadata, preview and select them by role. Experimental only; imported fonts are not automatically authorized for PDF or redistribution.
+
+Desktop supports physical paper and margins from book.yaml, manuscript reordering and whole-book experimental preview (supported plain manuscript sections only). B5 means JIS B5.

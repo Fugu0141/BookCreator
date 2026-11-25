@@ -28,3 +28,4 @@ export {compileMeasuredManuscript, type Manuscript, type SemanticItem} from './m
 export {prepareManuscript, type PreparationDependencies} from './manuscript-poc.js';
 export {prepareBrowserPreview} from './browser-preview.js';
 export {resolvePreviewTypography,type PreviewTypography,type PreviewTextStyle,type PreviewFontFamily} from './preview-typography.js';
+export {prepareBookBrowserPreview} from './browser-preview.js';

@@ -62,13 +62,13 @@ async function run(){
     checkArgs(args,0);
     const selected=SMOKE?{canceled:false,filePaths:[join(smokeRoot,'book.yaml')]}:await dialog.showOpenDialog(win,{title:'book.yaml を開く',properties:['openFile'],filters:[{name:'BookCreator project',extensions:['yaml']}]});
     if(selected.canceled)return null;
-    const next=await openWorkspace(selected.filePaths[0]);const typography=await next.typography(),fonts=await loadProjectFonts(next);workspace=next;return {...next.summary,typography,fonts};
+    const next=await openWorkspace(selected.filePaths[0]);const typography=await next.typography(),fonts=await loadProjectFonts(next);workspace=next;return {...next.summary,typography,fonts,settings:await next.bookSettings()};
   });
   handle('create',async(...args)=>{
     checkArgs(args,1);
     const selected=SMOKE?{canceled:false,filePaths:[smokeRoot]}:await dialog.showOpenDialog(win,{title:'新規書籍の保存先（親フォルダ）',properties:['openDirectory']});
     if(selected.canceled)return null;
-    const next=await createProject(selected.filePaths[0],args[0]);const typography=await next.typography(),fonts=await loadProjectFonts(next);workspace=next;return {...next.summary,typography,fonts};
+    const next=await createProject(selected.filePaths[0],args[0]);const typography=await next.typography(),fonts=await loadProjectFonts(next);workspace=next;return {...next.summary,typography,fonts,settings:await next.bookSettings()};
   });
   handle('importFont',async(...args)=>{
     checkArgs(args,1);const current=requireWorkspace();
@@ -78,6 +78,8 @@ async function run(){
     const fonts=await loadProjectFonts(current);return {...result,fonts};
   });
   handle('saveTypography',async(...args)=>{checkArgs(args,2);return requireWorkspace().saveTypography(...args);});
+  handle('readBook',async(...args)=>{checkArgs(args,0);return requireWorkspace().readBook();});
+  handle('saveBookSettings',async(...args)=>{checkArgs(args,2);return requireWorkspace().saveBookSettings(...args);});
   handle('read',async(...args)=>{checkArgs(args,1);if(typeof args[0]!=='string')throw Error('Invalid section');return requireWorkspace().read(args[0]);});
   handle('save',async(...args)=>{checkArgs(args,3);if(typeof args[0]!=='string')throw Error('Invalid section');return requireWorkspace().save(...args);});
   if(SMOKE){
@@ -143,7 +145,17 @@ async function smoke(){
   await exec("document.querySelector('#preview-button').click()");
   await until("!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-start]')");
   if(!await exec("Array.from(document.querySelector('#preview > div').shadowRoot.querySelectorAll('[data-start]')).some(l=>/BCFont_[a-f0-9]{64}/.test(l.style.fontFamily))"))throw Error('Imported face not used in measured preview');
-  console.log('PASS imported project font, license metadata, theme selection, actual font rendering; Electron project creation, theme save/reopen, Electron sandbox, project open/read, React editing, bundled Noto, independent font roles, stale invalidation, measured preview, source selection and save');
+  await exec("document.querySelector('#book-settings').click()");
+  await until("!!document.querySelector('#page-size')");
+  await exec("(()=>{const e=document.querySelector('#page-size');e.value='A4';e.dispatchEvent(new Event('change',{bubbles:true}));})()");
+  await until("!document.querySelector('#save-book-settings').disabled");
+  await exec("document.querySelector('#save-book-settings').click()");
+  await until("!document.querySelector('#open').disabled && document.querySelector('#status').textContent.includes('書籍設定を保存しました')");
+  if(!(await readFile(join(smokeRoot,'new-book','book.yaml'),'utf8')).includes('size: A4'))throw Error('Page size not persisted');
+  await exec("document.querySelector('#preview-book').click()");
+  await until("!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-content-guide]')");
+  if(!await exec("Math.abs(parseFloat(document.querySelector('#preview > div').shadowRoot.querySelector('[data-page]').style.width)-210*96/25.4)<0.1"))throw Error('Physical A4 preview width mismatch');
+  console.log('PASS book settings save and physical whole-book preview; imported project font, license metadata, theme selection, actual font rendering; Electron project creation, theme save/reopen, Electron sandbox, project open/read, React editing, bundled Noto, independent font roles, stale invalidation, measured preview, source selection and save');
   closing=true;win.destroy();await rm(smokeRoot,{recursive:true,force:true});app.exit(0);
 }
 app.on('window-all-closed',()=>{if(!SMOKE)app.quit();});

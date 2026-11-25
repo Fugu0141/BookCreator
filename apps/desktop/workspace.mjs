@@ -1,3 +1,4 @@
+import {resolvePageSettings,paperGeometry,marginString} from './book-settings.mjs';
 import {projectFonts} from './project-fonts.mjs';
 import {open,lstat,realpath,rename,unlink,mkdir} from 'node:fs/promises';
 import {constants} from 'node:fs';
@@ -66,7 +67,9 @@ function parseManifest(raw){
     if(!['page','continuous','left','right','spread-start','spread-end'].includes(startOn))fail('MANIFEST','Invalid section start');
     sections.push({id:s.id,type:s.type,path:s.path,role:s.role,startOn,editable:true});
   }
-  return {title:m.title,language:m.language,sections,themePath:m.theme};
+  let pageSettings=null,pageMessage;
+  try{pageSettings=resolvePageSettings(m.page);}catch(e){pageMessage=e.message;}
+  return {title:m.title,language:m.language,sections,themePath:m.theme,pageSettings,...(pageMessage?{pageMessage}:{})};
 }
 
 const FACE_IDS=new Map([['noto-sans-jp','BCFont_NotoSansJP'],['system-serif','serif'],['system-sans','sans-serif'],['system-monospace','monospace']]);
@@ -125,8 +128,8 @@ export async function openWorkspace(manifestPath){
   const root=await realpath(dirname(resolve(manifestPath)));
   const manifest=await inside(root,'book.yaml');
   const m=await readRegular(manifest,MAX_MANIFEST);
-  const summary=parseManifest(decode(m.bytes));
-  const manifestHash=hash(m.bytes),seen=new Set(),files=new Map();
+  let summary=parseManifest(decode(m.bytes)),manifestHash=hash(m.bytes);
+  const seen=new Set(),files=new Map();
   for(const s of summary.sections){
     if(!s.editable)continue;
     const path=await inside(root,s.path);
@@ -142,6 +145,7 @@ export async function openWorkspace(manifestPath){
   async function checkManifest(){
     const latest=await readRegular(await inside(root,'book.yaml'),MAX_MANIFEST);
     if(hash(latest.bytes)!==manifestHash)fail('CONFLICT','book.yaml changed externally; reopen the project');
+    return latest;
   }
   async function current(id){
     const f=files.get(id);if(!f)fail('SECTION','Unknown or non-manuscript section');
@@ -159,8 +163,56 @@ export async function openWorkspace(manifestPath){
     catch(e){if(e.code==='THEME')return {editable:false,roles:null,revision:null,message:e.message};throw e;}
   }
   function publicTheme(t){return {editable:t.editable,roles:t.roles,revision:t.revision,...(t.message?{message:t.message}:{})};}
+  function settingsView(){return {revision:manifestHash,page:summary.pageSettings,sections:structuredClone(summary.sections),message:summary.pageMessage};}
   return {
-    summary:structuredClone(summary),
+    get summary(){return structuredClone(summary);},
+    async bookSettings(){await checkManifest();return settingsView();},
+    async readBook(){
+      await checkManifest();
+      if(summary.sections.some(s=>!s.editable||!['page','continuous'].includes(s.startOn)))fail('PREVIEW','Whole-book preview does not support cover, blank or physical-side sections yet');
+      if(summary.sections.length>128)fail('PREVIEW','Too many sections for experimental preview');
+      const docs=[];let total=0;
+      for(const s of summary.sections){const r=await current(s.id);total+=r.info.text.length;if(total>50000)fail('PREVIEW','Book preview text limit exceeded');docs.push({documentId:s.id,revision:r.revision,source:r.info.text,startOn:s.startOn});}
+      await checkManifest();
+      for(const doc of docs)if((await current(doc.documentId)).revision!==doc.revision)fail('CONFLICT','Manuscript changed while reading the book');
+      return docs;
+    },
+    async saveBookSettings(expectedRevision,value){
+      if(busy)fail('BUSY','Another write is in progress');
+      if(!record(value)||!record(value.page)||!Array.isArray(value.sections))fail('PAGE','Invalid book settings');
+      paperGeometry(value.page);busy=true;let temp;
+      try{
+        const old=await checkManifest();
+        if(expectedRevision!==manifestHash||!summary.pageSettings)fail('CONFLICT','Book settings changed or are unsupported');
+        const doc=safeYaml(decode(old.bytes)),seq=doc.get('sections',true);
+        const manuscript=summary.sections.filter(s=>s.editable),byId=new Map(manuscript.map(s=>[s.id,s]));
+        if(value.sections.length!==manuscript.length||new Set(value.sections.map(s=>s?.id)).size!==manuscript.length||
+          value.sections.some(s=>!record(s)||!byId.has(s.id)||!['page','continuous'].includes(s.startOn))||
+          manuscript.some(s=>!['page','continuous'].includes(s.startOn)))fail('PAGE','Unsupported section order or start');
+        const originalNodes=new Map(summary.sections.map((s,i)=>[s.id,seq.items[i]]));
+        let i=0;
+        seq.items=summary.sections.map(s=>{
+          if(!s.editable)return originalNodes.get(s.id);
+          const v=value.sections[i++],node=originalNodes.get(v.id);
+          // Preserve all other section fields and fixed non-manuscript positions.
+          if(byId.get(v.id).startOn!==v.startOn)node.set('startOn',v.startOn);
+          return node;
+        });
+        doc.setIn(['page','size'],value.page.size);
+        doc.setIn(['page','firstInteriorSide'],value.page.firstSide);
+        for(const k of ['top','bottom','inner','outer'])doc.setIn(['page','margin',k],marginString(value.page.margin[k]));
+        const info=sourceInfo(old.bytes);if(!info.editable)fail('FORMAT','Mixed manifest line endings are read-only');
+        const raw=doc.toString().replace(/\n/g,info.eol),bytes=Buffer.from((info.bom?'\uFEFF':'')+raw,'utf8');
+        if(bytes.length>MAX_MANIFEST)fail('INPUT','Manifest too large');
+        const next=parseManifest(decode(bytes));if(!next.pageSettings)fail('PAGE','Invalid resulting page settings');
+        if(bytes.equals(old.bytes))return settingsView();
+        temp=join(root,'.bookcreator-'+randomUUID()+'.tmp');
+        const f=await open(temp,'wx',old.mode);
+        try{await f.writeFile(bytes);await f.chmod(old.mode);await f.sync();}finally{await f.close();}
+        await checkManifest();await rename(temp,manifest);temp=undefined;
+        summary=next;manifestHash=hash(bytes);return settingsView();
+      }finally{if(temp)await unlink(temp).catch(()=>{});busy=false;}
+    },
     async fonts(includeBytes=false){await checkManifest();return fontStore.list({includeBytes});},
     async importFont(path,rights){if(busy)fail('BUSY','Another write is in progress');busy=true;try{await checkManifest();return await fontStore.add(path,rights);}finally{busy=false;}},
     async typography(){await checkManifest();return publicTheme(await readTheme());},

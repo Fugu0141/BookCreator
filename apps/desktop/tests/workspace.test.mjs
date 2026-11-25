@@ -80,3 +80,23 @@ test('missing or future typography is not editable',async t=>{
   await writeFile(join(f.root,'themes','default','theme.yaml'),'schemaVersion: 1\ntypography: {schemaVersion: 2, roles: {}}\n');
   assert.equal((await w.typography()).editable,false);
 });
+
+test('paper and ordered section settings roundtrip with preserved metadata and stale guard',async t=>{
+  const parent=await mkdtemp(join(tmpdir(),'bc-book-settings-'));t.after(()=>rm(parent,{recursive:true,force:true}));
+  const w0=await createProject(parent,{title:'Paper',folder:'book',size:'A5'}),root=join(parent,'book'),path=join(root,'book.yaml');
+  await writeFile(join(root,'manuscript','chapter-02.md'),'# 二章\n\n本文。\n');
+  await writeFile(path,(await readFile(path,'utf8'))+'  - {id: chapter-02, type: manuscript, role: body, path: manuscript/chapter-02.md, custom: keep}\n');
+  const w=await openWorkspace(path),initial=await w.bookSettings();
+  assert.equal(initial.page.size,'A5');assert.equal(initial.page.margin.inner,23000);
+  const settings={page:{...initial.page,size:'B5',margin:{...initial.page.margin,outer:12000}},sections:[{id:'chapter-02',startOn:'page'},{id:'chapter-01',startOn:'continuous'}]};
+  const result=await w.saveBookSettings(initial.revision,settings);
+  assert.equal(result.page.size,'B5');assert.deepEqual(result.sections.map(s=>s.id),['chapter-02','chapter-01']);
+  assert.deepEqual((await w.readBook()).map(d=>[d.documentId,d.startOn]),[['chapter-02','page'],['chapter-01','continuous']]);
+  assert.match(await readFile(path,'utf8'),/custom: keep/);
+  assert.deepEqual((await (await openWorkspace(path)).bookSettings()).page,result.page);
+  await assert.rejects(w.saveBookSettings(initial.revision,settings),{code:'CONFLICT'});
+  await assert.rejects(w.saveBookSettings(result.revision,{...settings,page:{...settings.page,margin:{...settings.page.margin,inner:999000}}}),{code:'PAGE'});
+});
+test('whole-book preview refuses unsupported cover instead of dropping it',async t=>{
+  const f=await fixture(t);const w=await openWorkspace(f.book);await assert.rejects(w.readBook(),{code:'PREVIEW'});
+});
