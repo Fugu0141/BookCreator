@@ -662,7 +662,35 @@ async function smoke(){
   const answerLabel=await exec("Array.from(document.querySelector('#preview > div').shadowRoot.querySelectorAll('[data-fixed-label]')).find(e=>/^解説 \\d+\\.1$/.test(e.textContent)).textContent");
   await exec("document.querySelector('#preview-book').click()");
   await until("Array.from(document.querySelector('#preview > div')?.shadowRoot?.querySelectorAll('[data-fixed-label]')??[]).some(e=>e.textContent==="+JSON.stringify(answerLabel)+")");
-  console.log('PASS identified question and linked explanation, source insertion and partial/book consistency; study numbering sample, chapter sequence and selected/book consistency; independently created custom component, direct insertion, rename and paper; custom study design, typed library and actual paper; study template, real paper and source selection; typed paragraph library, binding, usage filter and detach; paragraph frame fragmentation and theme/heading coexistence; shared binding, paper, impact and detach; named library registration, rename, independent draft copy and persistence; dynamic sample and manuscript context, theme and paper; image ratio lock, non-destructive crop and history; image component asset, actual pixels, theme and paper; component duplication and lock guards; Canvas smart guide cancellation and equal-gap distribution; Canvas multi-selection, alignment, history and persisted geometry; Canvas resize, undo/redo and persisted width; Canvas actual mouse drag, undo/redo and persisted paper; Canvas numeric coordinates and actual paper rendering; nested component grouping and actual book preview; H1-specific fixed label and independent font; Component Lab measure, discard, apply and actual book rendering; book settings save and physical whole-book preview; imported project font, license metadata, theme selection, actual font rendering; Electron project creation, theme save/reopen, Electron sandbox, project open/read, React editing, bundled Noto, independent font roles, stale invalidation, measured preview, source selection and save');
+  // Create a new custom multi-slot component and insert it without modifying old instances.
+  await exec("(()=>{const e=document.querySelector('#study-design-kind');e.value='custom';e.dispatchEvent(new Event('change',{bubbles:true}));})()");
+  await exec("document.querySelector('#study-design-lab').click()");
+  await until("!!document.querySelector('#lab-add-slot')");
+  await exec("document.querySelector('#lab-add-slot').click()");
+  await until("!!document.querySelector('#lab-slot-name')");
+  await exec("(()=>{const e=document.querySelector('#lab-slot-name');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,'hint');e.dispatchEvent(new Event('input',{bubbles:true}));})()");
+  await until("!!document.querySelector('[data-lab-slot-sample=hint]')");
+  await exec("(()=>{const e=document.querySelector('[data-lab-slot-sample=hint]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,'ヒントのサンプル。');e.dispatchEvent(new Event('input',{bubbles:true}));})()");
+  await exec("(()=>{const e=document.querySelector('#lab-library-name');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,'複数領域問題');e.dispatchEvent(new Event('input',{bubbles:true}));})()");
+  await exec("document.querySelector('#lab-measure').click()");
+  await until("!document.querySelector('#lab-library-add').disabled");
+  if(!await exec("document.querySelector('#lab-preview > div').shadowRoot.querySelector('[data-named-slot=hint]').textContent==='ヒントのサンプル。'"))throw Error('Independent slot sample did not render');
+  if(!await exec("document.querySelector('#lab-duplicate').disabled"))throw Error('Duplicate semantic slot allowed');
+  await exec("document.querySelector('#lab-library-add').click()");
+  await until("Array.from(document.querySelector('#lab-library-select').options).some(e=>e.textContent==='複数領域問題') && !document.querySelector('#open').disabled");
+  const multiId=await exec("Array.from(document.querySelector('#lab-library-select').options).find(e=>e.textContent==='複数領域問題').value");
+  await exec("document.querySelector('#lab-cancel').click()");
+  await until("!document.querySelector('#lab-measure')");
+  await exec("(()=>{const e=document.querySelector('#study-kind');e.value="+JSON.stringify(multiId)+";e.dispatchEvent(new Event('change',{bubbles:true}));})()");
+  await exec("document.querySelector('#study-append').click()");
+  await until("document.querySelector('#source').value.includes(':::slot{name=\\\"hint\\\"}')");
+  await exec("document.querySelector('#preview-button').click()");
+  await until("!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-named-slot=hint]')");
+  await exec("document.querySelector('#preview > div').shadowRoot.querySelector('[data-named-slot=hint]').click()");
+  if(!await exec("(()=>{const e=document.querySelector('#source');return e.value.slice(e.selectionStart,e.selectionEnd)==='追加の原稿を入力してください。';})()"))throw Error('Named slot source selection is not independent');
+  await exec("document.querySelector('#save').click()");
+  await until("document.querySelector('#save').disabled && !document.querySelector('#open').disabled");
+  console.log('PASS named slot editing, template, paper and exact source selection; identified question and linked explanation, source insertion and partial/book consistency; study numbering sample, chapter sequence and selected/book consistency; independently created custom component, direct insertion, rename and paper; custom study design, typed library and actual paper; study template, real paper and source selection; typed paragraph library, binding, usage filter and detach; paragraph frame fragmentation and theme/heading coexistence; shared binding, paper, impact and detach; named library registration, rename, independent draft copy and persistence; dynamic sample and manuscript context, theme and paper; image ratio lock, non-destructive crop and history; image component asset, actual pixels, theme and paper; component duplication and lock guards; Canvas smart guide cancellation and equal-gap distribution; Canvas multi-selection, alignment, history and persisted geometry; Canvas resize, undo/redo and persisted width; Canvas actual mouse drag, undo/redo and persisted paper; Canvas numeric coordinates and actual paper rendering; nested component grouping and actual book preview; H1-specific fixed label and independent font; Component Lab measure, discard, apply and actual book rendering; book settings save and physical whole-book preview; imported project font, license metadata, theme selection, actual font rendering; Electron project creation, theme save/reopen, Electron sandbox, project open/read, React editing, bundled Noto, independent font roles, stale invalidation, measured preview, source selection and save');
   closing=true;win.destroy();await rm(smokeRoot,{recursive:true,force:true,maxRetries:10,retryDelay:100});app.exit(0);
 }
 app.on('window-all-closed',()=>{if(!SMOKE)app.quit();});
