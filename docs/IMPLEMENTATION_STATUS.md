@@ -55,3 +55,7 @@ H1–H6 design overrides with shared fallback, fixed label elements with indepen
 ## M04 — nested component groups
 
 Recursive row/column groups with stable IDs, group/ungroup, sibling reorder, physical width/spacing/background, recursive font validation and actual measured page rendering. Existing designs remain readable. CI pending; no Canvas, dynamic slots or arbitrary component registry.
+
+## M04 — bounded Canvas editing
+
+Component Lab supports converting a nested group to fixed-height Canvas, numeric child X/Y/width, paint order and measured overflow diagnostics. Theme and actual book preview share the same compiled coordinates. CI pending. Not full-page/spread Canvas; no drag, rotation, anchors or general assets yet.

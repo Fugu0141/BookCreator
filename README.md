@@ -73,3 +73,5 @@ Component Lab prototype edits a shared heading component (row/column, text slot,
 Component Lab supports shared and H1–H6-specific heading designs, fixed labels and independent font selection. Imported static faces use registered project IDs and exact weights.
 
 Component Lab supports nested row/column groups with group/ungroup, width, padding, gap and background. Experimental strict heading components only.
+
+Nested groups can use bounded free-position Canvas with explicit physical X/Y coordinates and fixed height. Numeric editing only; whole-page Canvas is future work.

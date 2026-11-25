@@ -137,3 +137,13 @@ test('nested component compiler resolves label fonts recursively',()=>{
   assert.deepEqual(r.diagnostics,[]);
   assert.equal(r.options.sections[0].blocks[0].component.children[1].children[0].fontFamily,'monospace');
 });
+
+test('Canvas coordinates survive compilation to neutral preview',()=>{
+  const design={...defaultHeadingDesign(),children:[{id:'canvas',type:'group',direction:'canvas',width:'fill',height:50000,gap:0,padding:1000,background:'#ffffff',children:[{id:'content',type:'content',x:2000,y:5000,width:50000}]}]};
+  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds};
+  const doc={documentId:'a',revision:'1',source:'# 見出し\n\n本文。\n',startOn:'page'};
+  const r=prepareBookBrowserPreview([doc],'1','canvas',{width:100000,height:100000},deps,undefined,design);
+  assert.deepEqual(r.diagnostics,[]);
+  const group=r.options.sections[0].blocks[0].component.children[0];
+  assert.equal(group.direction,'canvas');assert.equal(group.height,50000);assert.equal(group.children[0].x,2000);
+});
