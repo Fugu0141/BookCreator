@@ -1,14 +1,14 @@
-import {compileStudyBlock,compileCustomStudyBlock} from './study-blocks.js';
+import {compileStudyBlock,compileCustomStudyBlock,createStudyNumbering,type StudyNumber} from './study-blocks.js';
 import {compileHeadingDesign,compileParagraphDesign,validateHeadingLevels,type HeadingDesign,type HeadingLevel,type HeadingLevels,type HeadingContext,type StudyDesigns,type ComponentLibrary,validateComponentLibrary} from './preview-component.js';
 import {resolvePreviewTypography,type PreviewTypography} from './preview-typography.js';
 import {prepareManuscript,type Manuscript,type PreparationDependencies,type Scan,type SemanticItem} from './manuscript-poc.js';
-function resolveStudy(item:SemanticItem,body:ReturnType<typeof resolvePreviewTypography>['body'],designs?:StudyDesigns,library?:ComponentLibrary){
+function resolveStudy(item:SemanticItem,body:ReturnType<typeof resolvePreviewTypography>['body'],designs?:StudyDesigns,library?:ComponentLibrary,number?:StudyNumber){
   if(item.componentId){
     const entry=library?.entries.find(e=>e.id===item.componentId);
     if(!entry)throw RangeError('Missing custom study component: '+item.componentId);
-    return compileCustomStudyBlock(entry,item.attributes?.title,body);
+    return compileCustomStudyBlock(entry,item.attributes?.title,body,number);
   }
-  return compileStudyBlock(item.studyKind!,item.attributes?.title,body,designs?.[item.studyKind!]);
+  return compileStudyBlock(item.studyKind!,item.attributes?.title,body,designs?.[item.studyKind!],number);
 }
 export function prepareBrowserPreview<S extends Scan>(document:Manuscript,revision:string,fingerprint:string,content:{width:number;height:number},deps:PreparationDependencies<S>,typography?:PreviewTypography,library?:ComponentLibrary){
   const fonts=resolvePreviewTypography(typography);
@@ -18,6 +18,7 @@ export function prepareBrowserPreview<S extends Scan>(document:Manuscript,revisi
   const blocks=[];
   const reject=(origin:{documentId:string;range:{start:number;end:number}},message:string)=>diagnostics.push({code:'BC_PREVIEW_UNSUPPORTED',message,documentId:origin.documentId,range:origin.range});
   if(!result.input)return {diagnostics,publicationReady:false as const};
+  const numbering=createStudyNumbering();numbering.beginSection();
   for(const block of result.input.sections[0].blocks){
     if(block.kind==='pagebreak'){reject(block.origin,'Manual pagebreak not yet supported by the browser preview');continue;}
     const {item}=block;
@@ -25,8 +26,9 @@ export function prepareBrowserPreview<S extends Scan>(document:Manuscript,revisi
     const raw=document.source.slice(item.origin.range.start,item.origin.range.end);
     const offset=item.kind==='study'?item.sourceTextStart!-item.origin.range.start:item.kind==='heading'?raw.indexOf(item.text):0;
     if(offset<0||raw.slice(offset,offset+item.text.length)!==item.text){reject(item.origin,'Cannot establish exact source mapping');continue;}
+    if(item.kind==='heading')numbering.heading(item.level!);
     let study:ReturnType<typeof compileStudyBlock>|undefined;
-    if(item.kind==='study')try{study=resolveStudy(item,fonts.body,undefined,catalog);}catch(e){reject(item.origin,String(e instanceof Error?e.message:e));continue;}
+    if(item.kind==='study')try{study=resolveStudy(item,fonts.body,undefined,catalog,numbering.next(item.componentId??item.studyKind!));}catch(e){reject(item.origin,String(e instanceof Error?e.message:e));continue;}
     blocks.push({origin:item.origin,request:{text:item.text,width:block.width,fontSize:study?.fontSize??(item.kind==='heading'?6500:4200),...(study?.textStyle??(item.kind==='heading'?fonts.heading:fonts.body)),lineHeight:study?.lineHeight??1.8},splitPolicy:block.splitPolicy,...(study?{component:study.component}:{}),
       sourceTextStart:item.origin.range.start+offset,...(block.startPosition?{startPosition:block.startPosition,startPositionSource:block.startPositionSource}:{})});
   }
@@ -44,8 +46,10 @@ export function prepareBookBrowserPreview<S extends Scan>(documents:readonly Man
   const prepared=prepareManuscript(documents,revision,fingerprint,content,deps),diagnostics=[...prepared.diagnostics];
   if(!prepared.input)return {diagnostics,publicationReady:false as const};
   const byId=new Map(documents.map(d=>[d.documentId,d]));
-  let chapter=0; // Global ordered H1 sequence; a file's headings preceding its first H1 get an implicit chapter.
+  let chapter=0;
+  const numbering=createStudyNumbering();
   const sections=prepared.input.sections.map(section=>{
+    numbering.beginSection();
     let active=false,chapterTitle:string|undefined;
     const counters=[0,0,0,0,0,0];
     const blocks:(NonNullable<ReturnType<typeof prepareBrowserPreview<S>>['options']>['blocks'][number] & {component?:ReturnType<typeof compileHeadingDesign>['component']} | Extract<typeof section.blocks[number],{kind:'pagebreak'}>)[]=[];
@@ -58,10 +62,15 @@ export function prepareBookBrowserPreview<S extends Scan>(documents:readonly Man
         diagnostics.push({code:'BC_PREVIEW_UNSUPPORTED',message:'Only contiguous plain paragraphs and headings are supported',documentId:item.origin.documentId,range:item.origin.range});continue;
       }
       let design:ReturnType<typeof compileHeadingDesign>|undefined=item.kind==='paragraph'?paragraph:undefined;
-      if(item.kind==='study')try{design=resolveStudy(item,fonts.body,studyDesigns,catalog);}catch(e){diagnostics.push({code:'BC_PREVIEW_COMPONENT',message:String(e instanceof Error?e.message:e),documentId:item.origin.documentId,range:item.origin.range});continue;}
+      if(item.kind==='study')try{
+        const number=numbering.next(item.componentId??item.studyKind!);
+        if(!active){chapter=number.chapter;active=true;chapterTitle=undefined;counters.fill(0);counters[0]=chapter;}
+        design=resolveStudy(item,fonts.body,studyDesigns,catalog,number);
+      }catch(e){diagnostics.push({code:'BC_PREVIEW_COMPONENT',message:String(e instanceof Error?e.message:e),documentId:item.origin.documentId,range:item.origin.range});continue;}
       if(item.kind==='heading'){
         const level=item.level!;
-        if(level===1||!active){chapter++;active=true;chapterTitle=level===1?item.text:undefined;counters.fill(0);counters[0]=chapter;}
+        const numberedChapter=numbering.heading(level);
+        if(level===1||!active){chapter=numberedChapter;active=true;chapterTitle=level===1?item.text:undefined;counters.fill(0);counters[0]=chapter;}
         if(level>1){counters[level-1]++;counters.fill(0,level);}
         const context:HeadingContext={'chapter-number':String(chapter),'chapter-title':chapterTitle,'heading-number':counters.slice(0,level).join('.'),'heading-title':item.text,'heading-level':String(level)};
         const definition=levels[String(level) as HeadingLevel]??headingDesign;
