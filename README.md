@@ -55,3 +55,7 @@ MITを第一希望とする。依存関係の確認と最終決定は未完了�
 ## Experimental browser preview demo
 
 Build BookCreator, BookCreator_Markdown and BookCreator_LayoutEngine in sibling directories (use the pinned commits in the integration workflow). Then run `npm run preview:demo` from BookCreator and open http://127.0.0.1:4173. Edit plain ATX headings and single-source-line paragraphs, change the content dimensions, and generate an experimental preview. Click a page fragment to select the corresponding source range. No file I/O, persistence, PDF, or full Markdown support. The local server serves only the listed build modules and demo files. `npm run preview:smoke` runs the headless Chrome integration check.
+
+## Experimental desktop application
+
+See [desktop workspace PoC](docs/DESKTOP_WORKSPACE_POC.md) for build instructions and supported project features. The app is a development prototype, not a release.

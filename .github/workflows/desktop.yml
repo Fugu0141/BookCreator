@@ -1,0 +1,41 @@
+name: Desktop workspace PoC
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  desktop:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: BookCreator
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: Fugu0141/BookCreator_Markdown
+          ref: 0a096d3e0b3c294b7f9e17054a40ab8a844c2a52
+          path: BookCreator_Markdown
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: Fugu0141/BookCreator_LayoutEngine
+          ref: b7754e55c761e8e30bf58fe28d07a56e474a55d9
+          path: BookCreator_LayoutEngine
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: |
+          for dir in BookCreator_Markdown BookCreator_LayoutEngine BookCreator; do
+            (cd "$dir" && npm install --ignore-scripts --no-audit --no-fund && npm run build) || exit 1
+          done
+      - run: npm install --no-audit --no-fund
+        working-directory: BookCreator/apps/desktop
+      - run: npm test && npm run build
+        working-directory: BookCreator/apps/desktop
+      - run: xvfb-run -a npm run test:desktop
+        working-directory: BookCreator/apps/desktop
