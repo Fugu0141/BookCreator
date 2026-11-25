@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
-import {editDocument,compileMeasuredManuscript,canReviewLayout,prepareBrowserPreview} from '../dist/index.js';
+import {editDocument,compileMeasuredManuscript,canReviewLayout,prepareBrowserPreview,prepareBookBrowserPreview} from '../dist/index.js';
 const load = (variable, fallback) => import(pathToFileURL(resolve(process.env[variable] ?? fallback)).href);
 const bcm = await load('BCM_DIST', '../BookCreator_Markdown/dist/index.js');
 const engine = await load('ENGINE_DIST', '../BookCreator_LayoutEngine/dist/index.js');
@@ -91,4 +91,14 @@ test('independent font role settings are forwarded and invalid font CSS is rejec
   assert.equal(result.options.blocks[1].request.fontFamily,'BCFont_NotoSansJP');
   assert.equal(result.options.blocks[1].request.fontWeight,400);
   assert.throws(()=>prepareBrowserPreview(doc,'1','bad',{width:100000,height:70000},deps,{...settings,body:{fontFamily:'serif; color:red',fontWeight:400}}));
+});
+
+test('book preview adapter preserves manuscript order, manual breaks and origins',()=>{
+  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds};
+  const docs=[{documentId:'a',revision:'1',source:'First\n',startOn:'page'},{documentId:'b',revision:'2',source:'# Second\n\n::pagebreak{}\n\nThird\n',startOn:'continuous'}];
+  const r=prepareBookBrowserPreview(docs,'1','book',{width:100000,height:100000},deps);
+  assert.deepEqual(r.diagnostics,[]);
+  assert.deepEqual(r.options.sections.map(s=>[s.id,s.startOn]),[['a','page'],['b','continuous']]);
+  assert.equal(r.options.sections[1].blocks[1].kind,'pagebreak');
+  assert.equal(r.options.sections[1].blocks[2].origin.documentId,'b');
 });

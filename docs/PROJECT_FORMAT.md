@@ -83,3 +83,7 @@ PF-01 新規作成/再読込、PF-02 章順・ID維持、PF-03 未知形式の�
 ## Typography extension
 
 See [TYPOGRAPHY_AND_FONTS.md](TYPOGRAPHY_AND_FONTS.md) for proposed font registration, role selection, local import and layout fingerprint contracts. Existing format stays unchanged until schema and fixtures are implemented.
+
+## Implemented physical page preview subset
+
+A4 210×297 mm, A5 148×210 mm, B5 means JIS B5 182×257 mm. Left binding, initial interior side right/left, top/bottom/inner/outer margins (mm/pt/in resolved to integer micrometres); missing margins use new-book defaults. Editor saves known page fields and reorders existing manuscript nodes within manuscript positions, retains unrelated metadata semantically, YAML formatting may normalize. Page/continuous manuscript starts only. Whole-book experimental preview refuses cover/blank and unsupported physical-side starts, rather than dropping them. No arbitrary page size/section creation or formal publication yet.
