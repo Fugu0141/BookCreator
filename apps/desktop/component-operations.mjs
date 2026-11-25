@@ -6,7 +6,7 @@ function walk(children,visit,parents=[]){
   }
 }
 export function subtreeSize(node){return 1+(node.type==='group'?node.children.reduce((n,c)=>n+subtreeSize(c),0):0);}
-export function hasContent(node){return node.type==='content'||(node.type==='group'&&node.children.some(hasContent));}
+export function hasContent(node){return node.type==='content'||node.type==='slot'||(node.type==='group'&&node.children.some(hasContent));}
 export function duplicateComponentNode(node,existingIds,makeId){
   if(hasContent(node))throw Error('原稿スロットを含む部品は複製できません');
   const used=new Set(existingIds);
