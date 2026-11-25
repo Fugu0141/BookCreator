@@ -2,7 +2,7 @@
 
 Markdownを正本として、GUIによる書籍デザイン、自動組版、見開き管理、PDF出力、GitHub連携を組み合わせるローカルファーストの書籍制作ソフトウェアを目指します。
 
-**Status:** Pre-implementation design. No runnable application, packages, CI results, or released version yet.
+**Status:** Initial implementation 0.0.1: revision guards, preview-release gate and cross-library smoke test. No runnable GUI application yet.
 
 ## Related projects
 
@@ -31,7 +31,22 @@ BCMの正本は[言語仕様](https://github.com/Fugu0141/BookCreator_Markdown/b
 
 ## Development
 
-TypeScript / React / Electronを中心にWindows、Linux、macOSを目標とし、ブラウザへの移植性を初期から検証する。まずBCMとEngineの最小PoCを進め、共通fixtureでアプリ側の変換を確認する。具体的なビルドコマンドは実装基盤を作成後に記載する。
+TypeScript / React / Electronを中心にWindows、Linux、macOSを目標とし、ブラウザへの移植性を初期から検証する。まずBCMとEngineの最小PoCを進め、共通fixtureでアプリ側の変換を確認する。現時点ではプラットフォーム非依存のコア検証のみ。React/Electronアプリの起動は未実装。
+
+
+## Local development / ローカル開発
+
+Node.js 22 or later and npm are required. Run from this repository:
+
+```sh
+npm install
+npm run typecheck
+npm test
+```
+
+TypeScript 5.8.3 is pinned. The lockfile is not yet generated; see [implementation status](docs/IMPLEMENTATION_STATUS.md). GitHub Actions is configured for initial checks; full conformance is pending.
+
+Cross-library smoke test: clone the three repositories into sibling directories named BookCreator, BookCreator_Markdown, and BookCreator_LayoutEngine, then install and build each. Run `node --test tests/integration.mjs` from BookCreator. The CI integration job pins the two library commits.
 
 ## License
 
