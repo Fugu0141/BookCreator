@@ -1,4 +1,4 @@
-import {validateHeadingDesign,validateHeadingLevels,validateComponentLibrary,emptyComponentLibrary,validateHeadingBindings,resolveHeadingBindings} from '../../dist/preview-component.js';
+import {validateHeadingDesign,validateHeadingLevels,validateComponentLibrary,emptyComponentLibrary,validateHeadingBindings,resolveHeadingBindings,validateParagraphDesign} from '../../dist/preview-component.js';
 import {resolvePageSettings,paperGeometry,marginString} from './book-settings.mjs';
 import {projectImages} from './project-images.mjs';
 import {projectFonts} from './project-fonts.mjs';
@@ -189,10 +189,13 @@ export async function openWorkspace(manifestPath){
         for(const design of [headingDesign,...Object.values(headingLevels)].filter(Boolean))checkComponentFonts(design,faces);
         await checkComponentImages([headingDesign,...Object.values(headingLevels)],imageStore);
       }catch(e){componentEditable=false;componentMessage=e.message;headingDesign=null;headingLevels={};}}
-      return {editable:true,roles,headingDesign,headingLevels,localHeading,localLevels,bindings,componentEditable,componentMessage,library,libraryEditable,libraryMessage,revision:hash(r.bytes),path,doc,...r};}
+      let paragraphDesign=null,paragraphEditable=true,paragraphMessage;
+      try{const frame=doc.toJS({maxAliasCount:0}).previewParagraph;if(frame!==undefined){paragraphDesign=validateParagraphDesign(frame);checkComponentFonts(paragraphDesign,await fontStore.list());}}
+      catch(e){paragraphDesign=null;paragraphEditable=false;paragraphMessage=e.message;}
+      return {editable:true,roles,paragraphDesign,paragraphEditable,paragraphMessage,headingDesign,headingLevels,localHeading,localLevels,bindings,componentEditable,componentMessage,library,libraryEditable,libraryMessage,revision:hash(r.bytes),path,doc,...r};}
     catch(e){if(e.code==='THEME')return {editable:false,roles:null,revision:null,message:e.message};throw e;}
   }
-  function publicTheme(t){return {editable:t.editable,roles:t.roles,revision:t.revision,headingDesign:t.headingDesign??null,headingLevels:t.headingLevels??{},componentMessage:t.componentMessage,componentEditable:t.componentEditable===true,bindings:t.bindings??{},library:t.library??emptyComponentLibrary(),libraryEditable:t.libraryEditable===true,libraryMessage:t.libraryMessage,...(t.message?{message:t.message}:{})};}
+  function publicTheme(t){return {editable:t.editable,roles:t.roles,revision:t.revision,paragraphDesign:t.paragraphDesign??null,paragraphEditable:t.paragraphEditable===true,paragraphMessage:t.paragraphMessage,headingDesign:t.headingDesign??null,headingLevels:t.headingLevels??{},componentMessage:t.componentMessage,componentEditable:t.componentEditable===true,bindings:t.bindings??{},library:t.library??emptyComponentLibrary(),libraryEditable:t.libraryEditable===true,libraryMessage:t.libraryMessage,...(t.message?{message:t.message}:{})};}
   function settingsView(){return {revision:manifestHash,page:summary.pageSettings,sections:structuredClone(summary.sections),message:summary.pageMessage};}
   return {
     get summary(){return structuredClone(summary);},
@@ -317,6 +320,25 @@ export async function openWorkspace(manifestPath){
         if(!current.editable||!current.libraryEditable||current.path!==t.path||current.revision!==expectedRevision)fail('CONFLICT','Theme changed before replacement');
         await rename(temp,t.path);temp=undefined;
         return publicTheme(await readTheme());
+      }finally{if(temp)await unlink(temp).catch(()=>{});busy=false;}
+    },
+    async saveParagraphDesign(expectedRevision,value){
+      if(busy)fail('BUSY','Another write is in progress');
+      const design=value===null?null:validateParagraphDesign(value);busy=true;let temp;
+      try{
+        await checkManifest();const t=await readTheme();
+        if(!t.editable||!t.paragraphEditable||t.revision!==expectedRevision)fail('CONFLICT','Theme changed or paragraph format unsupported');
+        if(design)checkComponentFonts(design,await fontStore.list());
+        if(design)t.doc.set('previewParagraph',design);else t.doc.delete('previewParagraph');
+        const info=sourceInfo(t.bytes);if(!info.editable)fail('FORMAT','Mixed theme line endings are read-only');
+        const bytes=Buffer.from((info.bom?'\uFEFF':'')+t.doc.toString().replace(/\n/g,info.eol),'utf8');
+        if(bytes.length>MAX_MANIFEST)fail('INPUT','Theme too large');safeYaml(decode(bytes));
+        temp=join(dirname(t.path),'.bookcreator-'+randomUUID()+'.tmp');
+        const f=await open(temp,'wx',t.mode);
+        try{await f.writeFile(bytes);await f.chmod(t.mode);await f.sync();}finally{await f.close();}
+        await checkManifest();const current=await readTheme();
+        if(!current.editable||!current.paragraphEditable||current.path!==t.path||current.revision!==expectedRevision)fail('CONFLICT','Theme changed before replacement');
+        await rename(temp,t.path);temp=undefined;return publicTheme(await readTheme());
       }finally{if(temp)await unlink(temp).catch(()=>{});busy=false;}
     },
     async saveHeadingDesign(expectedRevision,value,level='default'){

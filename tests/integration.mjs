@@ -169,3 +169,16 @@ test('overlong dynamic label yields located diagnostic rather than truncation',(
   const r=prepareBookBrowserPreview([doc],'1','long',{width:100000,height:100000},deps,undefined,design);
   assert.equal(r.options,undefined);assert.equal(r.diagnostics[0].code,'BC_PREVIEW_COMPONENT');assert.equal(r.diagnostics[0].documentId,'long');
 });
+
+test('paragraph design applies only to body and preserves source text and split policy',()=>{
+  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds};
+  const doc={documentId:'body',revision:'1',source:'# 見出し\n\n本文の文章です。\n',startOn:'page'};
+  const paragraph={...defaultHeadingDesign(),direction:'column',gap:0,fontSize:4000,children:[{id:'content',type:'content'}]};
+  const r=prepareBookBrowserPreview([doc],'1','paragraph',{width:100000,height:100000},deps,{body:{fontFamily:'serif',fontWeight:400},heading:{fontFamily:'monospace',fontWeight:700}},undefined,undefined,paragraph);
+  assert.deepEqual(r.diagnostics,[]);
+  const [heading,body]=r.options.sections[0].blocks;
+  assert.equal(heading.component,undefined);assert.equal(heading.splitPolicy,'strict');
+  assert.equal(body.component.direction,'column');assert.equal(body.splitPolicy,'allow');
+  assert.equal(body.request.fontFamily,'serif');assert.equal(body.request.fontSize,4000);
+  assert.equal(doc.source.slice(body.sourceTextStart,body.sourceTextStart+body.request.text.length),body.request.text);
+});
