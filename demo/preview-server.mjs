@@ -4,7 +4,7 @@ import {readFile} from 'node:fs/promises';
 const entries=new Map();
 const add=(prefix,root,files)=>{for(const f of files)entries.set(prefix+f,new URL(root+f,import.meta.url));};
 add('/demo/','../demo/',['preview.html','preview.mjs']);
-add('/app/dist/','../dist/',['index.js','manuscript-poc.js','browser-preview.js','preview-typography.js','preview-component.js','study-blocks.js','inline-preview.js','inline-edit.js']);
+add('/app/dist/','../dist/',['index.js','manuscript-poc.js','browser-preview.js','preview-typography.js','preview-component.js','study-blocks.js','inline-preview.js','inline-edit.js','list-edit.js']);
 add('/bcm/dist/','../../BookCreator_Markdown/dist/',['index.js','document.js','block-ids.js','validation.js']);
 add('/engine/dist/','../../BookCreator_LayoutEngine/dist/',['index.js','tree.js','pagination.js','inspector.js','browser-measurement.js','browser-lines.js','preview-font.js','image-crop.js']);
 export function startPreviewServer(port=4173){
