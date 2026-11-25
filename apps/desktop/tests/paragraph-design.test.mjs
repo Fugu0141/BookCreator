@@ -1,0 +1,25 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtemp,rm,readFile,writeFile} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {createProject,openWorkspace} from '../workspace.mjs';
+import {defaultParagraphDesign,defaultHeadingDesign} from '../../../dist/index.js';
+test('paragraph design persists separately, is conflict guarded and can reset',async t=>{
+  const root=await mkdtemp(join(tmpdir(),'bc-paragraph-'));t.after(()=>rm(root,{recursive:true,force:true}));
+  const ws=await createProject(root,{title:'Paragraph test',folder:'book',size:'A5'});
+  const initial=await ws.typography(),d=defaultParagraphDesign(),heading=defaultHeadingDesign();
+  assert.equal(initial.paragraphDesign,null);assert.equal(initial.paragraphEditable,true);
+  const h=await ws.saveHeadingDesign(initial.revision,heading,'default');
+  await assert.rejects(ws.saveParagraphDesign(initial.revision,d),/changed/);
+  await assert.rejects(ws.saveParagraphDesign(h.revision,heading),/single content slot/);
+  const saved=await ws.saveParagraphDesign(h.revision,d);
+  assert.deepEqual(saved.headingDesign,heading);assert.deepEqual(saved.paragraphDesign,d);
+  const reopened=await openWorkspace(join(root,'book','book.yaml')),fresh=await reopened.typography();
+  assert.deepEqual(fresh.paragraphDesign,d);assert.deepEqual(fresh.headingDesign,heading);
+  const reset=await reopened.saveParagraphDesign(fresh.revision,null);
+  assert.equal(reset.paragraphDesign,null);assert.deepEqual(reset.headingDesign,heading);
+  const file=join(root,'book','themes','default','theme.yaml');
+  await writeFile(file,(await readFile(file,'utf8'))+'\npreviewParagraph: invalid\n');
+  const invalid=await reopened.typography();assert.equal(invalid.paragraphEditable,false);assert.equal(invalid.componentEditable,true);
+});
