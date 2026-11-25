@@ -116,3 +116,19 @@ test('component theme roundtrip preserves typography and rejects stale or invali
   const saved=await w.saveTypography(after.revision,{...after.roles,heading:{font:'system-serif',weight:700}});
   assert.deepEqual(saved.headingDesign,design);
 });
+
+test('per-level registry preserves shared design and validates component font IDs',async t=>{
+  const {defaultHeadingDesign}=await import('../../../dist/preview-component.js');
+  const parent=await mkdtemp(join(tmpdir(),'bc-component-levels-'));t.after(()=>rm(parent,{recursive:true,force:true}));
+  const w=await createProject(parent,{title:'Levels',folder:'book',size:'A5'});
+  const initial=await w.typography(),shared=defaultHeadingDesign();
+  const first=await w.saveHeadingDesign(initial.revision,shared);
+  const special={...shared,direction:'column',font:{id:'system-serif',weight:700},children:[{id:'label',type:'label',width:'fill',text:'CHAPTER',fontSize:3000,lineHeight:1.5,color:'#315b86',font:{id:'system-monospace',weight:400}},{id:'content',type:'content'}]};
+  const second=await w.saveHeadingDesign(first.revision,special,'2');
+  assert.deepEqual(second.headingDesign,shared);assert.deepEqual(second.headingLevels['2'],special);
+  const reopened=await openWorkspace(join(parent,'book','book.yaml'));
+  assert.deepEqual((await reopened.typography()).headingLevels['2'],special);
+  await assert.rejects(w.saveHeadingDesign(second.revision,{...special,font:{id:'font-'+'a'.repeat(64),weight:400}},'3'),{code:'THEME'});
+  const reset=await w.saveHeadingDesign(second.revision,null,'2');
+  assert.deepEqual(reset.headingLevels,{});assert.deepEqual(reset.headingDesign,shared);
+});

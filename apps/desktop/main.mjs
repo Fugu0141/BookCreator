@@ -77,7 +77,7 @@ async function run(){
     const result=await current.importFont(chosen.filePaths[0],args[0]);
     const fonts=await loadProjectFonts(current);return {...result,fonts};
   });
-  handle('saveHeadingDesign',async(...args)=>{checkArgs(args,2);return requireWorkspace().saveHeadingDesign(...args);});
+  handle('saveHeadingDesign',async(...args)=>{checkArgs(args,3);return requireWorkspace().saveHeadingDesign(...args);});
   handle('saveTypography',async(...args)=>{checkArgs(args,2);return requireWorkspace().saveTypography(...args);});
   handle('readBook',async(...args)=>{checkArgs(args,0);return requireWorkspace().readBook();});
   handle('saveBookSettings',async(...args)=>{checkArgs(args,2);return requireWorkspace().saveBookSettings(...args);});
@@ -172,7 +172,24 @@ async function smoke(){
   if(!(await readFile(join(smokeRoot,'new-book','themes','default','theme.yaml'),'utf8')).includes('previewComponents'))throw Error('Component not saved');
   await exec("document.querySelector('#preview-book').click()");
   await until("!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-component]')");
-  console.log('PASS Component Lab measure, discard, apply and actual book rendering; book settings save and physical whole-book preview; imported project font, license metadata, theme selection, actual font rendering; Electron project creation, theme save/reopen, Electron sandbox, project open/read, React editing, bundled Noto, independent font roles, stale invalidation, measured preview, source selection and save');
+  await exec("(()=>{const e=document.querySelector('#lab-level');e.value='1';e.dispatchEvent(new Event('change',{bubbles:true}));})()");
+  await until("document.querySelector('#lab-level').value==='1'");
+  await exec("document.querySelector('#component-lab').click()");
+  await until("!!document.querySelector('#lab-add-label')");
+  await exec("(()=>{const e=document.querySelector('#lab-direction');e.value='column';e.dispatchEvent(new Event('change',{bubbles:true}));})()");
+  await until("document.querySelector('#lab-direction').value==='column'");
+  await exec("document.querySelector('#lab-add-label').click()");
+  await until("!!document.querySelector('#lab-font-label')");
+  await exec("(()=>{const e=document.querySelector('#lab-font-label');e.value='system-monospace';e.dispatchEvent(new Event('change',{bubbles:true}));})()");
+  await until("document.querySelector('#lab-font-label').value==='system-monospace'");
+  await exec("document.querySelector('#lab-measure').click()");
+  await until("!document.querySelector('#lab-apply').disabled");
+  await exec("document.querySelector('#lab-apply').click()");
+  await until("!document.querySelector('#open').disabled && !document.querySelector('#lab-measure')");
+  await exec("document.querySelector('#preview-book').click()");
+  await until("!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-fixed-label]')");
+  if(!await exec("(()=>{const l=document.querySelector('#preview > div').shadowRoot.querySelector('[data-fixed-label]');return l.textContent==='CHAPTER'&&l.firstElementChild.style.fontFamily==='monospace';})()"))throw Error('Level-specific fixed label not rendered');
+  console.log('PASS H1-specific fixed label and independent font; Component Lab measure, discard, apply and actual book rendering; book settings save and physical whole-book preview; imported project font, license metadata, theme selection, actual font rendering; Electron project creation, theme save/reopen, Electron sandbox, project open/read, React editing, bundled Noto, independent font roles, stale invalidation, measured preview, source selection and save');
   closing=true;win.destroy();await rm(smokeRoot,{recursive:true,force:true});app.exit(0);
 }
 app.on('window-all-closed',()=>{if(!SMOKE)app.quit();});

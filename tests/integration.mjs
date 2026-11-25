@@ -115,3 +115,15 @@ test('heading design compiler applies only to headings and leaves source text ex
   assert.equal(heading.request.text,'見出し');
   assert.equal(body.component,undefined);
 });
+
+test('level-specific heading style and independent label font resolve without source changes',()=>{
+  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds};
+  const shared=defaultHeadingDesign(),special={...shared,direction:'column',font:{id:'system-serif',weight:700},children:[{id:'label',type:'label',width:'fill',text:'SECTION',fontSize:3000,lineHeight:1.5,color:'#123456',font:{id:'system-monospace',weight:400}},{id:'content',type:'content'}]};
+  const doc={documentId:'a',revision:'1',source:'# 一章\n\n## 小見出し\n\n本文。\n',startOn:'page'};
+  const r=prepareBookBrowserPreview([doc],'1','levels',{width:100000,height:100000},deps,undefined,shared,{'2':special});
+  assert.deepEqual(r.diagnostics,[]);
+  const [h1,h2,body]=r.options.sections[0].blocks;
+  assert.equal(h1.component.direction,'row');assert.equal(h2.component.direction,'column');
+  assert.equal(h2.request.fontFamily,'serif');assert.equal(h2.component.children[0].fontFamily,'monospace');
+  assert.equal(h2.request.text,'小見出し');assert.equal(body.component,undefined);
+});

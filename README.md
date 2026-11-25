@@ -69,3 +69,5 @@ Desktop font manager can copy explicitly shareable static upright TTF/OTF faces 
 Desktop supports physical paper and margins from book.yaml, manuscript reordering and whole-book experimental preview (supported plain manuscript sections only). B5 means JIS B5.
 
 Component Lab prototype edits a shared heading component (row/column, text slot, decorative rectangles, size, gap, padding, color) with actual measurement and theme apply/discard. It is not the complete component editor yet.
+
+Component Lab supports shared and H1–H6-specific heading designs, fixed labels and independent font selection. Imported static faces use registered project IDs and exact weights.
