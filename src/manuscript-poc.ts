@@ -1,3 +1,4 @@
+import {parsePreviewInline} from './inline-preview.js';
 import {validNamedSlot,type NamedSlotSource} from './preview-component.js';
 import {studyKind,customStudyId,type StudyKind} from './study-blocks.js';
 // Experimental adapter for a deliberately limited scanner subset, not a full BCM compiler.
@@ -26,7 +27,7 @@ type PreparedInput=Omit<Input,'sections'>&{sections:{id:string;startOn:'page'|'c
 const plain=(s:string)=>/^[\p{L}\p{M}\p{N} .,!?、。・「」『』（）！？　]+$/u.test(s)&&!/^\s|^\d+\.\s/.test(s);
 const stripEnd=(s:string)=>s.replace(/(?:\r\n|\r|\n)$/,'');
 // Keep raw UTF-16 offsets and reject unsupported line content, not just its normalized copy.
-const plainBody=(s:string)=>s.length>0&&s.length<=10000&&!/\r(?!\n)/.test(s)&&(s.match(/\n/g)?.length??0)<=255&&s.split(/\r\n|\n/).some(line=>line.length>0)&&s.split(/\r\n|\n/).every(line=>line===''||plain(line));
+const plainBody=(s:string)=>{try{parsePreviewInline(s);return true;}catch{return false;}};
 export function prepareManuscript<S extends Scan>(documents:readonly Manuscript[],revision:string,fingerprint:string,content:Input['content'],deps:PreparationDependencies<S>):{input?:PreparedInput;items:SemanticItem[];diagnostics:Issue[];publicationReady:false} {
   const diagnostics:Issue[]=[],items:SemanticItem[]=[];
   const failed=()=>({items:[],diagnostics,publicationReady:false as const});
@@ -64,7 +65,7 @@ export function prepareManuscript<S extends Scan>(documents:readonly Manuscript[
       if(b.kind==='blank')continue;
       if(b.kind==='heading'){
         const match=/^ {0,3}(#{1,6})[ \t]+(.+)$/.exec(text);
-        if(!match||!plain(match[2])){unsupported(b.range,'Only plain ATX headings supported');continue;}
+        if(!match||!plainBody(match[2])){unsupported(b.range,'Only supported inline text in ATX headings');continue;}
         emit({kind:'heading',origin:origin(b.range),level:match[1].length,text:match[2]},content.width);
       }else if(b.kind==='raw'){
         const start=b.range.start;let end=b.range.end;
@@ -76,7 +77,7 @@ export function prepareManuscript<S extends Scan>(documents:readonly Manuscript[
           n=j;end=scan.blocks[n].range.end;
         }
         const body=stripEnd(doc.source.slice(start,end));
-        if(!plainBody(body)){unsupported({start,end},'Unsupported Markdown; bounded plain paragraphs only');continue;}
+        if(!plainBody(body)){unsupported({start,end},'Unsupported Markdown; restricted inline preview subset only');continue;}
         emit({kind:'paragraph',origin:origin({start,end}),text:body},content.width);
       }else if(b.kind==='directive'&&b.closed&&b.header.kind==='container'){
         const h=b.header,attrs=Object.fromEntries(h.attributes.map(a=>[a.key,a.value])),kind=studyKind(h.name,attrs),componentId=customStudyId(h.name,attrs);
