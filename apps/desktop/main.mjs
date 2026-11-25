@@ -189,7 +189,19 @@ async function smoke(){
   await exec("document.querySelector('#preview-book').click()");
   await until("!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-fixed-label]')");
   if(!await exec("(()=>{const l=document.querySelector('#preview > div').shadowRoot.querySelector('[data-fixed-label]');return l.textContent==='CHAPTER'&&l.firstElementChild.style.fontFamily==='monospace';})()"))throw Error('Level-specific fixed label not rendered');
-  console.log('PASS H1-specific fixed label and independent font; Component Lab measure, discard, apply and actual book rendering; book settings save and physical whole-book preview; imported project font, license metadata, theme selection, actual font rendering; Electron project creation, theme save/reopen, Electron sandbox, project open/read, React editing, bundled Noto, independent font roles, stale invalidation, measured preview, source selection and save');
+  await exec("document.querySelector('#component-lab').click()");
+  await until("!!document.querySelector('#lab-group-next')");
+  await exec("document.querySelector('[data-lab-node=content]').click()");
+  await until("!document.querySelector('#lab-group-next').disabled");
+  await exec("document.querySelector('#lab-group-next').click()");
+  await until("!!document.querySelector('#lab-group-direction')");
+  await exec("document.querySelector('#lab-measure').click()");
+  await until("!document.querySelector('#lab-apply').disabled");
+  await exec("document.querySelector('#lab-apply').click()");
+  await until("!document.querySelector('#open').disabled && !document.querySelector('#lab-measure')");
+  await exec("document.querySelector('#preview-book').click()");
+  await until("!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-component-group] [data-fixed-label]')");
+  console.log('PASS nested component grouping and actual book preview; H1-specific fixed label and independent font; Component Lab measure, discard, apply and actual book rendering; book settings save and physical whole-book preview; imported project font, license metadata, theme selection, actual font rendering; Electron project creation, theme save/reopen, Electron sandbox, project open/read, React editing, bundled Noto, independent font roles, stale invalidation, measured preview, source selection and save');
   closing=true;win.destroy();await rm(smokeRoot,{recursive:true,force:true});app.exit(0);
 }
 app.on('window-all-closed',()=>{if(!SMOKE)app.quit();});
