@@ -90,3 +90,13 @@ export function createStudyNumbering(){
     }
   };
 }
+
+/** Optional persistent instance identity and typed link, not a displayed number. */
+export function linkedStudyTemplate(choice:string,instanceId?:string,answerTo?:string){
+  const custom=isCustomComponentId(choice);
+  if(instanceId!==undefined&&!isStudyBlockId(instanceId))throw RangeError('Invalid study instance ID');
+  if(answerTo!==undefined&&(!isStudyBlockId(answerTo)||(!custom&&choice!=='explanation')||answerTo===instanceId))throw RangeError('Invalid answer target');
+  const template=custom?customStudyTemplate(choice):studyTemplate(choice as StudyKind);
+  const end=template.indexOf('}');
+  return template.slice(0,end)+(instanceId?' #'+instanceId:'')+(answerTo?' answer-to="'+answerTo+'"':'')+template.slice(end);
+}
