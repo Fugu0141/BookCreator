@@ -572,7 +572,27 @@ async function smoke(){
   if(!await exec("(()=>{const e=document.querySelector('#source');return e.value.slice(e.selectionStart,e.selectionEnd)==='注意の本文を入力してください。';})()"))throw Error('Study block source selection includes markup or loses body');
   await exec("document.querySelector('#save').click()");
   await until("document.querySelector('#save').disabled && !document.querySelector('#open').disabled");
-  console.log('PASS study template, real paper and source selection; typed paragraph library, binding, usage filter and detach; paragraph frame fragmentation and theme/heading coexistence; shared binding, paper, impact and detach; named library registration, rename, independent draft copy and persistence; dynamic sample and manuscript context, theme and paper; image ratio lock, non-destructive crop and history; image component asset, actual pixels, theme and paper; component duplication and lock guards; Canvas smart guide cancellation and equal-gap distribution; Canvas multi-selection, alignment, history and persisted geometry; Canvas resize, undo/redo and persisted width; Canvas actual mouse drag, undo/redo and persisted paper; Canvas numeric coordinates and actual paper rendering; nested component grouping and actual book preview; H1-specific fixed label and independent font; Component Lab measure, discard, apply and actual book rendering; book settings save and physical whole-book preview; imported project font, license metadata, theme selection, actual font rendering; Electron project creation, theme save/reopen, Electron sandbox, project open/read, React editing, bundled Noto, independent font roles, stale invalidation, measured preview, source selection and save');
+  await exec("(()=>{const e=document.querySelector('#study-design-kind');e.value='warning';e.dispatchEvent(new Event('change',{bubbles:true}));})()");
+  await exec("document.querySelector('#study-design-lab').click()");
+  await until("!!document.querySelector('#lab-study-title')");
+  await exec("document.querySelector('[data-lab-node=study-label]').click()");
+  await until("!!document.querySelector('#lab-dynamic-prefix')");
+  await exec("(()=>{const e=document.querySelector('#lab-dynamic-prefix');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,'確認：');e.dispatchEvent(new Event('input',{bubbles:true}));})()");
+  await exec("document.querySelector('#lab-measure').click()");
+  await until("!document.querySelector('#lab-apply').disabled");
+  await exec("(()=>{const e=document.querySelector('#lab-library-name');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,'注意書き共通');e.dispatchEvent(new Event('input',{bubbles:true}));})()");
+  await until("!document.querySelector('#lab-library-add').disabled");
+  await exec("document.querySelector('#lab-library-add').click()");
+  await until("document.querySelector('#lab-library-select').options.length===2 && !document.querySelector('#open').disabled");
+  await exec("(()=>{const e=document.querySelector('#lab-library-select');e.value=e.options[1].value;e.dispatchEvent(new Event('change',{bubbles:true}));})()");
+  await until("!document.querySelector('#lab-library-bind').disabled");
+  await exec("document.querySelector('#lab-library-bind').click()");
+  await until("!document.querySelector('#lab-measure') && !document.querySelector('#open').disabled");
+  await exec("document.querySelector('#preview-book').click()");
+  await until("Array.from(document.querySelector('#preview > div')?.shadowRoot?.querySelectorAll('[data-fixed-label]')??[]).some(e=>e.dataset.componentNode==='study-label'&&e.textContent==='確認：注意')");
+  const studyYaml=await readFile(join(smokeRoot,'new-book','themes','default','theme.yaml'),'utf8');
+  if(!studyYaml.includes('previewStudy:')||!studyYaml.includes('usage: study'))throw Error('Study shared design not persisted');
+  console.log('PASS custom study design, typed library and actual paper; study template, real paper and source selection; typed paragraph library, binding, usage filter and detach; paragraph frame fragmentation and theme/heading coexistence; shared binding, paper, impact and detach; named library registration, rename, independent draft copy and persistence; dynamic sample and manuscript context, theme and paper; image ratio lock, non-destructive crop and history; image component asset, actual pixels, theme and paper; component duplication and lock guards; Canvas smart guide cancellation and equal-gap distribution; Canvas multi-selection, alignment, history and persisted geometry; Canvas resize, undo/redo and persisted width; Canvas actual mouse drag, undo/redo and persisted paper; Canvas numeric coordinates and actual paper rendering; nested component grouping and actual book preview; H1-specific fixed label and independent font; Component Lab measure, discard, apply and actual book rendering; book settings save and physical whole-book preview; imported project font, license metadata, theme selection, actual font rendering; Electron project creation, theme save/reopen, Electron sandbox, project open/read, React editing, bundled Noto, independent font roles, stale invalidation, measured preview, source selection and save');
   closing=true;win.destroy();await rm(smokeRoot,{recursive:true,force:true,maxRetries:10,retryDelay:100});app.exit(0);
 }
 app.on('window-all-closed',()=>{if(!SMOKE)app.quit();});
