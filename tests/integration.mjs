@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
-import {editDocument,compileMeasuredManuscript,canReviewLayout,prepareBrowserPreview,prepareBookBrowserPreview,defaultHeadingDesign} from '../dist/index.js';
+import {editDocument,compileMeasuredManuscript,canReviewLayout,prepareBrowserPreview,prepareBookBrowserPreview,defaultHeadingDesign,previewSourceRange} from '../dist/index.js';
 const load = (variable, fallback) => import(pathToFileURL(resolve(process.env[variable] ?? fallback)).href);
 const bcm = await load('BCM_DIST', '../BookCreator_Markdown/dist/index.js');
 const engine = await load('ENGINE_DIST', '../BookCreator_LayoutEngine/dist/index.js');
@@ -50,7 +50,7 @@ test('real scanner -> compiler -> measured pagination, preserving source and fig
 test('unsupported content and duplicate IDs do not produce layout input',()=>{
   const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds,measure:()=>[10]};
   const run=(...sources)=>compileMeasuredManuscript(sources.map((source,i)=>({documentId:String(i),revision:'1',source,startOn:'page'})),'1','fixture',{width:100,height:100},deps);
-  assert.equal(run('**bold**\n').input,undefined);
+  assert.equal(run('[bold](https://example.invalid)\n').input,undefined);
   assert.equal(run('::pagebreak{side="right"}\n').input,undefined);
   assert.equal(run('::figure{#id src="a.png"}\n','::figure{#id src="b.png"}\n').diagnostics[0].code,'BCM_DUPLICATE_BLOCK_ID');
 });
@@ -206,8 +206,8 @@ test('unsupported study forms and duplicate IDs fail closed',()=>{
   for(const source of [
     ':::callout{kind="unknown"}\n本文。\n:::\n',
     ':::component{name="exercise" split-policy="allow"}\n本文。\n:::\n',
-    ':::callout{kind="tip"}\n**強調**\n:::\n',
-    ':::callout{kind="tip"}\n本文。\n**強調**\n:::\n',
+    ':::callout{kind="tip"}\n[強調](https://example.invalid)\n:::\n',
+    ':::callout{kind="tip"}\n本文。\n[強調](https://example.invalid)\n:::\n',
     '::::component{name="exercise"}\n:::slot{name="answer"}\n本文。\n:::\n::::\n',
     ':::callout{kind="tip"}\n:::\n',
     ':::callout{kind="tip" #dup}\n本文。\n:::\n\n:::component{name="example" #dup}\n本文。\n:::\n'
@@ -303,7 +303,7 @@ test('named study slots preserve independent exact source offsets and reject mis
   assert.equal(b.sourceTextStart,source.lastIndexOf('同じ文章。'));assert.equal(b.namedSlots[0].sourceTextStart,source.indexOf('同じ文章。'));
   assert.equal(b.namedSlots[0].request.text,'同じ文章。');assert.equal(b.namedSlots[0].request.fontFamily,'monospace');
   const one=prepareBrowserPreview(doc,'1','one',size,deps,undefined,library);assert.deepEqual(one.diagnostics,[]);assert.deepEqual(one.options.blocks[0].namedSlots,b.namedSlots);
-  for(const bad of [source.replace('name="hint"','name="unknown"'),source.replace('name="hint"','name="content"'),source.replace('同じ文章。\r\n:::','**強調**\r\n:::'),':::component{name="'+id+'"}\n本文。\n:::\n'])assert.equal(run(bad).options,undefined,bad);
+  for(const bad of [source.replace('name="hint"','name="unknown"'),source.replace('name="hint"','name="content"'),source.replace('同じ文章。\r\n:::','[強調](https://example.invalid)\r\n:::'),':::component{name="'+id+'"}\n本文。\n:::\n'])assert.equal(run(bad).options,undefined,bad);
   assert.equal(run(source,{...library,entries:[{...library.entries[0],design:defaultHeadingDesign()}]}).options,undefined);
 });
 
@@ -349,5 +349,30 @@ test('multiline plain paragraphs and study slots preserve exact CRLF and LF sour
   assert.equal(source.slice(s.namedSlots[0].sourceTextStart,s.namedSlots[0].sourceTextStart+hint.length),hint);
   const one=prepareBrowserPreview(doc,'1','one',size,deps,undefined,library);assert.deepEqual(one.diagnostics,[]);
   assert.equal(one.options.blocks[0].request.text,body);
-  for(const raw of [':::callout{kind="note"}\n本文。\n\n**bold**\n:::\n','One\n'.repeat(257),'First\rSecond\n'])assert.equal(prepareBrowserPreview({...doc,source:raw},'1','bad',size,deps).options,undefined,raw);
+  for(const raw of [':::callout{kind="note"}\n本文。\n\n[bold](https://example.invalid)\n:::\n','One\n'.repeat(257),'First\rSecond\n'])assert.equal(prepareBrowserPreview({...doc,source:raw},'1','bad',size,deps).options,undefined,raw);
+});
+
+test('emphasis in headings, paragraphs and named study slots keeps logical and raw ranges distinct',()=>{
+  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds};
+  const id='component-00000000-0000-4000-8000-000000000001';
+  const design={...defaultHeadingDesign(),direction:'column',children:[{id:'content',type:'content'},{id:'hint',type:'slot',name:'hint',width:'fill',fontSize:3500,lineHeight:1.5,color:'#123456'}]};
+  const library={schemaVersion:3,entries:[{id,name:'強調例題',usage:'study',design}]};
+  const raw='# **見出し**\r\n\r\nこれは**重要**です。\r\n\r\n*斜体*です。\r\n\r\n::::component{name="'+id+'"}\n:::slot{name="content"}\n**問題文**です。\n:::\n\n:::slot{name="hint"}\n*ヒント*です。\n:::\n::::\n';
+  const doc={documentId:'rich',revision:'1',source:raw,startOn:'page'};
+  const result=prepareBookBrowserPreview([doc],'1','rich',{width:100000,height:100000},deps,undefined,undefined,undefined,undefined,undefined,library);
+  assert.deepEqual(result.diagnostics,[]);
+  const [heading,body,study]=result.options.sections[0].blocks;
+  assert.equal(heading.request.text,'見出し');assert.equal(body.request.text,'これは重要です。\r\n\r\n斜体です。');
+  assert.deepEqual(body.request.inlineStyles,[{start:3,end:5,fontWeight:700},{start:12,end:14,italic:true}]);
+  for(const b of [heading,body,study]){
+    assert.equal(b.sourceTextStart,undefined);
+    const full=previewSourceRange(b,{textStart:0,textEnd:b.request.text.length});
+    assert.ok(raw.slice(full.start,full.end).includes('*'));
+  }
+  const fragment=previewSourceRange(body,{textStart:3,textEnd:5});assert.equal(raw.slice(fragment.start,fragment.end),'**重要**');
+  const slot=study.namedSlots[0];assert.equal(slot.request.text,'ヒントです。');assert.equal(slot.sourceTextStart,undefined);
+  const slotRange=previewSourceRange(study,{textStart:0,textEnd:3},'hint');
+  assert.equal(raw.slice(slotRange.start,slotRange.end),'*ヒント*');
+  const one=prepareBrowserPreview(doc,'1','rich',{width:100000,height:100000},deps,undefined,library);
+  assert.deepEqual(one.diagnostics,[]);assert.deepEqual(one.options.blocks[1].sourceMap,body.sourceMap);
 });
