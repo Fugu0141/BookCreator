@@ -206,6 +206,7 @@ export function prepareManuscript<S extends Scan>(documents:readonly Manuscript[
         item.equationNumber=equationChapter+'.'+(++equationIndex);
       }
     }
+    if(!chapterActive&&section.blocks.some(b=>b.kind==='block'))beginEquationChapter();
   }
   // Links refer to persistent instance IDs, never positions or displayed numbers.
   const byId=new Map(items.filter(i=>i.origin.persistentId).map(i=>[i.origin.persistentId!,i]));
