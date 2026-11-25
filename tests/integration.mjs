@@ -316,7 +316,7 @@ test('optional study slots may be omitted in implicit or explicit primary-only s
   const library={schemaVersion:3,entries:[{id,name:'自作問題',usage:'study',design}]};
   const implicit=':::component{name="'+id+'"}\n本文。\n:::\n';
   const explicit='::::component{name="'+id+'"}\n:::slot{name="content"}\n本文。\n:::\n::::\n';
-  const complete=explicit.replace('::::\n',':::slot{name="hint"}\nヒント。\n:::\n::::\n');
+  const complete=explicit.replace('::::\n','\n:::slot{name="hint"}\nヒント。\n:::\n::::\n');
   const run=source=>prepareBookBrowserPreview([{documentId:'s',revision:'1',source,startOn:'page'}],'1','optional',{width:100000,height:100000},deps,undefined,undefined,undefined,undefined,undefined,library);
   for(const source of [implicit,explicit]){
     const result=run(source);assert.deepEqual(result.diagnostics,[]);
