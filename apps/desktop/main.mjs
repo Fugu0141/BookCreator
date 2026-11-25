@@ -512,7 +512,21 @@ async function smoke(){
   await until("document.querySelector('#lab-current-binding')?.textContent.includes('独立デザイン')");
   await exec("document.querySelector('#lab-cancel').click()");
   await until("!document.querySelector('#lab-measure')");
-  console.log('PASS shared binding, paper, impact and detach; named library registration, rename, independent draft copy and persistence; dynamic sample and manuscript context, theme and paper; image ratio lock, non-destructive crop and history; image component asset, actual pixels, theme and paper; component duplication and lock guards; Canvas smart guide cancellation and equal-gap distribution; Canvas multi-selection, alignment, history and persisted geometry; Canvas resize, undo/redo and persisted width; Canvas actual mouse drag, undo/redo and persisted paper; Canvas numeric coordinates and actual paper rendering; nested component grouping and actual book preview; H1-specific fixed label and independent font; Component Lab measure, discard, apply and actual book rendering; book settings save and physical whole-book preview; imported project font, license metadata, theme selection, actual font rendering; Electron project creation, theme save/reopen, Electron sandbox, project open/read, React editing, bundled Noto, independent font roles, stale invalidation, measured preview, source selection and save');
+  // Paragraph styling must preserve line fragmentation and not change heading components.
+  await exec("document.querySelector('#paragraph-lab').click()");
+  await until("!!document.querySelector('#paragraph-measure')");
+  await exec("(()=>{const e=document.querySelector('#paragraph-sample');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(e,'本文の分割を検証する文章です。'.repeat(220));e.dispatchEvent(new Event('input',{bubbles:true}));})()");
+  await exec("document.querySelector('#paragraph-measure').click()");
+  await until("!document.querySelector('#paragraph-apply').disabled && document.querySelector('#paragraph-preview > div').shadowRoot.querySelectorAll('[data-page]').length>1");
+  if(!await exec("(()=>{const root=document.querySelector('#paragraph-preview > div').shadowRoot;return Array.from(root.querySelectorAll('[data-fragmentable-frame]')).map(e=>e.querySelector('[data-content-slot]').textContent).join('')===document.querySelector('#paragraph-sample').value;})()"))throw Error('Paragraph frame lost source text');
+  await exec("document.querySelector('#paragraph-apply').click()");
+  await until("!document.querySelector('#paragraph-measure') && !document.querySelector('#open').disabled");
+  await exec("document.querySelector('#preview-book').click()");
+  await until("!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-fragmentable-frame]')");
+  if(!await exec("!!document.querySelector('#preview > div').shadowRoot.querySelector('[data-fixed-label]')"))throw Error('Heading component lost after paragraph save');
+  const paragraphYaml=await readFile(join(smokeRoot,'new-book','themes','default','theme.yaml'),'utf8');
+  if(!paragraphYaml.includes('previewParagraph:'))throw Error('Paragraph design not persisted');
+  console.log('PASS paragraph frame fragmentation and theme/heading coexistence; shared binding, paper, impact and detach; named library registration, rename, independent draft copy and persistence; dynamic sample and manuscript context, theme and paper; image ratio lock, non-destructive crop and history; image component asset, actual pixels, theme and paper; component duplication and lock guards; Canvas smart guide cancellation and equal-gap distribution; Canvas multi-selection, alignment, history and persisted geometry; Canvas resize, undo/redo and persisted width; Canvas actual mouse drag, undo/redo and persisted paper; Canvas numeric coordinates and actual paper rendering; nested component grouping and actual book preview; H1-specific fixed label and independent font; Component Lab measure, discard, apply and actual book rendering; book settings save and physical whole-book preview; imported project font, license metadata, theme selection, actual font rendering; Electron project creation, theme save/reopen, Electron sandbox, project open/read, React editing, bundled Noto, independent font roles, stale invalidation, measured preview, source selection and save');
   closing=true;win.destroy();await rm(smokeRoot,{recursive:true,force:true,maxRetries:10,retryDelay:100});app.exit(0);
 }
 app.on('window-all-closed',()=>{if(!SMOKE)app.quit();});
