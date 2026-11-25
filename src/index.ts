@@ -25,3 +25,5 @@ export function canReviewLayout(current: Pick<LayoutTicket,'revision'|'fingerpri
   return canAcceptLayout(current,result) && result.completeness === 'full' && result.publicationReady === true;
 }
 export {compileMeasuredManuscript, type Manuscript, type SemanticItem} from './manuscript-poc.js';
+export {prepareManuscript, type PreparationDependencies} from './manuscript-poc.js';
+export {prepareBrowserPreview} from './browser-preview.js';

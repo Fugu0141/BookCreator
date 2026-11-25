@@ -10,16 +10,20 @@ type MeasuredBlock={kind:'block';origin:Origin;width:number;unitHeights:readonly
 type Break={kind:'pagebreak';origin:Origin};
 interface Input {schemaVersion:1;revision:string;fingerprint:string;content:{width:number;height:number};sections:{id:string;startOn:'page'|'continuous';blocks:(MeasuredBlock|Break)[]}[]}
 interface Issue {code:string;message:string;documentId:string;range:Range}
-interface Dependencies<S extends Scan> {
+export interface PreparationDependencies<S extends Scan> {
   scan:(source:string)=>S;
   validate:(parsed:S)=>{diagnostics:readonly {code:string;range:Range;message:string}[]};
   index:(docs:readonly {documentId:string;revision:string;parsed:S}[])=>{diagnostics:readonly {code:string;occurrence:{documentId:string;range:Range}}[]};
+}
+interface Dependencies<S extends Scan> extends PreparationDependencies<S> {
   // Called with resolved width. Explicit test measurement only.
   measure:(item:SemanticItem,width:number)=>readonly number[];
 }
+type PreparedBlock=Omit<MeasuredBlock,'unitHeights'>&{item:SemanticItem};
+type PreparedInput=Omit<Input,'sections'>&{sections:{id:string;startOn:'page'|'continuous';blocks:(PreparedBlock|Break)[]}[]};
 const plain=(s:string)=>/^[\p{L}\p{M}\p{N} .,!?、。・「」『』（）！？　]+$/u.test(s)&&!/^\s|^\d+\.\s/.test(s);
 const stripEnd=(s:string)=>s.replace(/(?:\r\n|\r|\n)$/,'');
-export function compileMeasuredManuscript<S extends Scan>(documents:readonly Manuscript[],revision:string,fingerprint:string,content:Input['content'],deps:Dependencies<S>):{input?:Input;items:SemanticItem[];diagnostics:Issue[];publicationReady:false} {
+export function prepareManuscript<S extends Scan>(documents:readonly Manuscript[],revision:string,fingerprint:string,content:Input['content'],deps:PreparationDependencies<S>):{input?:PreparedInput;items:SemanticItem[];diagnostics:Issue[];publicationReady:false} {
   const diagnostics:Issue[]=[],items:SemanticItem[]=[];
   const failed=()=>({items:[],diagnostics,publicationReady:false as const});
   const seen=new Set<string>();
@@ -33,11 +37,11 @@ export function compileMeasuredManuscript<S extends Scan>(documents:readonly Man
   if(diagnostics.length)return failed();
   for(const d of deps.index(parsed).diagnostics)diagnostics.push({code:d.code,message:'Duplicate block ID',...d.occurrence});
   if(diagnostics.length)return failed();
-  const input:Input={schemaVersion:1,revision,fingerprint,content:{...content},sections:[]};
+  const input:PreparedInput={schemaVersion:1,revision,fingerprint,content:{...content},sections:[]};
   for(let i=0;i<documents.length;i++){
     const doc=documents[i],scan=parsed[i].parsed;
     if(scan.source!==doc.source)throw new Error('Scanner source mismatch');
-    const section:Input['sections'][number]={id:doc.documentId,startOn:doc.startOn,blocks:[]};
+    const section:PreparedInput['sections'][number]={id:doc.documentId,startOn:doc.startOn,blocks:[]};
     const origin=(range:Range,persistentId?:string):Origin=>({documentId:doc.documentId,revision:doc.revision,blockKey:String(range.start),range:{...range},...(persistentId?{persistentId}:{})});
     const unsupported=(range:Range,message:string)=>diagnostics.push({code:'BC_POC_UNSUPPORTED',message,documentId:doc.documentId,range});
     // Check complete top-level source coverage before interpreting any ranges.
@@ -48,10 +52,8 @@ export function compileMeasuredManuscript<S extends Scan>(documents:readonly Man
     }
     if(covered!==doc.source.length)throw new Error('Incomplete scanner coverage');
     const emit=(item:SemanticItem,width:number)=>{
-      const heights=[...deps.measure(item,width)];
-      if(!heights.length||heights.some(h=>!Number.isSafeInteger(h)||h<=0))throw new Error('Invalid fixture measurement');
       items.push(item);
-      section.blocks.push({kind:'block',origin:item.origin,width,unitHeights:heights,splitPolicy:item.kind==='paragraph'?'allow':'strict',...(item.kind==='heading'&&item.level===1?{startPosition:'page-top' as const,startPositionSource:'component' as const}:{})});
+      section.blocks.push({kind:'block',origin:item.origin,width,item,splitPolicy:item.kind==='paragraph'?'allow':'strict',...(item.kind==='heading'&&item.level===1?{startPosition:'page-top' as const,startPositionSource:'component' as const}:{})});
     };
     for(let n=0;n<scan.blocks.length;n++){
       const b=scan.blocks[n],text=stripEnd(doc.source.slice(b.range.start,b.range.end));
@@ -83,4 +85,17 @@ export function compileMeasuredManuscript<S extends Scan>(documents:readonly Man
   }
   if(diagnostics.length)return failed();
   return {input,items,diagnostics,publicationReady:false};
+}
+
+export function compileMeasuredManuscript<S extends Scan>(documents:readonly Manuscript[],revision:string,fingerprint:string,content:Input['content'],deps:Dependencies<S>):{input?:Input;items:SemanticItem[];diagnostics:Issue[];publicationReady:false} {
+  const prepared=prepareManuscript(documents,revision,fingerprint,content,deps);
+  if(!prepared.input)return {items:prepared.items,diagnostics:prepared.diagnostics,publicationReady:false};
+  const input:Input={...prepared.input,sections:prepared.input.sections.map(section=>({...section,blocks:section.blocks.map(block=>{
+    if(block.kind==='pagebreak')return block;
+    const {item,...geometry}=block;
+    const heights=[...deps.measure(item,geometry.width)];
+    if(!heights.length||heights.some(h=>!Number.isSafeInteger(h)||h<=0))throw Error('Invalid fixture measurement');
+    return {...geometry,unitHeights:heights};
+  })}))};
+  return {...prepared,input};
 }
