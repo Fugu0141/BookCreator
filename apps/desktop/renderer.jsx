@@ -6,7 +6,7 @@ import {createPlainTextPagePreview,parsePreviewMath,createPreviewMath} from '../
 import {ParagraphLab} from './paragraph-lab.jsx';
 import {ComponentLab} from './component-lab.jsx';
 import {paperGeometry} from './book-settings.mjs';
-const deps={scan:scanDocument,validate:validateScannedBlocks,index:indexBlockIds,validateDisplayMath:parsePreviewMath};
+const deps={scan:scanDocument,validate:validateScannedBlocks,index:indexBlockIds,validateDisplayMath:parsePreviewMath,validateInlineMath:parsePreviewMath};
 const api=window.bookcreator;
 const studyNames={note:'補足',tip:'ポイント',warning:'注意',important:'重要',example:'例題',exercise:'練習問題',explanation:'解説'};
 const noto='BCFont_NotoSansJP';
@@ -207,6 +207,10 @@ function App(){
         };
         const block=sourceBlocks.get(JSON.stringify([slice.origin.documentId,slice.origin.blockKey]));
         bind(el,previewSourceRange(block,slice));
+        for(const node of el.querySelectorAll('[data-inline-math]')){
+          const textStart=Number(node.dataset.mathStart),textEnd=Number(node.dataset.mathEnd);
+          if(textStart>=slice.textStart&&textEnd<=slice.textEnd&&textEnd===textStart+1)bind(node,previewSourceRange(block,{textStart,textEnd}));
+        }
         for(const node of el.querySelectorAll('[data-named-slot]')){
           const named=slice.namedSlots?.find(s=>s.name===node.dataset.namedSlot);
           if(named)bind(node,previewSourceRange(block,named,named.name));
