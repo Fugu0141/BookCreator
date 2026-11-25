@@ -1,4 +1,4 @@
-import {compileHeadingDesign,studyKinds,type StudyKind,type HeadingDesign,type ComponentLibraryEntry,type HeadingContext,type HeadingChild} from './preview-component.js';
+import {compileHeadingDesign,studyKinds,type StudyKind,type HeadingDesign,type ComponentLibraryEntry,type HeadingContext,type HeadingChild,validNamedSlot} from './preview-component.js';
 import type {PreviewTextStyle} from './preview-typography.js';
 export {type StudyKind} from './preview-component.js';
 const presets:Readonly<Record<StudyKind,{label:string;background:string;color:string}>>=Object.freeze({
@@ -99,4 +99,14 @@ export function linkedStudyTemplate(choice:string,instanceId?:string,answerTo?:s
   const template=custom?customStudyTemplate(choice):studyTemplate(choice as StudyKind);
   const end=template.indexOf('}');
   return template.slice(0,end)+(instanceId?' #'+instanceId:'')+(answerTo?' answer-to="'+answerTo+'"':'')+template.slice(end);
+}
+
+/** Keep old single-line templates byte-identical; explicitly name the primary slot for multi-slot components. */
+export function slottedStudyTemplate(choice:string,instanceId:string|undefined,answerTo:string|undefined,names:readonly string[]){
+  if(!Array.isArray(names)||names.length>8||new Set(names).size!==names.length||names.some(n=>!validNamedSlot(n)))throw RangeError('Invalid named slot list');
+  const base=linkedStudyTemplate(choice,instanceId,answerTo);
+  if(!names.length)return base;
+  if(!isCustomComponentId(choice)&&['note','tip','warning','important'].includes(choice))throw RangeError('Named slots require component syntax');
+  const [header,body]=base.split('\n');
+  return ':'+header+'\n'+['content',...names].map(name=>':::slot{name="'+name+'"}\n'+(name==='content'?body:'追加の原稿を入力してください。')+'\n:::\n').join('\n')+'::::\n';
 }
