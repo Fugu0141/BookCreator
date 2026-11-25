@@ -1,4 +1,4 @@
-import {validateHeadingDesign} from '../../dist/preview-component.js';
+import {validateHeadingDesign,validateHeadingLevels} from '../../dist/preview-component.js';
 import {resolvePageSettings,paperGeometry,marginString} from './book-settings.mjs';
 import {projectFonts} from './project-fonts.mjs';
 import {open,lstat,realpath,rename,unlink,mkdir} from 'node:fs/promises';
@@ -85,6 +85,11 @@ function checkedRoles(value,faces=[]){
   }
   return result;
 }
+function checkComponentFonts(design,faces){
+  for(const f of [design.font,...design.children.filter(c=>c.type==='label').map(c=>c.font)].filter(Boolean)){
+    if(!(FACE_IDS.has(f.id)?[400,500,600,700].includes(f.weight):faces.some(face=>face.id===f.id&&face.weight===f.weight)))fail('THEME','Unknown component font or unsupported weight');
+  }
+}
 function readTypography(doc,faces){
   const t=doc.toJS({maxAliasCount:0});
   if(!record(t)||t.schemaVersion!==1)fail('THEME','Unsupported theme format');
@@ -161,12 +166,18 @@ export async function openWorkspace(manifestPath){
     const st=await lstat(path);if(!st.isFile()||st.nlink!==1||path===manifest||[...files.values()].some(f=>f.path===path))fail('THEME','Unsafe theme file');
     const r=await readRegular(path,MAX_MANIFEST),doc=safeYaml(decode(r.bytes));
     try{const roles=readTypography(doc,await fontStore.list());const raw=doc.toJS({maxAliasCount:0}).previewComponents;
-      let headingDesign=null,componentEditable=true;
-      if(raw!==undefined){try{if(!record(raw)||Object.keys(raw).some(k=>!['schemaVersion','heading'].includes(k))||raw.schemaVersion!==1)throw Error('Unsupported component schema');headingDesign=validateHeadingDesign(raw.heading);}catch{componentEditable=false;}}
-      return {editable:true,roles,headingDesign,componentEditable,revision:hash(r.bytes),path,doc,...r};}
+      let headingDesign=null,headingLevels={},componentEditable=true,componentMessage;
+      if(raw!==undefined){try{
+        if(!record(raw)||![1,2].includes(raw.schemaVersion)||Object.keys(raw).some(k=>!(raw.schemaVersion===1?['schemaVersion','heading']:['schemaVersion','heading','levels']).includes(k)))throw Error('Unsupported component schema');
+        headingDesign=raw.heading===null&&raw.schemaVersion===2?null:validateHeadingDesign(raw.heading);
+        headingLevels=raw.schemaVersion===2?validateHeadingLevels(raw.levels):{};
+        const faces=await fontStore.list();
+        for(const design of [headingDesign,...Object.values(headingLevels)].filter(Boolean))checkComponentFonts(design,faces);
+      }catch(e){componentEditable=false;componentMessage=e.message;headingDesign=null;headingLevels={};}}
+      return {editable:true,roles,headingDesign,headingLevels,componentEditable,componentMessage,revision:hash(r.bytes),path,doc,...r};}
     catch(e){if(e.code==='THEME')return {editable:false,roles:null,revision:null,message:e.message};throw e;}
   }
-  function publicTheme(t){return {editable:t.editable,roles:t.roles,revision:t.revision,headingDesign:t.headingDesign??null,componentEditable:t.componentEditable===true,...(t.message?{message:t.message}:{})};}
+  function publicTheme(t){return {editable:t.editable,roles:t.roles,revision:t.revision,headingDesign:t.headingDesign??null,headingLevels:t.headingLevels??{},componentMessage:t.componentMessage,componentEditable:t.componentEditable===true,...(t.message?{message:t.message}:{})};}
   function settingsView(){return {revision:manifestHash,page:summary.pageSettings,sections:structuredClone(summary.sections),message:summary.pageMessage};}
   return {
     get summary(){return structuredClone(summary);},
@@ -243,13 +254,17 @@ export async function openWorkspace(manifestPath){
         return {...publicTheme(t),roles:value,revision:hash(bytes)};
       }finally{if(temp)await unlink(temp).catch(()=>{});busy=false;}
     },
-    async saveHeadingDesign(expectedRevision,value){
+    async saveHeadingDesign(expectedRevision,value,level='default'){
       if(busy)fail('BUSY','Another write is in progress');
-      const design=validateHeadingDesign(value);busy=true;let temp;
+      if(!['default','1','2','3','4','5','6'].includes(level))fail('THEME','Invalid heading level');
+      const design=value===null?null:validateHeadingDesign(value);busy=true;let temp;
       try{
         await checkManifest();const t=await readTheme();
         if(!t.editable||!t.componentEditable||t.revision!==expectedRevision)fail('CONFLICT','Theme changed or component format unsupported');
-        t.doc.set('previewComponents',{schemaVersion:1,heading:design});
+        if(design)checkComponentFonts(design,await fontStore.list());
+        const heading=level==='default'?design:t.headingDesign,levels={...t.headingLevels};
+        if(level!=='default'){if(design)levels[level]=design;else delete levels[level];}
+        t.doc.set('previewComponents',{schemaVersion:2,heading,levels});
         const info=sourceInfo(t.bytes);if(!info.editable)fail('FORMAT','Mixed theme line endings are read-only');
         const bytes=Buffer.from((info.bom?'\uFEFF':'')+t.doc.toString().replace(/\n/g,info.eol),'utf8');
         if(bytes.length>MAX_MANIFEST)fail('INPUT','Theme too large');
@@ -259,7 +274,7 @@ export async function openWorkspace(manifestPath){
         await checkManifest();const current=await readTheme();
         if(!current.editable||!current.componentEditable||current.path!==t.path||current.revision!==expectedRevision)fail('CONFLICT','Theme changed before replacement');
         await rename(temp,t.path);temp=undefined;
-        return {...publicTheme(t),headingDesign:design,revision:hash(bytes)};
+        return {...publicTheme(t),headingDesign:heading,headingLevels:levels,revision:hash(bytes)};
       }finally{if(temp)await unlink(temp).catch(()=>{});busy=false;}
     },
     async read(id){

@@ -3,7 +3,7 @@ contextBridge.exposeInMainWorld('bookcreator',Object.freeze({
   open:()=>ipcRenderer.invoke('bookcreator:open'),
   create:options=>ipcRenderer.invoke('bookcreator:create',options),
   importFont:rights=>ipcRenderer.invoke('bookcreator:importFont',rights),
-  saveHeadingDesign:(revision,design)=>ipcRenderer.invoke('bookcreator:saveHeadingDesign',revision,design),
+  saveHeadingDesign:(revision,design,level)=>ipcRenderer.invoke('bookcreator:saveHeadingDesign',revision,design,level),
   saveTypography:(revision,roles)=>ipcRenderer.invoke('bookcreator:saveTypography',revision,roles),
   readBook:()=>ipcRenderer.invoke('bookcreator:readBook'),
   saveBookSettings:(revision,settings)=>ipcRenderer.invoke('bookcreator:saveBookSettings',revision,settings),
