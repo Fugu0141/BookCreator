@@ -8,7 +8,8 @@ type ScanBlock={kind:'raw'|'code'|'math'|'heading'|'blank';range:Range;level?:nu
 export interface Scan {source:string;blocks:readonly ScanBlock[];diagnostics:readonly {code:string;range:Range;message:string}[]}
 export interface Manuscript {documentId:string;revision:string;source:string;startOn:'page'|'continuous'}
 export interface Origin {documentId:string;revision:string;blockKey:string;range:Range;persistentId?:string}
-export interface SemanticItem {kind:'heading'|'paragraph'|'figure'|'study';studyKind?:StudyKind;componentId?:string;sourceTextStart?:number;namedSlots?:NamedSlotSource[];origin:Origin;text:string;level?:number;attributes?:Readonly<Record<string,string>>}
+export type SemanticListItem=({kind:'bullet'}|{kind:'ordered';number:number})&{depth:number};
+export interface SemanticItem {kind:'heading'|'paragraph'|'figure'|'study'|'list';listItem?:SemanticListItem;studyKind?:StudyKind;componentId?:string;sourceTextStart?:number;namedSlots?:NamedSlotSource[];origin:Origin;text:string;level?:number;attributes?:Readonly<Record<string,string>>}
 type MeasuredBlock={kind:'block';origin:Origin;width:number;unitHeights:readonly number[];splitPolicy:'allow'|'strict';startPosition?:'page-top';startPositionSource?:'component'};
 type Break={kind:'pagebreak';origin:Origin};
 interface Input {schemaVersion:1;revision:string;fingerprint:string;content:{width:number;height:number};sections:{id:string;startOn:'page'|'continuous';blocks:(MeasuredBlock|Break)[]}[]}
@@ -58,7 +59,17 @@ export function prepareManuscript<S extends Scan>(documents:readonly Manuscript[
     if(covered!==doc.source.length)throw new Error('Incomplete scanner coverage');
     const emit=(item:SemanticItem,width:number)=>{
       items.push(item);
-      section.blocks.push({kind:'block',origin:item.origin,width,item,splitPolicy:item.kind==='paragraph'?'allow':'strict',...(item.kind==='heading'&&item.level===1?{startPosition:'page-top' as const,startPositionSource:'component' as const}:{})});
+      section.blocks.push({kind:'block',origin:item.origin,width,item,splitPolicy:item.kind==='paragraph'||item.kind==='list'?'allow':'strict',...(item.kind==='heading'&&item.level===1?{startPosition:'page-top' as const,startPositionSource:'component' as const}:{})});
+    };
+    // One scanner-owned raw line per item. Indentation must match the parent's
+    // actual content column (marker width + one space), not a fixed two spaces.
+    const listLine=(b:ScanBlock|undefined)=>{
+      if(b?.kind!=='raw')return;
+      const raw=doc.source.slice(b.range.start,b.range.end),line=stripEnd(raw);
+      if(/\r(?!\n)/.test(raw))return;
+      const m=/^( {0,3})([-+*]|[1-9][0-9]{0,2}\.) (\S.*)$/.exec(line);
+      if(!m)return;
+      return {indent:m[1].length,marker:m[2],body:m[3],start:b.range.start+m[1].length+m[2].length+1};
     };
     for(let n=0;n<scan.blocks.length;n++){
       const b=scan.blocks[n],text=stripEnd(doc.source.slice(b.range.start,b.range.end));
@@ -67,6 +78,33 @@ export function prepareManuscript<S extends Scan>(documents:readonly Manuscript[
         const match=/^ {0,3}(#{1,6})[ \t]+(.+)$/.exec(text);
         if(!match||!plainBody(match[2])){unsupported(b.range,'Only supported inline text in ATX headings');continue;}
         emit({kind:'heading',origin:origin(b.range),level:match[1].length,text:match[2]},content.width);
+      }else if(b.kind==='raw'&&listLine(b)){
+        let root:{marker:string;number:number;contentIndent:number}|undefined;
+        let child:{marker:string;number:number}|undefined;
+        do{
+          const entry=scan.blocks[n],line=listLine(entry)!;
+          const {indent,marker,body,start}=line,kind=marker.endsWith('.')?'ordered':'bullet';
+          const markerKind=kind==='ordered'?'.':marker;
+          if(!plainBody(body)||(indent!==0&&(!root||indent!==root.contentIndent))){
+            unsupported(entry.range,'Unsupported list indentation or inline body');break;
+          }
+          const depth=indent===0?0:1,prev=depth===0?root:child;
+          const number=kind==='ordered'?(prev?.marker===markerKind?prev.number+1:Number(marker.slice(0,-1))):0;
+          if(number>999){unsupported(entry.range,'List numbering exceeds supported range');break;}
+          if(depth===0){root={marker:markerKind,number,contentIndent:marker.length+1};child=undefined;}
+          else child={marker:markerKind,number};
+          const descriptor=kind==='ordered'?{kind,number} as const:{kind} as const;
+          emit({kind:'list',origin:origin(entry.range),text:body,sourceTextStart:start,listItem:{...descriptor,depth}},content.width);
+          let j=n+1;
+          while(scan.blocks[j]?.kind==='blank')j++;
+          const next=listLine(scan.blocks[j]);
+          if(!next)break;
+          // Loose root siblings retain the counter. Blank-separated nested
+          // items are not supported by this scanner subset.
+          if(j!==n+1&&next.indent!==0){unsupported(scan.blocks[j].range,'Blank-separated nested list items are not supported');break;}
+          n=j;
+        }while(n<scan.blocks.length);
+        if(scan.blocks[n+1]?.kind==='raw'&&!listLine(scan.blocks[n+1]))unsupported(scan.blocks[n+1].range,'List continuation requires an explicit blank line');
       }else if(b.kind==='raw'){
         const start=b.range.start;let end=b.range.end;
         // Blank lines between raw paragraphs belong to this contiguous source run.
@@ -74,6 +112,10 @@ export function prepareManuscript<S extends Scan>(documents:readonly Manuscript[
         while(n+1<scan.blocks.length){
           let j=n+1;while(scan.blocks[j]?.kind==='blank')j++;
           if(scan.blocks[j]?.kind!=='raw')break;
+          if(listLine(scan.blocks[j])){
+            if(j===n+1)unsupported(scan.blocks[j].range,'List after a paragraph requires a blank line');
+            break;
+          }
           n=j;end=scan.blocks[n].range.end;
         }
         const body=stripEnd(doc.source.slice(start,end));

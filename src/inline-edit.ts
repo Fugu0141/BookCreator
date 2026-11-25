@@ -127,3 +127,33 @@ export function planInlineFormat(source:string,start:number,end:number,format:In
   const innerStart=patchStart+serialized.innerOffset;
   return {patch:{range:{start:patchStart,end:patchEnd},expected:source.slice(patchStart,patchEnd),replacement},selection:{start:innerStart,end:innerStart+logicalEnd-logicalStart},action};
 }
+
+/** Toggle an isolated top-level single-line paragraph/list item, never restructure a list run. */
+export function planListFormat(source:string,start:number,end:number,kind:'bullet'|'ordered',scan:(source:string)=>Scan):InlineEditPlan{
+  if(typeof source!=='string'||source.length>1000000||!Number.isSafeInteger(start)||!Number.isSafeInteger(end)||start<0||end<start||end>source.length||!['bullet','ordered'].includes(kind))throw RangeError('Invalid list selection');
+  const parsed=scan(source);
+  if(parsed.source!==source||parsed.diagnostics.length)throw RangeError('Resolve manuscript scanner diagnostics before list formatting');
+  const index=parsed.blocks.findIndex(b=>b.kind==='raw'&&start>=b.range.start&&start<b.range.end&&end<=b.range.end);
+  if(index<0)throw RangeError('Select an isolated top-level text line');
+  const b=parsed.blocks[index],raw=stripEnd(source.slice(b.range.start,b.range.end)),lineEnd=b.range.start+raw.length;
+  if(end>lineEnd||/[\r\n]/.test(raw)||/\r(?!\n)/.test(source.slice(b.range.start,b.range.end)))throw RangeError('Select a single text line');
+  // Refuse adjacent content or a neighboring list, even across blank lines:
+  // the edit must not implicitly join lists, alter counters, or reparent children.
+  for(const step of [-1,1]){
+    let j=index+step;
+    while(parsed.blocks[j]?.kind==='blank')j+=step;
+    const near=parsed.blocks[j];
+    if(near&&(near.kind==='code'||(near.kind==='raw'&&(j===index+step||/^[ \t]*([-+*]|[0-9]+[.)])(?:[ \t]|$)/.test(source.slice(near.range.start,near.range.end))))))throw RangeError('List runs and adjacent raw/code lines require structural editing');
+  }
+  const match=/^([-+*]|[1-9][0-9]{0,2}\.) (\S.*)$/.exec(raw),oldPrefix=match?match[1]+' ':'',body=raw.slice(oldPrefix.length);
+  parsePreviewInline(body,b.range.start+oldPrefix.length);
+  const oldKind=match?(match[1].endsWith('.')?'ordered':'bullet'):undefined;
+  const prefix=oldKind===kind?'':kind==='ordered'?'1. ':'- ';
+  const patch={range:{start:b.range.start,end:b.range.start+oldPrefix.length},expected:oldPrefix,replacement:prefix};
+  const next=source.slice(0,patch.range.start)+prefix+source.slice(patch.range.end),after=scan(next),delta=prefix.length-oldPrefix.length;
+  if(after.source!==next||after.diagnostics.length||after.blocks.length!==parsed.blocks.length||after.blocks.some((node,i)=>{
+    const old=parsed.blocks[i];return node.kind!==old.kind||node.range.start!==old.range.start+(i>index?delta:0)||node.range.end!==old.range.end+(i>=index?delta:0);
+  }))throw RangeError('List edit would change surrounding scanner structure');
+  const bodyStart=b.range.start+oldPrefix.length,adjust=(n:number)=>b.range.start+prefix.length+Math.max(0,n-bodyStart);
+  return {patch,selection:{start:adjust(start),end:adjust(end)},action:prefix?(oldPrefix?'replace':'apply'):'remove'};
+}

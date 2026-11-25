@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
-import {editDocument,compileMeasuredManuscript,canReviewLayout,prepareBrowserPreview,prepareBookBrowserPreview,defaultHeadingDesign,previewSourceRange,planInlineFormat} from '../dist/index.js';
+import {editDocument,compileMeasuredManuscript,canReviewLayout,prepareBrowserPreview,prepareBookBrowserPreview,defaultHeadingDesign,previewSourceRange,planInlineFormat,planListFormat} from '../dist/index.js';
 const load = (variable, fallback) => import(pathToFileURL(resolve(process.env[variable] ?? fallback)).href);
 const bcm = await load('BCM_DIST', '../BookCreator_Markdown/dist/index.js');
 const engine = await load('ENGINE_DIST', '../BookCreator_LayoutEngine/dist/index.js');
@@ -471,4 +471,49 @@ test('inline size and baseline editing preserve manuscript and compile into vari
   apply('重要な語',{fontSize:null});apply('重要な語',{baseline:null});
   apply('2',{baseline:'sub'},raw.indexOf('H'));apply('2',{baseline:'super'});
   assert.equal(raw,original);
+});
+
+test('scanner list subset preserves marker-free source ranges, numbering and nesting',()=>{
+  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds};
+  const source='導入。\r\n\r\n3. **第一項**\r\n   - 子項目\r\n   1. 子番号\r\n   1. 子続き\r\n\r\n1. 第二項\r\n   1. 新しい子\r\n\r\n- 別リスト\r\n+ 次の項目\r\n\r\n結び。\r\n';
+  const doc={documentId:'list',revision:'1',source,startOn:'page'};
+  const one=prepareBrowserPreview(doc,'1','list',{width:100000,height:70000},deps);
+  const book=prepareBookBrowserPreview([doc],'1','list',{width:100000,height:70000},deps);
+  assert.deepEqual(one.diagnostics,[]);assert.deepEqual(book.diagnostics,[]);
+  for(const blocks of [one.options.blocks,book.options.sections[0].blocks]){
+    const list=blocks.filter(b=>b.listItem);
+    assert.deepEqual(list.map(b=>[b.listItem.kind,b.listItem.depth,b.listItem.number]),[
+      ['ordered',0,3],['bullet',1,undefined],['ordered',1,1],['ordered',1,2],['ordered',0,4],['ordered',1,1],['bullet',0,undefined],['bullet',0,undefined]
+    ]);
+    assert.deepEqual(blocks.filter(b=>!b.listItem).map(b=>b.request.text),['導入。','結び。']);
+    assert.equal(list[0].request.text,'第一項');
+    assert.equal(list[0].request.inlineStyles[0].fontWeight,700);
+    assert.equal(list[0].sourceTextStart,undefined);
+    const span=previewSourceRange(list[0],{textStart:0,textEnd:3});
+    assert.equal(source.slice(span.start,span.end),'**第一項**');
+    for(const b of list.slice(1)){
+      assert.equal(source.slice(b.sourceTextStart,b.sourceTextStart+b.request.text.length),b.request.text);
+      assert.equal(b.splitPolicy,'allow');assert.equal(b.component,undefined);
+    }
+    assert.equal(source.slice(list[0].origin.range.start,list[0].origin.range.end),'3. **第一項**\r\n');
+  }
+  for(const source of ['  - orphan\n','1. Parent\n  - wrong indent\n','- Parent\n    - deep\n','- Parent\n\n  - loose child\n','- Parent\ncontinuation\n','Paragraph\n- item\n','999. last\n1. overflow\n','- [link](url)\n','- \n']){
+    const result=prepareBrowserPreview({...doc,source},'1','bad-list',{width:100000,height:70000},deps);
+    assert.equal(result.options,undefined,source);assert.ok(result.diagnostics.length,source);
+  }
+});
+
+test('isolated line list toolbar preserves exact CRLF source and selection',()=>{
+  const source='# 見出し\r\n\r\n**重要**な項目。\r\n\r\n結び。\r\n';
+  let raw=source,selection={start:source.indexOf('重要'),end:source.indexOf('重要')+2};
+  for(const [kind,marker] of [['bullet','- '],['ordered','1. '],['ordered','']]){
+    const plan=planListFormat(raw,selection.start,selection.end,kind,bcm.scanDocument);
+    raw=bcm.applyPatches(raw,[plan.patch]);selection=plan.selection;
+    assert.equal(raw,source.replace('**重要**',marker+'**重要**'));
+    assert.equal(raw.slice(selection.start,selection.end),'重要');
+  }
+  for(const source of ['- one\n- two\n','- one\n\n- two\n','- one\n  - child\n','one\ntwo\n','    code\n',':::callout{kind="tip"}\none\n:::\n','- [one](url)\n']){
+    const word=source.includes('one')?'one':'code',start=source.indexOf(word);
+    assert.throws(()=>planListFormat(source,start,start+word.length,'ordered',bcm.scanDocument),RangeError,source);
+  }
 });
