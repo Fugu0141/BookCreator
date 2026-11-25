@@ -78,7 +78,7 @@ test('browser preview preparation separates parsing from measurement and verifie
   for(const b of blocks)assert.equal(source.slice(b.sourceTextStart,b.sourceTextStart+b.request.text.length),b.request.text);
   assert.equal(result.publicationReady,false);
   assert.equal(prepareBrowserPreview({...doc,source:'::figure{src="a.png"}\n'},'3','fixture',{width:100000,height:70000},deps).options,undefined);
-  assert.equal(prepareBrowserPreview({...doc,source:'One\nTwo\n'},'3','fixture',{width:100000,height:70000},deps).options,undefined);
+  assert.equal(prepareBrowserPreview({...doc,source:'One\nTwo\n'},'3','fixture',{width:100000,height:70000},deps).options.blocks[0].request.text,'One\nTwo');
 });
 
 test('independent font role settings are forwarded and invalid font CSS is rejected',()=>{
@@ -207,7 +207,7 @@ test('unsupported study forms and duplicate IDs fail closed',()=>{
     ':::callout{kind="unknown"}\n本文。\n:::\n',
     ':::component{name="exercise" split-policy="allow"}\n本文。\n:::\n',
     ':::callout{kind="tip"}\n**強調**\n:::\n',
-    ':::callout{kind="tip"}\n本文。\n二行目。\n:::\n',
+    ':::callout{kind="tip"}\n本文。\n**強調**\n:::\n',
     '::::component{name="exercise"}\n:::slot{name="answer"}\n本文。\n:::\n::::\n',
     ':::callout{kind="tip"}\n:::\n',
     ':::callout{kind="tip" #dup}\n本文。\n:::\n\n:::component{name="example" #dup}\n本文。\n:::\n'
@@ -328,4 +328,26 @@ test('optional study slots may be omitted in implicit or explicit primary-only s
   assert.equal(complete.slice(b.namedSlots[0].sourceTextStart,b.namedSlots[0].sourceTextStart+b.namedSlots[0].request.text.length),'ヒント。');
   assert.equal(run(complete.replace('name="hint"','name="other"')).options,undefined);
   assert.equal(run(complete.replace('ヒント。\n','')).options,undefined);
+});
+
+test('multiline plain paragraphs and study slots preserve exact CRLF and LF source',()=>{
+  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds};
+  const id='component-00000000-0000-4000-8000-000000000001';
+  const design={...defaultHeadingDesign(),direction:'column',paragraphGap:2500,children:[{id:'content',type:'content'},{id:'hint',type:'slot',name:'hint',width:'fill',fontSize:3500,lineHeight:1.5,color:'#123456',paragraphGap:1200}]};
+  const library={schemaVersion:3,entries:[{id,name:'複数段落',usage:'study',design}]};
+  const paragraph={...design,gap:0,children:[{id:'content',type:'content'}],paragraphGap:3000};
+  const body='本文一行目。\r\n二行目。\r\n\r\n次の段落。',primary='問題文。\r\n\r\n追加説明。',hint='ヒント。\n\n追加ヒント。';
+  const source=body+'\r\n\r\n::::component{name="'+id+'"}\r\n:::slot{name="content"}\r\n'+primary+'\r\n:::\r\n\r\n:::slot{name="hint"}\n'+hint+'\n:::\n::::\n';
+  const doc={documentId:'s',revision:'1',source,startOn:'page'},size={width:100000,height:100000};
+  const result=prepareBookBrowserPreview([doc],'1','multi',size,deps,undefined,undefined,undefined,paragraph,undefined,library);
+  assert.deepEqual(result.diagnostics,[]);
+  const [b,s]=result.options.sections[0].blocks;
+  assert.equal(b.request.text,body);assert.equal(b.request.paragraphGap,3000);assert.equal(b.request.multiline,true);assert.equal(b.splitPolicy,'allow');
+  assert.equal(s.request.text,primary);assert.equal(s.request.paragraphGap,2500);assert.equal(s.splitPolicy,'strict');
+  assert.equal(s.namedSlots[0].request.text,hint);assert.equal(s.namedSlots[0].request.paragraphGap,1200);assert.equal(s.namedSlots[0].request.multiline,true);
+  for(const block of [b,s])assert.equal(source.slice(block.sourceTextStart,block.sourceTextStart+block.request.text.length),block.request.text);
+  assert.equal(source.slice(s.namedSlots[0].sourceTextStart,s.namedSlots[0].sourceTextStart+hint.length),hint);
+  const one=prepareBrowserPreview(doc,'1','one',size,deps,undefined,library);assert.deepEqual(one.diagnostics,[]);
+  assert.equal(one.options.blocks[0].request.text,body);
+  for(const raw of [':::callout{kind="note"}\n本文。\n\n**bold**\n:::\n','One\n'.repeat(257),'First\rSecond\n'])assert.equal(prepareBrowserPreview({...doc,source:raw},'1','bad',size,deps).options,undefined,raw);
 });
