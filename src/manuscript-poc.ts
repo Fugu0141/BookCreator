@@ -18,6 +18,8 @@ export interface PreparationDependencies<S extends Scan> {
   scan:(source:string)=>S;
   /** Host supplies the Engine's bounded formula parser; no duplicate TeX grammar here. */
   validateDisplayMath?:(formula:string)=>unknown;
+  /** Explicit opt-in for top-level ordinary paragraph inline math. */
+  validateInlineMath?:(formula:string)=>unknown;
   validate:(parsed:S)=>{diagnostics:readonly {code:string;range:Range;message:string}[]};
   index:(docs:readonly {documentId:string;revision:string;parsed:S}[])=>{diagnostics:readonly {code:string;occurrence:{documentId:string;range:Range}}[]};
 }
@@ -129,7 +131,7 @@ export function prepareManuscript<S extends Scan>(documents:readonly Manuscript[
           n=j;end=scan.blocks[n].range.end;
         }
         const body=stripEnd(doc.source.slice(start,end));
-        if(!plainBody(body)){unsupported({start,end},'Unsupported Markdown; restricted inline preview subset only');continue;}
+        try{parsePreviewInline(body,0,deps.validateInlineMath);}catch(e){unsupported({start,end},'Unsupported paragraph: '+String(e instanceof Error?e.message:e));continue;}
         emit({kind:'paragraph',origin:origin({start,end}),text:body},content.width);
       }else if(b.kind==='directive'&&b.closed&&b.header.kind==='container'){
         const h=b.header,attrs=Object.fromEntries(h.attributes.map(a=>[a.key,a.value])),kind=studyKind(h.name,attrs),componentId=customStudyId(h.name,attrs);

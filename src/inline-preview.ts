@@ -3,6 +3,7 @@
 import type {PreviewFontFamily} from './preview-typography.js';
 export interface InlineStyle {fontWeight?:number;italic?:boolean;underline?:boolean;color?:string;fontFamily?:PreviewFontFamily;fontSize?:number;baseline?:'normal'|'super'|'sub'}
 export interface InlineRun extends InlineStyle {start:number;end:number}
+export interface InlineMathAtom {start:number;formula:string}
 const fontIds:Readonly<Record<string,PreviewFontFamily>>=Object.freeze({'noto-sans-jp':'BCFont_NotoSansJP','system-serif':'serif','system-sans':'sans-serif','system-monospace':'monospace'});
 export function inlineFontFamily(id:string):PreviewFontFamily{
   if(Object.hasOwn(fontIds,id))return fontIds[id];
@@ -43,10 +44,10 @@ const whitespace=(c:string)=>!c||/\s/u.test(c);
 const punctuation=(c:string)=>/[\p{P}\p{S}]/u.test(c);
 const left=(a:string,b:string)=>!whitespace(b)&&(!punctuation(b)||whitespace(a)||punctuation(a));
 const right=(a:string,b:string)=>!whitespace(a)&&(!punctuation(a)||whitespace(b)||punctuation(b));
-export function parsePreviewInline(raw:string,offset=0){
+export function parsePreviewInline(raw:string,offset=0,validateMath?:(formula:string)=>unknown){
   if(typeof raw!=='string'||!raw.length||raw.length>10000||!Number.isSafeInteger(offset)||offset<0||!Number.isSafeInteger(offset+raw.length)||/\r(?!\n)/.test(raw)||(raw.match(/\n/g)?.length??0)>255)throw RangeError('Unsupported inline source');
   let text='',cursor=0;
-  const inlineStyles:InlineRun[]=[],segments:InlineSourceSegment[]=[];
+  const inlineStyles:InlineRun[]=[],inlineMath:InlineMathAtom[]=[],segments:InlineSourceSegment[]=[];
   function append(a:number,b:number,outerStart=a,outerEnd=b,style?:InlineStyle){
     if(a===b)return;
     const start=text.length; text+=raw.slice(a,b);
@@ -61,6 +62,23 @@ export function parsePreviewInline(raw:string,offset=0){
     let i=0;
     while(i<line.length){
       const start=i;
+      if(line.startsWith('\\$',i)){
+        if(!validateMath)throw RangeError('Escaped dollar requires supported inline math context');
+        append(cursor+i+1,cursor+i+2,cursor+i,cursor+i+2);i+=2;continue;
+      }
+      if(line[i]==='$'){
+        if(!validateMath||line[i-1]==='$'||line[i+1]==='$'||whitespace(line[i+1]??''))throw RangeError('Invalid inline math opener');
+        // A dollar inside a formula must not be escaped or part of a double fence.
+        const close=line.indexOf('$',i+1);
+        if(close<0||close===i+1||whitespace(line[close-1])||line[close-1]==='\\'||line[close+1]==='$'||/[0-9]/.test(line[close+1]??''))throw RangeError('Invalid inline math closer');
+        const formula=line.slice(i+1,close);
+        validateMath(formula);
+        const logical=text.length;text+='\uFFFC';
+        inlineMath.push({start:logical,formula});
+        segments.push({start:logical,end:logical+1,rawStart:offset+cursor+i+1,outerStart:offset+cursor+i,outerEnd:offset+cursor+close+1});
+        if(inlineMath.length>128)throw RangeError('Too many inline formulas');
+        i=close+1;continue;
+      }
       if(line[i]==='^'||line[i]==='~'){
         const mark=line[i],match=/^([~^])([0-9]{1,32})\1/.exec(line.slice(i));
         if(!match||line[i-1]===mark||line[i+match[0].length]===mark)throw RangeError('Unsupported script shorthand');
@@ -93,7 +111,7 @@ export function parsePreviewInline(raw:string,offset=0){
         continue;
       }
       if(line[i]!=='*'){
-        while(i<line.length&&line[i]!=='*'&&line[i]!=='^'&&line[i]!=='~'&&!line.startsWith(':style{',i))i++;
+        while(i<line.length&&line[i]!=='*'&&line[i]!=='^'&&line[i]!=='~'&&line[i]!=='$'&&!line.startsWith('\\$',i)&&!line.startsWith(':style{',i))i++;
         if(!allowed(line.slice(start,i)))throw RangeError('Unsupported inline syntax');
         append(cursor+start,cursor+i);continue;
       }
@@ -112,7 +130,7 @@ export function parsePreviewInline(raw:string,offset=0){
   if(!text.trim()||cursor!==raw.length)throw RangeError('Empty or incomplete inline source');
   const boundaries=new Set([...new Intl.Segmenter(undefined,{granularity:'grapheme'}).segment(text)].map(g=>g.index));boundaries.add(text.length);
   if(segments.some(s=>!boundaries.has(s.start)||!boundaries.has(s.end)))throw RangeError('Inline delimiter splits grapheme');
-  return {text,inlineStyles,sourceMap:{length:text.length,segments} as InlineSourceMap};
+  return {text,inlineStyles,inlineMath,sourceMap:{length:text.length,segments} as InlineSourceMap};
 }
 /** Map a logical half-open fragment to its contiguous raw envelope, including delimiters
  * at the endpoints of styled runs. Never claim that the envelope equals logical text. */

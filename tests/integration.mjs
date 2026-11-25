@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
-import {editDocument,compileMeasuredManuscript,canReviewLayout,prepareBrowserPreview,prepareBookBrowserPreview,defaultHeadingDesign,previewSourceRange,planInlineFormat,planListFormat,planListIndent,planListBatch,inspectDisplayMath,planDisplayMath} from '../dist/index.js';
+import {editDocument,compileMeasuredManuscript,canReviewLayout,prepareBrowserPreview,prepareBookBrowserPreview,defaultHeadingDesign,defaultParagraphDesign,previewSourceRange,planInlineFormat,planListFormat,planListIndent,planListBatch,inspectDisplayMath,planDisplayMath} from '../dist/index.js';
 const load = (variable, fallback) => import(pathToFileURL(resolve(process.env[variable] ?? fallback)).href);
 const bcm = await load('BCM_DIST', '../BookCreator_Markdown/dist/index.js');
 const engine = await load('ENGINE_DIST', '../BookCreator_LayoutEngine/dist/index.js');
@@ -635,4 +635,45 @@ test('GUI math planner refuses protected, ambiguous, unsafe and mixed-ending ins
   for(const formula of ['','x\nz','\\input{secret}','x^2^3','x'.repeat(2049)])assert.throws(()=>plan('',0,0,formula),RangeError);
   const source='$$\r\n  x^2 \r\n$$ \r\n';const p=plan(source,5,6,'y');
   assert.equal(bcm.applyPatches(source,[p.patch]),'$$\r\ny\r\n$$ \r\n');
+});
+
+
+test('BCM inline math maps each atom and escaped dollar to exact UTF-16 source envelopes',()=>{
+  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds,validateDisplayMath:engine.parsePreviewMath,validateInlineMath:engine.parsePreviewMath};
+  const size={width:100000,height:70000},first='$\\frac{a_1^2}{b}$',second='$\\sqrt{x}$',escaped='\\$';
+  for(const nl of ['\n','\r\n']){
+    const source=['# 見出し','','**係数** '+first+' を使う。','価格は '+escaped+'20。','','次は '+second+' です。',''].join(nl);
+    const doc={documentId:'inline',revision:'1',source,startOn:'page'};
+    const results=[prepareBrowserPreview(doc,'1','inline',size,deps),prepareBookBrowserPreview([doc],'1','inline',size,deps)];
+    for(const p of results){
+      assert.deepEqual(p.diagnostics,[]);
+      const blocks=p.options.blocks??p.options.sections[0].blocks,body=blocks[1];
+      assert.equal(body.request.text,['係数 \uFFFC を使う。','価格は $20。','','次は \uFFFC です。'].join(nl));
+      assert.deepEqual(body.request.inlineMath,[{start:3,formula:first.slice(1,-1)},{start:body.request.text.lastIndexOf('\uFFFC'),formula:second.slice(1,-1)}]);
+      assert.deepEqual(body.request.inlineStyles,[{start:0,end:2,fontWeight:700}]);
+      assert.equal(body.sourceTextStart,undefined);
+      for(const [i,atom] of body.request.inlineMath.entries()){
+        const range=previewSourceRange(body,{textStart:atom.start,textEnd:atom.start+1});
+        assert.equal(source.slice(range.start,range.end),[first,second][i]);
+      }
+      const dollar=body.request.text.indexOf('$'),range=previewSourceRange(body,{textStart:dollar,textEnd:dollar+1});
+      assert.equal(source.slice(range.start,range.end),escaped);
+      const full=previewSourceRange(body,{textStart:0,textEnd:body.request.text.length});
+      assert.equal(source.slice(full.start,full.end),source.slice(source.indexOf('**係数**')).replace(/(?:\r\n|\n)$/,''));
+      assert.equal(p.publicationReady,false);
+    }
+  }
+});
+test('BCM inline math refuses invalid delimiters, unsafe commands and unsupported contexts',()=>{
+  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds,validateDisplayMath:engine.parsePreviewMath,validateInlineMath:engine.parsePreviewMath};
+  const size={width:100000,height:70000};
+  const run=(source,d=deps)=>prepareBrowserPreview({documentId:'bad',revision:'1',source,startOn:'page'},'1','inline',size,d);
+  for(const source of ['本文 $ x$','本文 $x $','本文 $x$2','本文 $$x$$','本文 $x','本文 $x\n+y$','本文 $\\input{secret}$','本文 $x^2^3$','本文 **$x$**','# 見出し $x$','- 項目 $x$',':::callout{kind="note"}\n本文 $x$\n:::\n','価格は $20 です。','本文 $x$'+ '$y$']){
+    assert.equal(run(source).options,undefined,source);
+  }
+  assert.equal(run('本文 $x$',{...deps,validateInlineMath:undefined}).options,undefined);
+  assert.ok(run('本文 $x$ です。').options);
+  assert.ok(run('価格は \\$20。').options);
+  const doc={documentId:'frame',revision:'1',source:'本文 $x$ です。',startOn:'page'};
+  assert.equal(prepareBookBrowserPreview([doc],'1','frame',size,deps,undefined,undefined,undefined,defaultParagraphDesign()).options,undefined);
 });

@@ -3,7 +3,7 @@ import {scanDocument,validateScannedBlocks,indexBlockIds} from '/bcm/dist/index.
 import {createPlainTextPagePreview,parsePreviewMath} from '/engine/dist/index.js';
 const source=document.querySelector('#source'),width=document.querySelector('#width'),height=document.querySelector('#height');
 const button=document.querySelector('#render'),status=document.querySelector('#status'),target=document.querySelector('#preview');
-const deps={scan:scanDocument,validate:validateScannedBlocks,index:indexBlockIds,validateDisplayMath:parsePreviewMath};
+const deps={scan:scanDocument,validate:validateScannedBlocks,index:indexBlockIds,validateDisplayMath:parsePreviewMath,validateInlineMath:parsePreviewMath};
 let revision=0,latest;
 source.value='# 実測組版の試作\n\n'+('日本語と English text を混在させた原稿です。ブラウザの実測値によって折り返し位置とページ分割を決定します。 '.repeat(14)).trim()+'\n\n## 原稿範囲の確認\n\n紙面の本文を選ぶと原稿の対応範囲を確認できます。';
 function invalidate(){revision++;latest=undefined;target.replaceChildren();status.textContent='未組版の変更があります。';button.disabled=false;}
@@ -30,6 +30,15 @@ async function render(){
       const select=()=>{if(job!==revision)return;source.focus();source.setSelectionRange(slice.start,slice.end);};
       fragment.addEventListener('click',select);
       fragment.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();select();}});
+      for(const atom of fragment.querySelectorAll('[data-inline-math]')){
+        const textStart=Number(atom.dataset.mathStart),textEnd=Number(atom.dataset.mathEnd);
+        if(textStart<fragmentSlice.textStart||textEnd>fragmentSlice.textEnd||textEnd!==textStart+1)continue;
+        const range=previewSourceRange(block,{textStart,textEnd});
+        if(!range)continue;
+        atom.tabIndex=0;atom.style.cursor='pointer';atom.setAttribute('aria-label','対応するインライン数式を選択');
+        const focus=e=>{e.stopPropagation();if(job!==revision)return;source.focus();source.setSelectionRange(range.start,range.end);};
+        atom.addEventListener('click',focus);atom.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();focus(e);}});
+      }
     });
     status.textContent=preview.plan.pages.length+' ページ · 実験的なブラウザ実測 · 出版不可';
   }catch(error){if(job===revision){status.textContent=String(error.message??error);latest=undefined;target.replaceChildren();}}
@@ -55,6 +64,13 @@ if(new URLSearchParams(location.search).has('smoke')){
     if(source.value.slice(source.selectionStart,source.selectionEnd)!==formula)throw Error('Display math source mapping mismatch');
     source.value='$$\n\\input{secret}\n$$\n';source.dispatchEvent(new Event('input'));await render();
     if(latest||target.children.length)throw Error('Unsafe formula rendered');
+    const inlineFormula='$\\frac{1}{2}$';
+    source.value='**係数** '+inlineFormula+' を用いる。';
+    source.dispatchEvent(new Event('input'));await render();
+    const atom=latest?.element.shadowRoot.querySelector('[data-inline-math]');
+    if(!atom?.querySelector('math mfrac'))throw Error('Inline formula not rendered: '+status.textContent);
+    atom.click();
+    if(source.value.slice(source.selectionStart,source.selectionEnd)!==inlineFormula)throw Error('Inline formula envelope selection mismatch');
     source.value='[unsupported](https://example.invalid)';source.dispatchEvent(new Event('input'));if(target.children.length)throw Error('Stale preview remained');
     await render();if(latest||target.children.length)throw Error('Unsupported input rendered');
     report.textContent='PASS '+JSON.stringify({pages,sourceMapping:true,staleGuard:true});
