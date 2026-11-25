@@ -1,4 +1,4 @@
-import {compileHeadingDesign,validateHeadingLevels,type HeadingDesign,type HeadingLevel,type HeadingLevels,type HeadingContext} from './preview-component.js';
+import {compileHeadingDesign,compileParagraphDesign,validateHeadingLevels,type HeadingDesign,type HeadingLevel,type HeadingLevels,type HeadingContext} from './preview-component.js';
 import {resolvePreviewTypography,type PreviewTypography} from './preview-typography.js';
 import {prepareManuscript,type Manuscript,type PreparationDependencies,type Scan} from './manuscript-poc.js';
 export function prepareBrowserPreview<S extends Scan>(document:Manuscript,revision:string,fingerprint:string,content:{width:number;height:number},deps:PreparationDependencies<S>,typography?:PreviewTypography){
@@ -24,9 +24,10 @@ export function prepareBrowserPreview<S extends Scan>(document:Manuscript,revisi
 }
 
 /** Whole-book PoC; preserve section ordering, explicit breaks and exact source ranges. */
-export function prepareBookBrowserPreview<S extends Scan>(documents:readonly Manuscript[],revision:string,fingerprint:string,content:{width:number;height:number},deps:PreparationDependencies<S>,typography?:PreviewTypography,headingDesign?:HeadingDesign|null,headingLevels?:HeadingLevels){
+export function prepareBookBrowserPreview<S extends Scan>(documents:readonly Manuscript[],revision:string,fingerprint:string,content:{width:number;height:number},deps:PreparationDependencies<S>,typography?:PreviewTypography,headingDesign?:HeadingDesign|null,headingLevels?:HeadingLevels,paragraphDesign?:HeadingDesign|null){
   const fonts=resolvePreviewTypography(typography);
   const levels=validateHeadingLevels(headingLevels??{});
+  const paragraph=paragraphDesign?compileParagraphDesign(paragraphDesign,fonts.body):undefined;
   const prepared=prepareManuscript(documents,revision,fingerprint,content,deps),diagnostics=[...prepared.diagnostics];
   if(!prepared.input)return {diagnostics,publicationReady:false as const};
   const byId=new Map(documents.map(d=>[d.documentId,d]));
@@ -43,7 +44,7 @@ export function prepareBookBrowserPreview<S extends Scan>(documents:readonly Man
       if(item.kind==='figure'||/[\r\n]/.test(item.text)||offset<0||raw.slice(offset,offset+item.text.length)!==item.text){
         diagnostics.push({code:'BC_PREVIEW_UNSUPPORTED',message:'Only contiguous plain paragraphs and headings are supported',documentId:item.origin.documentId,range:item.origin.range});continue;
       }
-      let design:ReturnType<typeof compileHeadingDesign>|undefined;
+      let design:ReturnType<typeof compileHeadingDesign>|undefined=item.kind==='paragraph'?paragraph:undefined;
       if(item.kind==='heading'){
         const level=item.level!;
         if(level===1||!active){chapter++;active=true;chapterTitle=level===1?item.text:undefined;counters.fill(0);counters[0]=chapter;}
