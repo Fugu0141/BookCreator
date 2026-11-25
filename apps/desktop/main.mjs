@@ -201,7 +201,24 @@ async function smoke(){
   await until("!document.querySelector('#open').disabled && !document.querySelector('#lab-measure')");
   await exec("document.querySelector('#preview-book').click()");
   await until("!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-component-group] [data-fixed-label]')");
-  console.log('PASS nested component grouping and actual book preview; H1-specific fixed label and independent font; Component Lab measure, discard, apply and actual book rendering; book settings save and physical whole-book preview; imported project font, license metadata, theme selection, actual font rendering; Electron project creation, theme save/reopen, Electron sandbox, project open/read, React editing, bundled Noto, independent font roles, stale invalidation, measured preview, source selection and save');
+  await exec("document.querySelector('#component-lab').click()");
+  await until("!!document.querySelector('#lab-group-next')");
+  await exec("Array.from(document.querySelectorAll('[data-lab-node]')).find(e=>e.textContent.includes('グループ')).click()");
+  await until("!!document.querySelector('#lab-group-direction')");
+  await exec("(()=>{const e=document.querySelector('#lab-group-direction');e.value='canvas';e.dispatchEvent(new Event('change',{bubbles:true}));})()");
+  await until("!!document.querySelector('#lab-canvas-height')");
+  await exec("document.querySelector('[data-lab-node=content]').click()");
+  await until("!!document.querySelector('#lab-canvas-x')");
+  await exec("(()=>{const e=document.querySelector('#lab-canvas-x');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,'3');e.dispatchEvent(new Event('input',{bubbles:true}));})()");
+  await until("document.querySelector('#lab-canvas-x').value==='3'");
+  await exec("document.querySelector('#lab-measure').click()");
+  await until("!document.querySelector('#lab-apply').disabled");
+  await exec("document.querySelector('#lab-apply').click()");
+  await until("!document.querySelector('#open').disabled && !document.querySelector('#lab-measure')");
+  await exec("document.querySelector('#preview-book').click()");
+  await until("!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-component-canvas]')");
+  if(!await exec("Math.abs(parseFloat(document.querySelector('#preview > div').shadowRoot.querySelector('[data-component-canvas] [data-content-slot]').style.left)-3*96/25.4)<.02"))throw Error('Canvas x not preserved in book');
+  console.log('PASS Canvas numeric coordinates and actual paper rendering; nested component grouping and actual book preview; H1-specific fixed label and independent font; Component Lab measure, discard, apply and actual book rendering; book settings save and physical whole-book preview; imported project font, license metadata, theme selection, actual font rendering; Electron project creation, theme save/reopen, Electron sandbox, project open/read, React editing, bundled Noto, independent font roles, stale invalidation, measured preview, source selection and save');
   closing=true;win.destroy();await rm(smokeRoot,{recursive:true,force:true});app.exit(0);
 }
 app.on('window-all-closed',()=>{if(!SMOKE)app.quit();});

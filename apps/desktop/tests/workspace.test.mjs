@@ -145,3 +145,15 @@ test('nested component storage validates global content count and nested font re
   await assert.rejects(w.saveHeadingDesign(saved.revision,{...design,children:[...design.children,{id:'duplicate',type:'content'}]},'2'),RangeError);
   await assert.rejects(w.saveHeadingDesign(saved.revision,{...design,children:[{...group,children:[{...label,font:{id:'font-'+'a'.repeat(64),weight:400}},group.children[1]]}]},'2'),{code:'THEME'});
 });
+
+test('Canvas component persists coordinates and rejects coordinates outside canvas schema',async t=>{
+  const {defaultHeadingDesign}=await import('../../../dist/preview-component.js');
+  const parent=await mkdtemp(join(tmpdir(),'bc-canvas-'));t.after(()=>rm(parent,{recursive:true,force:true}));
+  const w=await createProject(parent,{title:'Canvas',folder:'book',size:'A5'}),initial=await w.typography();
+  const canvas={id:'canvas',type:'group',direction:'canvas',width:'fill',height:50000,gap:0,padding:1000,background:'#ffffff',children:[{id:'content',type:'content',x:2000,y:5000,width:50000},{id:'bar',type:'rect',x:0,y:0,width:3000,height:10000,color:'#315b86'}]};
+  const design={...defaultHeadingDesign(),children:[canvas]};
+  const saved=await w.saveHeadingDesign(initial.revision,design,'1');
+  assert.deepEqual((await (await openWorkspace(join(parent,'book','book.yaml'))).typography()).headingLevels['1'],design);
+  await assert.rejects(w.saveHeadingDesign(saved.revision,{...design,children:[{...canvas,direction:'column'}]},'1'),RangeError);
+  await assert.rejects(w.saveHeadingDesign(saved.revision,{...design,children:[{...canvas,children:[{id:'content',type:'content',x:-1,y:0,width:10000}]}]},'1'),RangeError);
+});
