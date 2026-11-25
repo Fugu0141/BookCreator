@@ -232,6 +232,14 @@ async function smoke(){
   win.webContents.sendInputEvent({type:'mouseUp',x:point.x+19,y:point.y+4,button:'left',clickCount:1});
   await until("Number(document.querySelector('#lab-canvas-x')?.value)>3 && !document.querySelector('#lab-apply').disabled");
   const draggedX=await exec("Number(document.querySelector('#lab-canvas-x').value)");
+  // Real keyboard input on a focusable measured Canvas child, including remeasurement.
+  await exec("document.querySelector('#lab-preview > div').shadowRoot.querySelector('[data-content-slot][data-lab-draggable]').focus()");
+  win.webContents.sendInputEvent({type:'keyDown',keyCode:'Left'});
+  win.webContents.sendInputEvent({type:'keyUp',keyCode:'Left'});
+  await until("Math.abs(Number(document.querySelector('#lab-canvas-x')?.value)-("+draggedX+"-.1))<.0001 && !document.querySelector('#lab-apply').disabled");
+  await exec("document.querySelector('#lab-undo').click()");
+  await until("Number(document.querySelector('#lab-canvas-x')?.value)==="+draggedX+" && document.querySelector('#lab-apply').disabled");
+
   await exec("document.querySelector('#lab-undo').click()");
   await until("document.querySelector('#lab-canvas-x')?.value==='3' && document.querySelector('#lab-apply').disabled");
   await exec("document.querySelector('#lab-redo').click()");
