@@ -137,3 +137,16 @@ export function resolveHeadingBindings(heading:HeadingDesign|null,levels:Heading
   }
   return {headingDesign,headingLevels};
 }
+
+/** A restricted, fragmentable component with exactly one source slot. */
+export function defaultParagraphDesign():HeadingDesign{
+  return {schemaVersion:1,fontSize:4200,lineHeight:1.8,direction:'column',gap:0,padding:2000,background:'#f5f5f5',textColor:'#222222',children:[{id:'content',type:'content'}]};
+}
+export function validateParagraphDesign(value:unknown):HeadingDesign{
+  const design=validateHeadingDesign(value);
+  if(design.direction!=='column'||design.gap!==0||design.children.length!==1||design.children[0].type!=='content')throw RangeError('Paragraph frame requires a single content slot and zero gap');
+  return design;
+}
+export function compileParagraphDesign(value:HeadingDesign,inherited:PreviewTextStyle){
+  return compileHeadingDesign(validateParagraphDesign(value),inherited);
+}
