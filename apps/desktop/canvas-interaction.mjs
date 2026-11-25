@@ -116,11 +116,12 @@ export function installCanvasDrag(root,{lookup,onSelect,onActive,onCommit}){
   return ()=>{disposed=true;end(false);for(const cleanup of cleanups)cleanup();};
 }
 export function highlightCanvasSelection(root,id){
+  const ids=Array.isArray(id)?id:[id];
   for(const el of root.querySelectorAll('[data-lab-draggable]')){
-    const selected=el.dataset.componentNode===id;
+    const selected=ids.includes(el.dataset.componentNode);
     el.style.outline=selected?'2px solid #2679c7':'';
     el.style.outlineOffset=selected?'-1px':'';
-    for(const child of el.children)if(child.dataset.labResizeHandle)child.style.display=selected?'block':'none';
+    for(const child of el.children)if(child.dataset.labResizeHandle)child.style.display=selected&&ids.length===1?'block':'none';
   }
 }
 
