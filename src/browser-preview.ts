@@ -1,3 +1,4 @@
+import {compileStudyBlock} from './study-blocks.js';
 import {compileHeadingDesign,compileParagraphDesign,validateHeadingLevels,type HeadingDesign,type HeadingLevel,type HeadingLevels,type HeadingContext} from './preview-component.js';
 import {resolvePreviewTypography,type PreviewTypography} from './preview-typography.js';
 import {prepareManuscript,type Manuscript,type PreparationDependencies,type Scan} from './manuscript-poc.js';
@@ -13,9 +14,10 @@ export function prepareBrowserPreview<S extends Scan>(document:Manuscript,revisi
     const {item}=block;
     if(item.kind==='figure'||/[\r\n]/.test(item.text)){reject(item.origin,'Only contiguous single-line source paragraphs and ATX headings are supported');continue;}
     const raw=document.source.slice(item.origin.range.start,item.origin.range.end);
-    const offset=item.kind==='heading'?raw.indexOf(item.text):0;
+    const offset=item.kind==='study'?item.sourceTextStart!-item.origin.range.start:item.kind==='heading'?raw.indexOf(item.text):0;
     if(offset<0||raw.slice(offset,offset+item.text.length)!==item.text){reject(item.origin,'Cannot establish exact source mapping');continue;}
-    blocks.push({origin:item.origin,request:{text:item.text,width:block.width,fontSize:item.kind==='heading'?6500:4200,...(item.kind==='heading'?fonts.heading:fonts.body),lineHeight:1.8},splitPolicy:block.splitPolicy,
+    const study=item.kind==='study'?compileStudyBlock(item.studyKind!,item.attributes?.title,fonts.body):undefined;
+    blocks.push({origin:item.origin,request:{text:item.text,width:block.width,fontSize:study?.fontSize??(item.kind==='heading'?6500:4200),...(study?.textStyle??(item.kind==='heading'?fonts.heading:fonts.body)),lineHeight:study?.lineHeight??1.8},splitPolicy:block.splitPolicy,...(study?{component:study.component}:{}),
       sourceTextStart:item.origin.range.start+offset,...(block.startPosition?{startPosition:block.startPosition,startPositionSource:block.startPositionSource}:{})});
   }
   if(!blocks.length&&!diagnostics.length)diagnostics.push({code:'BC_PREVIEW_EMPTY',message:'No supported content to preview',documentId:document.documentId,range:{start:0,end:0}});
@@ -40,11 +42,12 @@ export function prepareBookBrowserPreview<S extends Scan>(documents:readonly Man
       if(block.kind==='pagebreak'){blocks.push(block);continue;}
       const {item}=block;
       const raw=byId.get(item.origin.documentId)!.source.slice(item.origin.range.start,item.origin.range.end);
-      const offset=item.kind==='heading'?raw.indexOf(item.text):0;
+      const offset=item.kind==='study'?item.sourceTextStart!-item.origin.range.start:item.kind==='heading'?raw.indexOf(item.text):0;
       if(item.kind==='figure'||/[\r\n]/.test(item.text)||offset<0||raw.slice(offset,offset+item.text.length)!==item.text){
         diagnostics.push({code:'BC_PREVIEW_UNSUPPORTED',message:'Only contiguous plain paragraphs and headings are supported',documentId:item.origin.documentId,range:item.origin.range});continue;
       }
       let design:ReturnType<typeof compileHeadingDesign>|undefined=item.kind==='paragraph'?paragraph:undefined;
+      if(item.kind==='study')design=compileStudyBlock(item.studyKind!,item.attributes?.title,fonts.body);
       if(item.kind==='heading'){
         const level=item.level!;
         if(level===1||!active){chapter++;active=true;chapterTitle=level===1?item.text:undefined;counters.fill(0);counters[0]=chapter;}

@@ -182,3 +182,34 @@ test('paragraph design applies only to body and preserves source text and split 
   assert.equal(body.request.fontFamily,'serif');assert.equal(body.request.fontSize,4000);
   assert.equal(doc.source.slice(body.sourceTextStart,body.sourceTextStart+body.request.text.length),body.request.text);
 });
+
+test('study directives preserve exact body offsets and stable IDs in both previews',()=>{
+  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds};
+  const source='# 章\r\n\r\n:::callout{#notice kind="warning" title="同じ文字"}\r\n同じ文字\r\n:::\r\n\r\n:::component{name="example" #ex-1}\r\n例題の本文。\r\n:::\r\n\r\n普通の本文。\r\n';
+  const doc={documentId:'study',revision:'1',source,startOn:'page'},size={width:100000,height:100000};
+  const one=prepareBrowserPreview(doc,'1','one',size,deps);
+  const book=prepareBookBrowserPreview([doc],'1','book',size,deps);
+  assert.deepEqual(one.diagnostics,[]);assert.deepEqual(book.diagnostics,[]);
+  for(const blocks of [one.options.blocks,book.options.sections[0].blocks]){
+    const [h,warning,example,body]=blocks;
+    assert.equal(warning.component.children[0].text,'注意：同じ文字');
+    assert.equal(example.component.children[0].text,'例題');
+    assert.equal(warning.origin.persistentId,'notice');assert.equal(example.origin.persistentId,'ex-1');
+    assert.equal(warning.splitPolicy,'strict');assert.equal(body.splitPolicy,'allow');
+    assert.equal(warning.sourceTextStart,source.indexOf('同じ文字\r\n'));
+    for(const b of blocks)assert.equal(source.slice(b.sourceTextStart,b.sourceTextStart+b.request.text.length),b.request.text);
+  }
+});
+test('unsupported study forms and duplicate IDs fail closed',()=>{
+  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds};
+  const run=source=>prepareBookBrowserPreview([{documentId:'bad',revision:'1',source,startOn:'page'}],'1','bad',{width:100000,height:100000},deps);
+  for(const source of [
+    ':::callout{kind="unknown"}\n本文。\n:::\n',
+    ':::component{name="exercise" split-policy="allow"}\n本文。\n:::\n',
+    ':::callout{kind="tip"}\n**強調**\n:::\n',
+    ':::callout{kind="tip"}\n本文。\n二行目。\n:::\n',
+    '::::component{name="exercise"}\n:::slot{name="answer"}\n本文。\n:::\n::::\n',
+    ':::callout{kind="tip"}\n:::\n',
+    ':::callout{kind="tip" #dup}\n本文。\n:::\n\n:::component{name="example" #dup}\n本文。\n:::\n'
+  ])assert.equal(run(source).options,undefined,source);
+});

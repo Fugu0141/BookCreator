@@ -1,0 +1,35 @@
+import {compileHeadingDesign} from './preview-component.js';
+import type {PreviewTextStyle} from './preview-typography.js';
+export const studyKinds=['note','tip','warning','important','example','exercise','explanation'] as const;
+export type StudyKind=typeof studyKinds[number];
+const presets:Readonly<Record<StudyKind,{label:string;background:string;color:string}>>=Object.freeze({
+  note:{label:'補足',background:'#f1f5f9',color:'#334155'},
+  tip:{label:'ポイント',background:'#ecfdf5',color:'#166534'},
+  warning:{label:'注意',background:'#fff7ed',color:'#9a3412'},
+  important:{label:'重要',background:'#fef2f2',color:'#991b1b'},
+  example:{label:'例題',background:'#eff6ff',color:'#1e40af'},
+  exercise:{label:'練習問題',background:'#f5f3ff',color:'#5b21b6'},
+  explanation:{label:'解説',background:'#f0f9ff',color:'#075985'}
+});
+export function studyKind(name:string,attrs:Readonly<Record<string,string>>):StudyKind|undefined{
+  const key=name==='callout'?attrs.kind:name==='component'?attrs.name:undefined;
+  if(!key||!(name==='callout'?['note','tip','warning','important']:['example','exercise','explanation']).includes(key))return;
+  const field=name==='callout'?'kind':'name';
+  if(Object.keys(attrs).some(k=>k!==field&&k!=='title'))return;
+  if(Object.hasOwn(attrs,'title')&&(!attrs.title.trim()||attrs.title.length>128||/[\p{Cc}\p{Cs}\p{Cf}\p{Zl}\p{Zp}]/u.test(attrs.title)))return;
+  return key as StudyKind;
+}
+export function compileStudyBlock(kind:StudyKind,title:string|undefined,body:PreviewTextStyle){
+  if(!studyKinds.includes(kind))throw RangeError('Unknown study block');
+  const p=presets[kind],label=title===undefined?p.label:p.label+'：'+title;
+  return compileHeadingDesign({schemaVersion:1,direction:'column',gap:2000,padding:3000,background:p.background,textColor:'#222222',fontSize:4200,lineHeight:1.8,children:[
+    {id:'study-label',type:'label',width:'fill',text:label,fontSize:4400,lineHeight:1.5,color:p.color},
+    {id:'content',type:'content'}
+  ]},body);
+}
+// Append only; the caller checks the scanner recognizes the new root container.
+export function studyTemplate(kind:StudyKind){
+  if(!studyKinds.includes(kind))throw RangeError('Unknown study block');
+  const directive=['note','tip','warning','important'].includes(kind)?'callout{kind="'+kind+'"}':'component{name="'+kind+'"}';
+  return ':::'+directive+'\n'+presets[kind].label+'の本文を入力してください。\n:::\n';
+}
