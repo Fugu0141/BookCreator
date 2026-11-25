@@ -71,6 +71,15 @@ if(new URLSearchParams(location.search).has('smoke')){
     if(!atom?.querySelector('math mfrac'))throw Error('Inline formula not rendered: '+status.textContent);
     atom.click();
     if(source.value.slice(source.selectionStart,source.selectionEnd)!==inlineFormula)throw Error('Inline formula envelope selection mismatch');
+    const refToken=':ref{target="eq-demo"}',eqFormula='\\frac{a}{b}';
+    source.value='参照 '+refToken+'。\n\n:::layout{#eq-demo numbered="true"}\n$$\n'+eqFormula+'\n$$\n:::\n';
+    source.dispatchEvent(new Event('input'));await render();
+    const eq=latest?.element.shadowRoot.querySelector('[data-equation-number]');
+    if(eq?.textContent!=='(1.1)')throw Error('Equation number not rendered: '+status.textContent);
+    const referenceBlock=[...latest.element.shadowRoot.querySelectorAll('[data-block]')].find(b=>b.textContent.includes('式 (1.1)'));
+    if(!referenceBlock)throw Error('Resolved equation reference missing');
+    eq.click();
+    if(source.value.slice(source.selectionStart,source.selectionEnd)!==eqFormula)throw Error('Numbered equation selection mismatch');
     source.value='[unsupported](https://example.invalid)';source.dispatchEvent(new Event('input'));if(target.children.length)throw Error('Stale preview remained');
     await render();if(latest||target.children.length)throw Error('Unsupported input rendered');
     report.textContent='PASS '+JSON.stringify({pages,sourceMapping:true,staleGuard:true});
