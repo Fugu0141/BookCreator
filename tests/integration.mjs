@@ -475,7 +475,7 @@ test('inline size and baseline editing preserve manuscript and compile into vari
 
 test('scanner list subset preserves marker-free source ranges, numbering and nesting',()=>{
   const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds};
-  const source='導入。\r\n\r\n3. **第一項**\r\n  - 子項目\r\n  1. 子番号\r\n  1. 子続き\r\n1. 第二項\r\n  1. 新しい子\r\n\r\n- 別リスト\r\n+ 次の項目\r\n\r\n結び。\r\n';
+  const source='導入。\r\n\r\n3. **第一項**\r\n   - 子項目\r\n   1. 子番号\r\n   1. 子続き\r\n\r\n1. 第二項\r\n   1. 新しい子\r\n\r\n- 別リスト\r\n+ 次の項目\r\n\r\n結び。\r\n';
   const doc={documentId:'list',revision:'1',source,startOn:'page'};
   const one=prepareBrowserPreview(doc,'1','list',{width:100000,height:70000},deps);
   const book=prepareBookBrowserPreview([doc],'1','list',{width:100000,height:70000},deps);
@@ -497,7 +497,7 @@ test('scanner list subset preserves marker-free source ranges, numbering and nes
     }
     assert.equal(source.slice(list[0].origin.range.start,list[0].origin.range.end),'3. **第一項**\r\n');
   }
-  for(const source of ['  - orphan\n','- Parent\n    - deep\n','- Parent\ncontinuation\n','Paragraph\n- item\n','999. last\n1. overflow\n','- [link](url)\n','- \n']){
+  for(const source of ['  - orphan\n','1. Parent\n  - wrong indent\n','- Parent\n    - deep\n','- Parent\n\n  - loose child\n','- Parent\ncontinuation\n','Paragraph\n- item\n','999. last\n1. overflow\n','- [link](url)\n','- \n']){
     const result=prepareBrowserPreview({...doc,source},'1','bad-list',{width:100000,height:70000},deps);
     assert.equal(result.options,undefined,source);assert.ok(result.diagnostics.length,source);
   }
