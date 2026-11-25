@@ -144,6 +144,13 @@ function App(){
       const prepared=prepareBookBrowserPreview(documents,rev,fingerprint,geometry.content,deps,typography,theme?.headingDesign,theme?.headingLevels,theme?.paragraphDesign,theme?.studyDesigns,theme?.library);
       if(!prepared.options)throw Error(prepared.diagnostics.map(d=>d.code+' '+d.message).join('\n'));
       const options=!whole&&needsContext?{...prepared.options,sections:prepared.options.sections.filter(s=>s.id===file.id)}:prepared.options;
+      for(const section of options.sections)for(const block of section.blocks){
+        if('kind' in block)continue;
+        for(const request of [block.request,...(block.namedSlots??[]).map(s=>s.request)])for(const run of request.inlineStyles??[]){
+          const family=run.fontFamily??request.fontFamily,weight=run.fontWeight??request.fontWeight;
+          if(family.startsWith('BCFont_')&&family!==noto&&!fonts.some(f=>f.alias===family&&f.loaded&&f.weight===weight))throw Error('インライン書式の登録フォントまたは指定ウェイトを利用できません。');
+        }
+      }
       const result=await createPlainTextPagePreview(document,{...options,paper:geometry.paper,resolveImage});
       if(job!==generation.current)return;
       preview.current.append(result.element);
