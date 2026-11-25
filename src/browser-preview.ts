@@ -71,13 +71,13 @@ export function prepareBrowserPreview<S extends Scan>(document:Manuscript,revisi
     const {item}=block;
     if(item.kind==='figure'||(item.kind==='heading'&&/[\r\n]/.test(item.text))){reject(item.origin,'Only contiguous plain source paragraphs and ATX headings are supported');continue;}
     const raw=document.source.slice(item.origin.range.start,item.origin.range.end);
-    const offset=item.kind==='study'?item.sourceTextStart!-item.origin.range.start:item.kind==='heading'?raw.indexOf(item.text):0;
+    const offset=(item.kind==='study'||item.kind==='list')?item.sourceTextStart!-item.origin.range.start:item.kind==='heading'?raw.indexOf(item.text):0;
     if(offset<0||raw.slice(offset,offset+item.text.length)!==item.text){reject(item.origin,'Cannot establish exact source mapping');continue;}
     if(item.kind==='heading')numbering.heading(item.level!);
     let study:ReturnType<typeof compileStudyBlock>|undefined,namedSlots:ReturnType<typeof slotRequests>['namedSlots']=[];
     if(item.kind==='study')try{study=resolveStudy(item,fonts.body,undefined,catalog,numbering.next(item.componentId??item.studyKind!),answerFor(item));const resolved=slotRequests(item,study,document.source);study={...study,component:resolved.component};namedSlots=resolved.namedSlots;}catch(e){reject(item.origin,String(e instanceof Error?e.message:e));continue;}
     const inline=primaryInline(item.text,item.origin.range.start+offset);
-    blocks.push({origin:item.origin,request:{text:inline.requestText,...(inline.inlineStyles?{inlineStyles:inline.inlineStyles}:{}),width:block.width,fontSize:study?.fontSize??(item.kind==='heading'?6500:4200),...(study?.textStyle??(item.kind==='heading'?fonts.heading:fonts.body)),lineHeight:study?.lineHeight??1.8,...multilineTextOptions(item.text,study?.paragraphGap)},splitPolicy:block.splitPolicy,...(study?{component:study.component}:{}),...(namedSlots.length?{namedSlots}:{}),
+    blocks.push({origin:item.origin,request:{text:inline.requestText,...(inline.inlineStyles?{inlineStyles:inline.inlineStyles}:{}),width:block.width,fontSize:study?.fontSize??(item.kind==='heading'?6500:4200),...(study?.textStyle??(item.kind==='heading'?fonts.heading:fonts.body)),lineHeight:study?.lineHeight??1.8,...multilineTextOptions(item.text,study?.paragraphGap)},splitPolicy:block.splitPolicy,...(item.listItem?{listItem:{...item.listItem,indentStep:5000,markerWidth:14000,gap:2000}}:{}),...(study?{component:study.component}:{}),...(namedSlots.length?{namedSlots}:{}),
       sourceTextStart:inline.sourceTextStart,sourceMap:inline.sourceMap,...(block.startPosition?{startPosition:block.startPosition,startPositionSource:block.startPositionSource}:{})});
   }
   if(!blocks.length&&!diagnostics.length)diagnostics.push({code:'BC_PREVIEW_EMPTY',message:'No supported content to preview',documentId:document.documentId,range:{start:0,end:0}});
@@ -106,7 +106,7 @@ export function prepareBookBrowserPreview<S extends Scan>(documents:readonly Man
       if(block.kind==='pagebreak'){blocks.push(block);continue;}
       const {item}=block;
       const raw=byId.get(item.origin.documentId)!.source.slice(item.origin.range.start,item.origin.range.end);
-      const offset=item.kind==='study'?item.sourceTextStart!-item.origin.range.start:item.kind==='heading'?raw.indexOf(item.text):0;
+      const offset=(item.kind==='study'||item.kind==='list')?item.sourceTextStart!-item.origin.range.start:item.kind==='heading'?raw.indexOf(item.text):0;
       if(item.kind==='figure'||(item.kind==='heading'&&/[\r\n]/.test(item.text))||offset<0||raw.slice(offset,offset+item.text.length)!==item.text){
         diagnostics.push({code:'BC_PREVIEW_UNSUPPORTED',message:'Only contiguous plain paragraphs and headings are supported',documentId:item.origin.documentId,range:item.origin.range});continue;
       }
@@ -130,7 +130,7 @@ export function prepareBookBrowserPreview<S extends Scan>(documents:readonly Man
           diagnostics.push({code:'BC_PREVIEW_COMPONENT',message:String(e instanceof Error?e.message:e),documentId:item.origin.documentId,range:item.origin.range});continue;
         }
       }
-      blocks.push({origin:item.origin,request:{text:inline.requestText,...(inline.inlineStyles?{inlineStyles:inline.inlineStyles}:{}),width:block.width,fontSize:design?.fontSize??(item.kind==='heading'?6500:4200),...(design?.textStyle??(item.kind==='heading'?fonts.heading:fonts.body)),lineHeight:design?.lineHeight??1.8,...multilineTextOptions(item.text,design?.paragraphGap)},splitPolicy:block.splitPolicy,...(design?{component:design.component}:{}),...(namedSlots.length?{namedSlots}:{}),sourceTextStart:inline.sourceTextStart,sourceMap:inline.sourceMap,...(block.startPosition?{startPosition:block.startPosition,startPositionSource:block.startPositionSource}:{})});
+      blocks.push({origin:item.origin,request:{text:inline.requestText,...(inline.inlineStyles?{inlineStyles:inline.inlineStyles}:{}),width:block.width,fontSize:design?.fontSize??(item.kind==='heading'?6500:4200),...(design?.textStyle??(item.kind==='heading'?fonts.heading:fonts.body)),lineHeight:design?.lineHeight??1.8,...multilineTextOptions(item.text,design?.paragraphGap)},splitPolicy:block.splitPolicy,...(item.listItem?{listItem:{...item.listItem,indentStep:5000,markerWidth:14000,gap:2000}}:{}),...(design?{component:design.component}:{}),...(namedSlots.length?{namedSlots}:{}),sourceTextStart:inline.sourceTextStart,sourceMap:inline.sourceMap,...(block.startPosition?{startPosition:block.startPosition,startPositionSource:block.startPositionSource}:{})});
     }
     return {id:section.id,startOn:section.startOn,blocks};
   });
