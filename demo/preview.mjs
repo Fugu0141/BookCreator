@@ -1,4 +1,4 @@
-import {prepareBrowserPreview} from '/app/dist/index.js';
+import {prepareBrowserPreview,previewSourceRange} from '/app/dist/index.js';
 import {scanDocument,validateScannedBlocks,indexBlockIds} from '/bcm/dist/index.js';
 import {createPlainTextPagePreview} from '/engine/dist/index.js';
 const source=document.querySelector('#source'),width=document.querySelector('#width'),height=document.querySelector('#height');
@@ -21,7 +21,9 @@ async function render(){
     latest=preview;target.append(preview.element);
     const fragments=[...preview.element.shadowRoot.querySelectorAll('[data-block]')];
     fragments.forEach((fragment,i)=>{
-      const slice=preview.slices[i]?.sourceSlice;
+      const fragmentSlice=preview.slices[i];
+      const block=prepared.options.blocks.find(b=>b.origin.blockKey===fragmentSlice?.origin.blockKey);
+      const slice=fragmentSlice?previewSourceRange(block,fragmentSlice):undefined;
       if(!slice)return;
       fragment.tabIndex=0;fragment.style.cursor='pointer';
       fragment.setAttribute('aria-label','対応する原稿範囲を選択');
@@ -44,7 +46,7 @@ if(new URLSearchParams(location.search).has('smoke')){
     fragment.click();
     if(source.selectionStart!==slice.start||source.selectionEnd!==slice.end||source.value.slice(slice.start,slice.end)!==fragment.textContent)throw Error('Source mapping mismatch');
     const pages=latest.plan.pages.length;
-    source.value='**unsupported**';source.dispatchEvent(new Event('input'));if(target.children.length)throw Error('Stale preview remained');
+    source.value='[unsupported](https://example.invalid)';source.dispatchEvent(new Event('input'));if(target.children.length)throw Error('Stale preview remained');
     await render();if(latest||target.children.length)throw Error('Unsupported input rendered');
     report.textContent='PASS '+JSON.stringify({pages,sourceMapping:true,staleGuard:true});
   }catch(e){report.textContent='FAIL '+String(e);}
