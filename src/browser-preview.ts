@@ -1,4 +1,4 @@
-import {compileHeadingDesign,validateHeadingLevels,type HeadingDesign,type HeadingLevel,type HeadingLevels} from './preview-component.js';
+import {compileHeadingDesign,validateHeadingLevels,type HeadingDesign,type HeadingLevel,type HeadingLevels,type HeadingContext} from './preview-component.js';
 import {resolvePreviewTypography,type PreviewTypography} from './preview-typography.js';
 import {prepareManuscript,type Manuscript,type PreparationDependencies,type Scan} from './manuscript-poc.js';
 export function prepareBrowserPreview<S extends Scan>(document:Manuscript,revision:string,fingerprint:string,content:{width:number;height:number},deps:PreparationDependencies<S>,typography?:PreviewTypography){
@@ -26,12 +26,14 @@ export function prepareBrowserPreview<S extends Scan>(document:Manuscript,revisi
 /** Whole-book PoC; preserve section ordering, explicit breaks and exact source ranges. */
 export function prepareBookBrowserPreview<S extends Scan>(documents:readonly Manuscript[],revision:string,fingerprint:string,content:{width:number;height:number},deps:PreparationDependencies<S>,typography?:PreviewTypography,headingDesign?:HeadingDesign|null,headingLevels?:HeadingLevels){
   const fonts=resolvePreviewTypography(typography);
-  const heading=headingDesign?compileHeadingDesign(headingDesign,fonts.heading):undefined;
-  const levels=Object.fromEntries(Object.entries(validateHeadingLevels(headingLevels??{})).map(([k,v])=>[k,compileHeadingDesign(v!,fonts.heading)]));
+  const levels=validateHeadingLevels(headingLevels??{});
   const prepared=prepareManuscript(documents,revision,fingerprint,content,deps),diagnostics=[...prepared.diagnostics];
   if(!prepared.input)return {diagnostics,publicationReady:false as const};
   const byId=new Map(documents.map(d=>[d.documentId,d]));
+  let chapter=0; // Global ordered H1 sequence; a file's headings preceding its first H1 get an implicit chapter.
   const sections=prepared.input.sections.map(section=>{
+    let active=false,chapterTitle:string|undefined;
+    const counters=[0,0,0,0,0,0];
     const blocks:(NonNullable<ReturnType<typeof prepareBrowserPreview<S>>['options']>['blocks'][number] & {component?:ReturnType<typeof compileHeadingDesign>['component']} | Extract<typeof section.blocks[number],{kind:'pagebreak'}>)[]=[];
     for(const block of section.blocks){
       if(block.kind==='pagebreak'){blocks.push(block);continue;}
@@ -41,7 +43,17 @@ export function prepareBookBrowserPreview<S extends Scan>(documents:readonly Man
       if(item.kind==='figure'||/[\r\n]/.test(item.text)||offset<0||raw.slice(offset,offset+item.text.length)!==item.text){
         diagnostics.push({code:'BC_PREVIEW_UNSUPPORTED',message:'Only contiguous plain paragraphs and headings are supported',documentId:item.origin.documentId,range:item.origin.range});continue;
       }
-      const design=item.kind==='heading'?(levels[String(item.level) as HeadingLevel]??heading):undefined;
+      let design:ReturnType<typeof compileHeadingDesign>|undefined;
+      if(item.kind==='heading'){
+        const level=item.level!;
+        if(level===1||!active){chapter++;active=true;chapterTitle=level===1?item.text:undefined;counters.fill(0);counters[0]=chapter;}
+        if(level>1){counters[level-1]++;counters.fill(0,level);}
+        const context:HeadingContext={'chapter-number':String(chapter),'chapter-title':chapterTitle,'heading-number':counters.slice(0,level).join('.'),'heading-title':item.text,'heading-level':String(level)};
+        const definition=levels[String(level) as HeadingLevel]??headingDesign;
+        if(definition)try{design=compileHeadingDesign(definition,fonts.heading,context);}catch(e){
+          diagnostics.push({code:'BC_PREVIEW_COMPONENT',message:String(e instanceof Error?e.message:e),documentId:item.origin.documentId,range:item.origin.range});continue;
+        }
+      }
       blocks.push({origin:item.origin,request:{text:item.text,width:block.width,fontSize:design?.fontSize??(item.kind==='heading'?6500:4200),...(design?.textStyle??(item.kind==='heading'?fonts.heading:fonts.body)),lineHeight:design?.lineHeight??1.8},splitPolicy:block.splitPolicy,...(design?{component:design.component}:{}),sourceTextStart:item.origin.range.start+offset,...(block.startPosition?{startPosition:block.startPosition,startPositionSource:block.startPositionSource}:{})});
     }
     return {id:section.id,startOn:section.startOn,blocks};
