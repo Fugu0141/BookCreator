@@ -1,6 +1,6 @@
 import React,{useState,useRef} from 'react';
 import {createRoot} from 'react-dom/client';
-import {prepareBrowserPreview,prepareBookBrowserPreview,hasDynamicLabels,hasStudyNumbering,studyTemplate,studyKinds,defaultStudyDesign,customStudyTemplate,isCustomComponentId,linkedStudyTemplate,slottedStudyTemplate,namedSlotDefinitions} from '../../dist/index.js';
+import {prepareBrowserPreview,prepareBookBrowserPreview,previewSourceRange,hasDynamicLabels,hasStudyNumbering,studyTemplate,studyKinds,defaultStudyDesign,customStudyTemplate,isCustomComponentId,linkedStudyTemplate,slottedStudyTemplate,namedSlotDefinitions} from '../../dist/index.js';
 import {scanDocument,validateScannedBlocks,indexBlockIds,applyPatches} from '../../../BookCreator_Markdown/dist/index.js';
 import {createPlainTextPagePreview} from '../../../BookCreator_LayoutEngine/dist/index.js';
 import {ParagraphLab} from './paragraph-lab.jsx';
@@ -128,14 +128,19 @@ function App(){
       const result=await createPlainTextPagePreview(document,{...options,paper:geometry.paper,resolveImage});
       if(job!==generation.current)return;
       preview.current.append(result.element);
+      const sourceBlocks=new Map(options.sections.flatMap(s=>s.blocks.filter(b=>!('kind' in b)).map(b=>[JSON.stringify([b.origin.documentId,b.origin.blockKey]),b])));
       [...result.element.shadowRoot.querySelectorAll('[data-block]')].forEach((el,i)=>{
         const slice=result.slices[i];if(!slice)return;
         const bind=(node,range)=>{if(!range)return;node.tabIndex=0;node.style.cursor='pointer';
           const focus=()=>{if(job!==generation.current)return;if(slice.origin.documentId!==file?.id){setStatus('この断片は '+slice.origin.documentId+' の原稿です。左の原稿一覧から開いてください。');return;}textarea.current.focus();textarea.current.setSelectionRange(range.start,range.end);};
           node.addEventListener('click',e=>{e.stopPropagation();focus();});node.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();e.stopPropagation();focus();}});
         };
-        bind(el,slice.sourceSlice);
-        for(const node of el.querySelectorAll('[data-named-slot]'))bind(node,slice.namedSlots?.find(s=>s.name===node.dataset.namedSlot)?.sourceSlice);
+        const block=sourceBlocks.get(JSON.stringify([slice.origin.documentId,slice.origin.blockKey]));
+        bind(el,previewSourceRange(block,slice));
+        for(const node of el.querySelectorAll('[data-named-slot]')){
+          const named=slice.namedSlots?.find(s=>s.name===node.dataset.namedSlot);
+          if(named)bind(node,previewSourceRange(block,named,named.name));
+        }
       });
       setStatus(result.plan.pages.length+' ページ · '+(whole?'書籍全体':'選択原稿')+' · 実測プレビュー（出版不可）');
     }catch(e){if(job===generation.current)setStatus(String(e.message??e));}
