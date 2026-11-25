@@ -1,0 +1,36 @@
+name: Cross-library smoke test
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: BookCreator
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: Fugu0141/BookCreator_Markdown
+          ref: 8b0dd6dc47572493a1dc302475092d4ff3586f57
+          path: BookCreator_Markdown
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: Fugu0141/BookCreator_LayoutEngine
+          ref: 71613e3b3b17f93ac6c146526b830d779bbadc86
+          path: BookCreator_LayoutEngine
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: |
+          for dir in BookCreator_Markdown BookCreator_LayoutEngine BookCreator; do
+            (cd "$dir" && npm install --ignore-scripts --no-audit --no-fund && npm run build) || exit 1
+          done
+      - run: node --test tests/integration.mjs
+        working-directory: BookCreator
