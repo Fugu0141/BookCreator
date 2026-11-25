@@ -266,7 +266,30 @@ async function smoke(){
   await until("!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-component-canvas]')");
   if(!await exec("Math.abs(parseFloat(document.querySelector('#preview > div').shadowRoot.querySelector('[data-component-canvas] [data-content-slot]').style.left)-"+draggedX+"*96/25.4)<.02"))throw Error('Dragged coordinate not persisted');
   if(!await exec("Math.abs(parseFloat(document.querySelector('#preview > div').shadowRoot.querySelector('[data-content-slot]').style.width)-"+resizedWidth+"*96/25.4)<.02 && !document.querySelector('#preview > div').shadowRoot.querySelector('[data-lab-resize-handle]')"))throw Error('Resized width not persisted or editor handle leaked');
-  console.log('PASS Canvas resize, undo/redo and persisted width; Canvas actual mouse drag, undo/redo and persisted paper; Canvas numeric coordinates and actual paper rendering; nested component grouping and actual book preview; H1-specific fixed label and independent font; Component Lab measure, discard, apply and actual book rendering; book settings save and physical whole-book preview; imported project font, license metadata, theme selection, actual font rendering; Electron project creation, theme save/reopen, Electron sandbox, project open/read, React editing, bundled Noto, independent font roles, stale invalidation, measured preview, source selection and save');
+  // Reopen saved Canvas, select its sibling label, and align both to the selection's left edge.
+  await exec("document.querySelector('#component-lab').click()");
+  await until("!!document.querySelector('#lab-measure')");
+  await exec("document.querySelector('[data-lab-node=content]').click()");
+  await until("!!document.querySelector('#lab-align-left')");
+  await exec("document.querySelector('#lab-measure').click()");
+  await until("!document.querySelector('#lab-apply').disabled");
+  const labelId=await exec("document.querySelector('#lab-preview > div').shadowRoot.querySelector('[data-component-canvas] > [data-fixed-label]').dataset.componentNode");
+  await exec("Array.from(document.querySelectorAll('[data-lab-align-node]')).find(e=>e.dataset.labAlignNode==="+JSON.stringify(labelId)+").click()");
+  await until("!document.querySelector('#lab-align-left').disabled");
+  await exec("document.querySelector('#lab-align-left').click()");
+  await until("document.querySelector('#lab-canvas-x')?.value==='0' && !document.querySelector('#lab-apply').disabled");
+  await exec("document.querySelector('#lab-undo').click()");
+  await until("Number(document.querySelector('#lab-canvas-x')?.value)==="+draggedX+" && document.querySelector('#lab-apply').disabled");
+  await exec("document.querySelector('#lab-redo').click()");
+  await until("document.querySelector('#lab-canvas-x')?.value==='0'");
+  await exec("document.querySelector('#lab-measure').click()");
+  await until("!document.querySelector('#lab-apply').disabled");
+  await exec("document.querySelector('#lab-apply').click()");
+  await until("!document.querySelector('#open').disabled && !document.querySelector('#lab-measure')");
+  await exec("document.querySelector('#preview-book').click()");
+  await until("!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-component-canvas]')");
+  if(!await exec("(()=>{const c=document.querySelector('#preview > div').shadowRoot.querySelector('[data-component-canvas]');return c.querySelector('[data-content-slot]').style.left===c.querySelector('[data-fixed-label]').style.left;})()"))throw Error('Aligned positions not persisted');
+  console.log('PASS Canvas multi-selection, alignment, history and persisted geometry; Canvas resize, undo/redo and persisted width; Canvas actual mouse drag, undo/redo and persisted paper; Canvas numeric coordinates and actual paper rendering; nested component grouping and actual book preview; H1-specific fixed label and independent font; Component Lab measure, discard, apply and actual book rendering; book settings save and physical whole-book preview; imported project font, license metadata, theme selection, actual font rendering; Electron project creation, theme save/reopen, Electron sandbox, project open/read, React editing, bundled Noto, independent font roles, stale invalidation, measured preview, source selection and save');
   closing=true;win.destroy();await rm(smokeRoot,{recursive:true,force:true});app.exit(0);
 }
 app.on('window-all-closed',()=>{if(!SMOKE)app.quit();});
