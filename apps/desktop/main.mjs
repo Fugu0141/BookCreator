@@ -744,6 +744,10 @@ async function smoke(){
   await until("document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-named-slot=extra]')?.textContent==="+JSON.stringify(sampleMulti));
   await exec("document.querySelector('#preview > div').shadowRoot.querySelector('[data-named-slot=extra]').click()");
   if(!await exec("(()=>{const e=document.querySelector('#source');return e.value.slice(e.selectionStart,e.selectionEnd)==="+JSON.stringify(sampleMulti)+";})()"))throw Error('Multiline named slot selection lost source');
+  // The earlier imported static regular face cannot supply a genuine 700 weight.
+  // Use the bundled variable face for the existing bold/italic regression.
+  await exec("(()=>{const e=document.querySelector('#body-font');e.value='BCFont_NotoSansJP';e.dispatchEvent(new Event('change',{bubbles:true}));})()");
+  await until("document.querySelector('#body-font').value==='BCFont_NotoSansJP' && !document.querySelector('#preview > div')");
   // Replace the final named slot body with styled logical text and select its exact raw envelope.
   const richRaw='**第一段落**。\n\n*第二段落*。',richLogical='第一段落。\n\n第二段落。';
   await exec("(()=>{const e=document.querySelector('#source'),s=e.value,last=s.lastIndexOf("+JSON.stringify(sampleMulti)+");if(last<0)throw Error('missing multiline body');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(e,s.slice(0,last)+"+JSON.stringify(richRaw)+"+s.slice(last+"+sampleMulti.length+"));e.dispatchEvent(new Event('input',{bubbles:true}));})()");
