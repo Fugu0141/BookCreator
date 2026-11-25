@@ -16,13 +16,13 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Fugu0141/BookCreator_Markdown
-          ref: 8b0dd6dc47572493a1dc302475092d4ff3586f57
+          ref: 2a996e6673c3e3a7fe3829664b820a4f28d5be37
           path: BookCreator_Markdown
           persist-credentials: false
       - uses: actions/checkout@v4
         with:
           repository: Fugu0141/BookCreator_LayoutEngine
-          ref: 71613e3b3b17f93ac6c146526b830d779bbadc86
+          ref: 9afde59a8c99839b05fc1215d1285ebb9bb60a28
           path: BookCreator_LayoutEngine
           persist-credentials: false
       - uses: actions/setup-node@v4
