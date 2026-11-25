@@ -202,6 +202,7 @@ export function resolveStudyDesigns(value:unknown,library:ComponentLibrary){
       if(entry.usage!=='study')throw RangeError('Component usage does not match study target');
       studyBindings[kind]=id;studyDesigns[kind]=validateHeadingDesign(entry.design,'study');
     }else studyDesigns[kind]=validateHeadingDesign(raw,'study');
+    if(['note','tip','warning','important'].includes(kind)&&namedSlotNames(studyDesigns[kind]).length)throw RangeError('Named slots require component syntax');
   }
   return {studyDesigns,studyBindings};
 }
