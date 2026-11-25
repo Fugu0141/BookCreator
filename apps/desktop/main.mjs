@@ -103,13 +103,13 @@ async function smoke(){
   await exec("document.querySelector('#save-theme').click()");
   await until("document.querySelector('#status').textContent.includes('テーマを保存しました')");
   await exec("document.querySelector('#open').click()");
-  await until("document.querySelector('#body-font').value==='serif' && !document.querySelector('#save-theme').disabled===false && document.querySelector('#source').disabled");
+  await until("!document.querySelector('#open').disabled && document.querySelector('#body-font').value==='serif' && document.querySelector('#save-theme').disabled && document.querySelector('#source').disabled");
   await exec("document.querySelector('#new-project').click()");
   await until("!!document.querySelector('#new-title')");
-  await exec("(()=>{const el=document.querySelector('#new-title');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(el,'新しい書籍');el.dispatchEvent(new Event('input',{bubbles:true}));})()");
+  await exec("(()=>{const el=document.querySelector('#new-title');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(el,'再読込テスト書籍');el.dispatchEvent(new Event('input',{bubbles:true}));})()");
   await exec("document.querySelector('#create-project').click()");
   await until("!!document.querySelector('[data-section=chapter-01]')");
-  if(!(await readFile(join(smokeRoot,'new-book','book.yaml'),'utf8')).includes('新しい書籍'))throw Error('Created book missing');
+  if(!(await readFile(join(smokeRoot,'new-book','book.yaml'),'utf8')).includes('再読込テスト書籍'))throw Error('Created book missing');
   if(!await exec("document.querySelector('#body-font').value==='BCFont_NotoSansJP'"))throw Error('New book default typography missing');
   console.log('PASS Electron project creation, theme save/reopen, Electron sandbox, project open/read, React editing, bundled Noto, independent font roles, stale invalidation, measured preview, source selection and save');
   closing=true;win.destroy();await rm(smokeRoot,{recursive:true,force:true});app.exit(0);
