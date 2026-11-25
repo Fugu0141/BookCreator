@@ -12,7 +12,7 @@ protocol.registerSchemesAsPrivileged([{scheme:'bookcreator',privileges:{standard
 const PAGE='bookcreator://app/index.html';
 const ASSETS=new Map([['/index.html',['index.html','text/html; charset=utf-8']],['/renderer.js',['build/renderer.js','text/javascript; charset=utf-8']],['/style.css',['style.css','text/css; charset=utf-8']]]);
 let win,workspace,closing=false,busy=false;
-const CSP="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'none'; connect-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'";
+const CSP="default-src 'none'; font-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'none'; connect-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'";
 function sender(event){
   if(!win||event.sender!==win.webContents||event.senderFrame!==win.webContents.mainFrame||event.senderFrame.url!==PAGE)throw Error('Untrusted IPC sender');
 }
@@ -30,6 +30,10 @@ async function run(){
   session.defaultSession.setPermissionRequestHandler((_wc,_permission,callback)=>callback(false));
   session.defaultSession.setPermissionCheckHandler(()=>false);
   session.defaultSession.webRequest.onBeforeRequest((details,callback)=>callback({cancel:!details.url.startsWith('bookcreator://app/')}));
+  const fontManifest=JSON.parse(await readFile(new URL('./build/fonts-manifest.json',import.meta.url),'utf8'));
+  if(fontManifest.schemaVersion!==1||fontManifest.family!=='BCFont_NotoSansJP'||!Array.isArray(fontManifest.assets)||fontManifest.assets.length>512||fontManifest.assets.some(name=>typeof name!=='string'||!/^[A-Za-z0-9_-]+\.(?:woff2|woff)$/.test(name)))throw Error('Invalid trusted font build manifest');
+  ASSETS.set('/fonts.css',['build/fonts.css','text/css; charset=utf-8']);
+  for(const name of fontManifest.assets)ASSETS.set('/fonts/'+name,['build/fonts/'+name,name.endsWith('.woff2')?'font/woff2':'font/woff']);
   protocol.handle('bookcreator',async request=>{
     const u=new URL(request.url),entry=ASSETS.get(u.pathname);
     if(u.host!=='app'||request.method!=='GET'||u.search||!entry)return new Response('Not found',{status:404});
@@ -73,6 +77,13 @@ async function smoke(){
   await until("document.querySelector('#source')?.value.includes('見出し')");
   await exec("document.querySelector('#preview-button').click()");
   await until("!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-block]')");
+  if(!await exec("Array.from(document.fonts).some(f=>f.family.includes('BCFont_NotoSansJP')&&f.status==='loaded')"))throw Error('Bundled Noto font not loaded');
+  if(!await exec("(()=>{const lines=[...document.querySelector('#preview > div').shadowRoot.querySelectorAll('[data-start]')];return lines.every(l=>l.style.fontFamily.includes('BCFont_NotoSansJP'))&&lines.some(l=>l.style.fontWeight==='700')&&lines.some(l=>l.style.fontWeight==='400');})()"))throw Error('Font roles not applied');
+  await exec("(()=>{const el=document.querySelector('#body-font');el.value='serif';el.dispatchEvent(new Event('change',{bubbles:true}));})()");
+  await until("!document.querySelector('#preview > div')");
+  await exec("document.querySelector('#preview-button').click()");
+  await until("!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-block]')");
+  if(!await exec("Array.from(document.querySelector('#preview > div').shadowRoot.querySelectorAll('[data-start]')).some(l=>l.style.fontFamily==='serif')"))throw Error('Body font change not applied');
   await exec("document.querySelector('#preview > div').shadowRoot.querySelector('[data-block]').click()");
   if(!await exec("document.querySelector('#source').selectionEnd>document.querySelector('#source').selectionStart"))throw Error('Source selection failed');
   await exec("(()=>{const el=document.querySelector('#source');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(el,el.value+'\\n追記');el.dispatchEvent(new Event('input',{bubbles:true}));})()");
@@ -80,7 +91,7 @@ async function smoke(){
   await exec("document.querySelector('#save').click()");
   await until("document.querySelector('#status').textContent.includes('保存しました')");
   if(!(await readFile(join(smokeRoot,'manuscript','chapter.md'),'utf8')).endsWith('追記'))throw Error('Saved source missing');
-  console.log('PASS Electron sandbox, project open/read, React editing, measured preview, source selection and save');
+  console.log('PASS Electron sandbox, project open/read, React editing, bundled Noto, independent font roles, stale invalidation, measured preview, source selection and save');
   closing=true;win.destroy();await rm(smokeRoot,{recursive:true,force:true});app.exit(0);
 }
 app.on('window-all-closed',()=>{if(!SMOKE)app.quit();});

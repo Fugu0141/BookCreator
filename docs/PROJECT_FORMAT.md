@@ -79,3 +79,7 @@ YAMLはデータのみ。重複キー、タグ、循環、過大な入れ子を�
 ## 5. 検証
 
 PF-01 新規作成/再読込、PF-02 章順・ID維持、PF-03 未知形式の読取専用、PF-04 パス・symlink・Unicode衝突、PF-05 画像の参照とコピー、PF-06 保存途中の復旧、PF-07 番号区間・空白、PF-08 文献と引用キー。各fixtureは正本ファイルの前後・診断・結果を記録。未実装。
+
+## Typography extension
+
+See [TYPOGRAPHY_AND_FONTS.md](TYPOGRAPHY_AND_FONTS.md) for proposed font registration, role selection, local import and layout fingerprint contracts. Existing format stays unchanged until schema and fixtures are implemented.
