@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
-import {editDocument,compileMeasuredManuscript,canReviewLayout,prepareBrowserPreview,prepareBookBrowserPreview,defaultHeadingDesign,defaultParagraphDesign,previewSourceRange,planInlineFormat,planListFormat,planListIndent,planListBatch,inspectDisplayMath,planDisplayMath} from '../dist/index.js';
+import {editDocument,compileMeasuredManuscript,canReviewLayout,prepareBrowserPreview,prepareBookBrowserPreview,defaultHeadingDesign,defaultParagraphDesign,previewSourceRange,planInlineFormat,planListFormat,planListIndent,planListBatch,inspectDisplayMath,planDisplayMath,inspectInlineMath,planInlineMath} from '../dist/index.js';
 const load = (variable, fallback) => import(pathToFileURL(resolve(process.env[variable] ?? fallback)).href);
 const bcm = await load('BCM_DIST', '../BookCreator_Markdown/dist/index.js');
 const engine = await load('ENGINE_DIST', '../BookCreator_LayoutEngine/dist/index.js');
@@ -676,4 +676,35 @@ test('BCM inline math refuses invalid delimiters, unsafe commands and unsupporte
   assert.ok(run('価格は \\$20。').options);
   const doc={documentId:'frame',revision:'1',source:'本文 $x$ です。',startOn:'page'};
   assert.equal(prepareBookBrowserPreview([doc],'1','frame',size,deps,undefined,undefined,undefined,defaultParagraphDesign()).options,undefined);
+});
+
+
+test('GUI inline math inserts and updates exact formula bodies, retaining CRLF and adjacent styles',()=>{
+  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds,validateDisplayMath:engine.parsePreviewMath,validateInlineMath:engine.parsePreviewMath};
+  for(const nl of ['\n','\r\n']){
+    const source=['# 章','','**係数** を使う。','別の式 $y^2$ です。',''].join(nl);
+    const at=source.indexOf(' を使う。')+1,formula='\\frac{1}{2}';
+    const target=inspectInlineMath(source,at,at,deps);assert.equal(target.mode,'insert');
+    const p=planInlineMath(source,at,at,formula,deps),next=bcm.applyPatches(source,[p.patch]);
+    assert.equal(next,source.slice(0,at)+'$'+formula+'$'+source.slice(at));
+    assert.equal(next.slice(p.selection.start,p.selection.end),formula);
+    const selection=inspectInlineMath(next,p.selection.start-1,p.selection.end+1,deps);
+    assert.equal(selection.mode,'edit');assert.equal(selection.formula,formula);
+    const edit=planInlineMath(next,p.selection.start-1,p.selection.end+1,'\\sqrt{x}',deps);
+    assert.equal(edit.patch.expected,formula);
+    assert.equal(bcm.applyPatches(next,[edit.patch]),next.replace(formula,'\\sqrt{x}'));
+    assert.equal(inspectInlineMath(next,p.selection.start+2,p.selection.start+2,deps).mode,'edit');
+  }
+  const atEnd='本文。';
+  assert.equal(bcm.applyPatches(atEnd,[planInlineMath(atEnd,atEnd.length,atEnd.length,'x^2',deps).patch]),'本文。$x^2$');
+});
+test('GUI inline math refuses protected ranges, text replacement, unsafe boundaries and invalid formulas',()=>{
+  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds,validateDisplayMath:engine.parsePreviewMath,validateInlineMath:engine.parsePreviewMath};
+  for(const [source,start,end] of [
+    ['# 見出し',3,3],['- 項目',3,3],[':::callout{kind="note"}\n本文。\n:::\n',26,26],
+    ['本文。',0,2],['**係数** を使う。',3,3],['A\u0301B',1,1],['本文 20。',3,3],
+    ['本文 $x$ です。',5,10],['本文 $x$ です。',3,3],['本文。\n\n結び。',4,4],['$$\nx\n$$\n',3,3],
+    ['本文。\n~~~\nx\n~~~\n',1,1],['本文 \\$20。',4,4]
+  ])assert.throws(()=>planInlineMath(source,start,end,'x^2',deps),RangeError,source);
+  for(const formula of ['',' x','x ','x\ny','x$y','\\input{secret}','x^2^3'])assert.throws(()=>planInlineMath('本文。',1,1,formula,deps),RangeError);
 });

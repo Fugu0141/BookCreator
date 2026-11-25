@@ -148,6 +148,37 @@ async function smoke(){
   await until("!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-inline-math] math mfrac')");
   await exec("document.querySelector('#preview > div').shadowRoot.querySelector('[data-inline-math]').click()");
   if(!await exec("(()=>{const el=document.querySelector('#source');return el.value.slice(el.selectionStart,el.selectionEnd)==="+JSON.stringify(inlineMathSource)+";})()"))throw Error('Inline math raw delimiter envelope selection failed');
+  // Reuse the math dialog to edit a clicked inline atom and insert another at a caret.
+  await exec("document.querySelector('#source-inline-math').click()");
+  await until("document.querySelector('#math-formula')?.value==="+JSON.stringify(inlineMathSource.slice(1,-1)));
+  const setInlineDraft=value=>exec("(()=>{const e=document.querySelector('#math-formula');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,"+JSON.stringify(value)+");e.dispatchEvent(new Event('input',{bubbles:true}));})()");
+  await setInlineDraft(' x');
+  await until("document.querySelector('#math-apply')?.disabled===true");
+  await exec("document.querySelector('#math-cancel').click()");
+  if(await exec("document.querySelector('#source').value")!==mixedInlineMath)throw Error('Cancel inline formula changed manuscript');
+  await exec("document.querySelector('#source-inline-math').click()");
+  await until("!!document.querySelector('#math-formula')");
+  const editedInline='\\sqrt{x^2+1}';
+  await setInlineDraft(editedInline);
+  await until("!!document.querySelector('#math-draft-preview math[display=inline] msqrt')");
+  await exec("document.querySelector('#math-apply').click()");
+  const editedInlineSource=mixedInlineMath.replace(inlineMathSource,'$'+editedInline+'$');
+  await until("document.querySelector('#source').value==="+JSON.stringify(editedInlineSource));
+  await until("(()=>{const e=document.querySelector('#source');return e.value.slice(e.selectionStart,e.selectionEnd)==="+JSON.stringify(editedInline)+";})()");
+  await exec("(()=>{const e=document.querySelector('#source'),p=e.value.lastIndexOf('を使います。');e.focus();e.setSelectionRange(p,p);document.querySelector('#source-inline-math').click();})()");
+  await until("document.querySelector('#math-formula')?.value==='x^2'");
+  await exec("document.querySelector('#math-apply').click()");
+  const twiceInline=editedInlineSource.replace('を使います。','$x^2$を使います。');
+  await until("document.querySelector('#source').value==="+JSON.stringify(twiceInline));
+  await exec("document.querySelector('#preview-button').click()");
+  await until("document.querySelector('#preview > div')?.shadowRoot?.querySelectorAll('[data-inline-math]').length===2");
+  await exec("document.querySelector('#preview > div').shadowRoot.querySelectorAll('[data-inline-math]')[1].click()");
+  await exec("document.querySelector('#source-inline-math').click()");
+  await until("document.querySelector('#math-formula')?.value==='x^2'");
+  await setInlineMathSource(twiceInline+'\n追記。');
+  await until("document.querySelector('#math-apply')?.disabled===true");
+  await exec("document.querySelector('#math-cancel').click()");
+  if(await exec("document.querySelector('#source').value")!==twiceInline+'\n追記。')throw Error('Stale inline draft overwrote manuscript');
   await setInlineMathSource(beforeInlineMath);
   await until("document.querySelector('#source').value==="+JSON.stringify(beforeInlineMath)+" && !document.querySelector('#preview > div')");
   await exec("(()=>{const el=document.querySelector('#body-font');el.value='serif';el.dispatchEvent(new Event('change',{bubbles:true}));})()");
@@ -901,7 +932,7 @@ async function smoke(){
   await until("document.querySelector('#math-apply')?.disabled===true");
   await exec("document.querySelector('#math-cancel').click()");
   if(await exec("document.querySelector('#source').value")!==staleSource)throw Error('Stale draft changed manuscript');
-  console.log('PASS inline math atom source mapping; GUI math insertion, update, cancel and stale guard; batch list conversion; list indent and outdent; manuscript list markers and exact source selection; inline physical size and scripts; combined style controls and stable font override; source toolbar and shortcut toggles, selection and protected source; inline style rendering and exact raw envelope; multiline source, sample and exact named selection; optional slot omission, conditional group height, insertion and mixed occurrences; named slot editing, template, paper and exact source selection; identified question and linked explanation, source insertion and partial/book consistency; study numbering sample, chapter sequence and selected/book consistency; independently created custom component, direct insertion, rename and paper; custom study design, typed library and actual paper; study template, real paper and source selection; typed paragraph library, binding, usage filter and detach; paragraph frame fragmentation and theme/heading coexistence; shared binding, paper, impact and detach; named library registration, rename, independent draft copy and persistence; dynamic sample and manuscript context, theme and paper; image ratio lock, non-destructive crop and history; image component asset, actual pixels, theme and paper; component duplication and lock guards; Canvas smart guide cancellation and equal-gap distribution; Canvas multi-selection, alignment, history and persisted geometry; Canvas resize, undo/redo and persisted width; Canvas actual mouse drag, undo/redo and persisted paper; Canvas numeric coordinates and actual paper rendering; nested component grouping and actual book preview; H1-specific fixed label and independent font; Component Lab measure, discard, apply and actual book rendering; book settings save and physical whole-book preview; imported project font, license metadata, theme selection, actual font rendering; Electron project creation, theme save/reopen, Electron sandbox, project open/read, React editing, bundled Noto, independent font roles, stale invalidation, measured preview, source selection and save');
+  console.log('PASS GUI inline math insert, update, cancel and stale guard; inline math atom source mapping; GUI math insertion, update, cancel and stale guard; batch list conversion; list indent and outdent; manuscript list markers and exact source selection; inline physical size and scripts; combined style controls and stable font override; source toolbar and shortcut toggles, selection and protected source; inline style rendering and exact raw envelope; multiline source, sample and exact named selection; optional slot omission, conditional group height, insertion and mixed occurrences; named slot editing, template, paper and exact source selection; identified question and linked explanation, source insertion and partial/book consistency; study numbering sample, chapter sequence and selected/book consistency; independently created custom component, direct insertion, rename and paper; custom study design, typed library and actual paper; study template, real paper and source selection; typed paragraph library, binding, usage filter and detach; paragraph frame fragmentation and theme/heading coexistence; shared binding, paper, impact and detach; named library registration, rename, independent draft copy and persistence; dynamic sample and manuscript context, theme and paper; image ratio lock, non-destructive crop and history; image component asset, actual pixels, theme and paper; component duplication and lock guards; Canvas smart guide cancellation and equal-gap distribution; Canvas multi-selection, alignment, history and persisted geometry; Canvas resize, undo/redo and persisted width; Canvas actual mouse drag, undo/redo and persisted paper; Canvas numeric coordinates and actual paper rendering; nested component grouping and actual book preview; H1-specific fixed label and independent font; Component Lab measure, discard, apply and actual book rendering; book settings save and physical whole-book preview; imported project font, license metadata, theme selection, actual font rendering; Electron project creation, theme save/reopen, Electron sandbox, project open/read, React editing, bundled Noto, independent font roles, stale invalidation, measured preview, source selection and save');
   closing=true;win.destroy();await rm(smokeRoot,{recursive:true,force:true,maxRetries:10,retryDelay:100});app.exit(0);
 }
 app.on('window-all-closed',()=>{if(!SMOKE)app.quit();});
