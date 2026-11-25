@@ -360,8 +360,8 @@ async function smoke(){
   await until("!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-component-canvas]')");
   if(!await exec("Array.from(document.querySelector('#preview > div').shadowRoot.querySelectorAll('[data-component-node]')).some(e=>e.dataset.componentNode==="+JSON.stringify(copyId)+") && !document.querySelector('#preview > div').shadowRoot.querySelector('[data-lab-locked]')"))throw Error('Duplicate not persisted or lock marker leaked');
   console.log('PASS component duplication and lock guards; Canvas smart guide cancellation and equal-gap distribution; Canvas multi-selection, alignment, history and persisted geometry; Canvas resize, undo/redo and persisted width; Canvas actual mouse drag, undo/redo and persisted paper; Canvas numeric coordinates and actual paper rendering; nested component grouping and actual book preview; H1-specific fixed label and independent font; Component Lab measure, discard, apply and actual book rendering; book settings save and physical whole-book preview; imported project font, license metadata, theme selection, actual font rendering; Electron project creation, theme save/reopen, Electron sandbox, project open/read, React editing, bundled Noto, independent font roles, stale invalidation, measured preview, source selection and save');
-  closing=true;win.destroy();await rm(smokeRoot,{recursive:true,force:true});app.exit(0);
+  closing=true;win.destroy();await rm(smokeRoot,{recursive:true,force:true,maxRetries:10,retryDelay:100});app.exit(0);
 }
 app.on('window-all-closed',()=>{if(!SMOKE)app.quit();});
 if(!SMOKE&&!app.requestSingleInstanceLock())app.quit();
-else run().catch(async e=>{console.error(e);if(SMOKE&&smokeRoot)await rm(smokeRoot,{recursive:true,force:true}).catch(()=>{});app.exit(1);});
+else run().catch(async e=>{console.error(e);if(SMOKE&&smokeRoot)await rm(smokeRoot,{recursive:true,force:true,maxRetries:10,retryDelay:100}).catch(()=>{});app.exit(1);});
