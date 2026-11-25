@@ -94,6 +94,15 @@ export function prepareManuscript<S extends Scan>(documents:readonly Manuscript[
     }
     input.sections.push(section);
   }
+  // Links refer to persistent instance IDs, never positions or displayed numbers.
+  const byId=new Map(items.filter(i=>i.origin.persistentId).map(i=>[i.origin.persistentId!,i]));
+  for(const item of items){
+    if(item.kind!=='study'||!item.attributes?.['answer-to'])continue;
+    const id=item.attributes['answer-to'],target=byId.get(id);
+    if(!target||target.kind!=='study'||target.attributes?.['answer-to']||!(target.studyKind==='example'||target.studyKind==='exercise'||target.componentId)){
+      diagnostics.push({code:'BC_STUDY_ANSWER_TARGET',message:'Answer target must be an unlinked example, exercise or custom study instance: '+id,documentId:item.origin.documentId,range:item.origin.range});
+    }
+  }
   if(diagnostics.length)return failed();
   return {input,items,diagnostics,publicationReady:false};
 }
