@@ -111,3 +111,29 @@ export function validateComponentLibrary(value:unknown):ComponentLibrary{
   });
   return {schemaVersion:1,entries};
 }
+
+export type HeadingTarget='default'|HeadingLevel;
+export type HeadingBindings=Partial<Record<HeadingTarget,string>>;
+export function validateHeadingBindings(value:unknown):HeadingBindings{
+  if(!record(value)||Object.keys(value).some(k=>!['default','1','2','3','4','5','6'].includes(k)))throw RangeError('Invalid heading bindings');
+  for(const id of Object.values(value))if(typeof id!=='string'||!/^component-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(id))throw RangeError('Invalid component reference');
+  return {...value} as HeadingBindings;
+}
+/** Resolve a nonrecursive shared registry into the existing neutral heading adapter. */
+export function resolveHeadingBindings(heading:HeadingDesign|null,levels:HeadingLevels,bindings:HeadingBindings,library:ComponentLibrary){
+  const localHeading=heading===null?null:validateHeadingDesign(heading),localLevels=validateHeadingLevels(levels),refs=validateHeadingBindings(bindings),entries=validateComponentLibrary(library).entries;
+  let headingDesign=localHeading;const headingLevels={...localLevels};
+  for(const [target,id] of Object.entries(refs)){
+    const entry=entries.find(e=>e.id===id);
+    if(!entry)throw RangeError('Missing shared heading component: '+id);
+    if(target==='default'){
+      if(localHeading!==null)throw RangeError('Shared and local default heading conflict');
+      headingDesign=structuredClone(entry.design);
+    }else{
+      const level=target as HeadingLevel;
+      if(Object.hasOwn(localLevels,level))throw RangeError('Shared and local heading override conflict');
+      headingLevels[level]=structuredClone(entry.design);
+    }
+  }
+  return {headingDesign,headingLevels};
+}
