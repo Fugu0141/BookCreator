@@ -67,7 +67,7 @@ export function parsePreviewInline(raw:string,offset=0,validateMath?:(formula:st
         const match=/^:ref\{(?:[a-z-]+="[^"{}\r\n]*" ?)+\}/.exec(line.slice(i));
         if(!match)throw RangeError('Invalid reference token');
         const token=match[0],label=resolveReference(token,offset+cursor+i);
-        if(typeof label!=='string'||!label.length||label.length>64||!/^(?:式 )?\([1-9][0-9]{0,5}\.[1-9][0-9]{0,5}\)$/.test(label))throw RangeError('Invalid resolved equation label');
+        if(typeof label!=='string'||!label.length||label.length>64||!/^(?:[1-9][0-9]{0,5}\.[1-9][0-9]{0,5}|式 \([1-9][0-9]{0,5}\.[1-9][0-9]{0,5}\))$/.test(label))throw RangeError('Invalid resolved equation label');
         const start=text.length;text+=label;
         segments.push({start,end:text.length,rawStart:offset+cursor+i,outerStart:offset+cursor+i,outerEnd:offset+cursor+i+token.length,derived:true});
         i+=token.length;continue;
