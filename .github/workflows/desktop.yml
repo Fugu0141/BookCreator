@@ -37,5 +37,11 @@ jobs:
         working-directory: BookCreator/apps/desktop
       - run: npm test && npm run build
         working-directory: BookCreator/apps/desktop
+      - name: Prepare Electron Linux sandbox
+        run: |
+          node_modules/.bin/electron --version
+          sudo chown root:root node_modules/electron/dist/chrome-sandbox
+          sudo chmod 4755 node_modules/electron/dist/chrome-sandbox
+        working-directory: BookCreator/apps/desktop
       - run: xvfb-run -a npm run test:desktop
         working-directory: BookCreator/apps/desktop
