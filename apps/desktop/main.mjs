@@ -17,7 +17,7 @@ async function loadProjectFonts(next){
   const info=faces.map(({bytes,...face})=>{assets.set('/project-fonts/'+face.sha256,{bytes,format:face.format});return face;});
   projectFontAssets=assets;return info;
 }
-const CSP="default-src 'none'; font-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'none'; connect-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'";
+const CSP="default-src 'none'; font-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self'; connect-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'";
 function sender(event){
   if(!win||event.sender!==win.webContents||event.senderFrame!==win.webContents.mainFrame||event.senderFrame.url!==PAGE)throw Error('Untrusted IPC sender');
 }
@@ -41,6 +41,10 @@ async function run(){
   for(const name of fontManifest.assets)ASSETS.set('/fonts/'+name,['build/fonts/'+name,name.endsWith('.woff2')?'font/woff2':'font/woff']);
   protocol.handle('bookcreator',async request=>{
     const u=new URL(request.url),entry=ASSETS.get(u.pathname);
+    if(u.host==='app'&&request.method==='GET'&&!u.search&&/^\/project-images\/[a-f0-9]{64}\.png$/.test(u.pathname)){
+      const current=workspace;if(!current)return new Response('Not found',{status:404});
+      try{const image=await current.image(u.pathname.slice(16,-4));if(workspace!==current)return new Response('Not found',{status:404});return new Response(image.bytes,{headers:{'Content-Type':'image/png','Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Content-Security-Policy':CSP}});}catch{return new Response('Image unavailable',{status:404});}
+    }
     if(u.host==='app'&&request.method==='GET'&&!u.search&&projectFontAssets.has(u.pathname)){
       const f=projectFontAssets.get(u.pathname);return new Response(f.bytes,{headers:{'Content-Type':f.format==='ttf'?'font/ttf':'font/otf','Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Content-Security-Policy':CSP}});
     }
@@ -69,6 +73,13 @@ async function run(){
     const selected=SMOKE?{canceled:false,filePaths:[smokeRoot]}:await dialog.showOpenDialog(win,{title:'新規書籍の保存先（親フォルダ）',properties:['openDirectory']});
     if(selected.canceled)return null;
     const next=await createProject(selected.filePaths[0],args[0]);const typography=await next.typography(),fonts=await loadProjectFonts(next);workspace=next;return {...next.summary,typography,fonts,settings:await next.bookSettings()};
+  });
+  handle('listImages',async(...args)=>{checkArgs(args,0);return requireWorkspace().images();});
+  handle('importImage',async(...args)=>{
+    checkArgs(args,1);if(args[0]!==true)throw Error('Confirm permission to copy and share the image');const current=requireWorkspace();
+    const chosen=SMOKE?{canceled:false,filePaths:[join(smokeRoot,'test-image.png')]}:await dialog.showOpenDialog(win,{title:'プロジェクトにPNG素材をコピー',properties:['openFile'],filters:[{name:'PNG image',extensions:['png']}]});
+    if(chosen.canceled)return null;
+    const result=await current.importImage(chosen.filePaths[0]);return {...result,images:await current.images()};
   });
   handle('importFont',async(...args)=>{
     checkArgs(args,1);const current=requireWorkspace();
@@ -100,6 +111,23 @@ async function smoke(){
   if(!await exec("typeof require==='undefined' && typeof process==='undefined' && !!window.bookcreator"))throw Error('Renderer isolation failed');
   await exec("document.querySelector('#open').click()");
   await until("!!document.querySelector('[data-section=chapter]')");
+  const {tinyPng}=await import('./tests/png-fixture.mjs');
+  await writeFile(join(smokeRoot,'test-image.png'),tinyPng());
+  await exec("document.querySelector('#image-manager').click()");
+  await until("!!document.querySelector('#import-image')");
+  if(!await exec("document.querySelector('#import-image').disabled"))throw Error('Image import permission gate missing');
+  await exec("document.querySelector('#image-copy').click()");
+  await until("!document.querySelector('#import-image').disabled");
+  await exec("document.querySelector('#import-image').click()");
+  await until("!!document.querySelector('[data-project-image] img') && document.querySelector('[data-project-image] img').naturalWidth===2 && !document.querySelector('#open').disabled");
+  const imageId=await exec("document.querySelector('[data-project-image]').dataset.projectImage");
+  if(!(await readFile(join(smokeRoot,'assets','images',imageId+'.png'))).equals(tinyPng()))throw Error('Imported image bytes differ');
+  await exec("document.querySelector('#image-copy').click()");
+  await exec("document.querySelector('#import-image').click()");
+  await until("document.querySelector('#status').textContent.includes('登録済み') && !document.querySelector('#open').disabled");
+  if(!await exec("document.querySelectorAll('[data-project-image]').length===1"))throw Error('Duplicate image catalog entry');
+  await exec("document.querySelector('#image-manager').click()");
+  await until("!document.querySelector('#import-image')");
   await exec("document.querySelector('[data-section=chapter]').click()");
   await until("document.querySelector('#source')?.value.includes('見出し')");
   await exec("document.querySelector('#preview-button').click()");
