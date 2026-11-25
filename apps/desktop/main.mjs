@@ -74,6 +74,7 @@ async function run(){
     if(selected.canceled)return null;
     const next=await createProject(selected.filePaths[0],args[0]);const typography=await next.typography(),fonts=await loadProjectFonts(next);workspace=next;return {...next.summary,typography,fonts,settings:await next.bookSettings()};
   });
+  handle('readImage',async(...args)=>{checkArgs(args,1);const image=await requireWorkspace().image(args[0]);return new Uint8Array(image.bytes);});
   handle('listImages',async(...args)=>{checkArgs(args,0);return requireWorkspace().images();});
   handle('importImage',async(...args)=>{
     checkArgs(args,1);if(args[0]!==true)throw Error('Confirm permission to copy and share the image');const current=requireWorkspace();
