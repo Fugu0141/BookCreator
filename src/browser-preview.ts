@@ -1,14 +1,40 @@
-import {compileStudyBlock,compileCustomStudyBlock,createStudyNumbering,type StudyNumber} from './study-blocks.js';
+import {compileStudyBlock,compileCustomStudyBlock,createStudyNumbering,studyKindName,type StudyNumber,type StudyAnswer} from './study-blocks.js';
 import {compileHeadingDesign,compileParagraphDesign,validateHeadingLevels,type HeadingDesign,type HeadingLevel,type HeadingLevels,type HeadingContext,type StudyDesigns,type ComponentLibrary,validateComponentLibrary} from './preview-component.js';
 import {resolvePreviewTypography,type PreviewTypography} from './preview-typography.js';
 import {prepareManuscript,type Manuscript,type PreparationDependencies,type Scan,type SemanticItem} from './manuscript-poc.js';
-function resolveStudy(item:SemanticItem,body:ReturnType<typeof resolvePreviewTypography>['body'],designs?:StudyDesigns,library?:ComponentLibrary,number?:StudyNumber){
+function resolveStudy(item:SemanticItem,body:ReturnType<typeof resolvePreviewTypography>['body'],designs?:StudyDesigns,library?:ComponentLibrary,number?:StudyNumber,answer?:StudyAnswer){
   if(item.componentId){
     const entry=library?.entries.find(e=>e.id===item.componentId);
     if(!entry)throw RangeError('Missing custom study component: '+item.componentId);
-    return compileCustomStudyBlock(entry,item.attributes?.title,body,number);
+    return compileCustomStudyBlock(entry,item.attributes?.title,body,number,answer);
   }
-  return compileStudyBlock(item.studyKind!,item.attributes?.title,body,designs?.[item.studyKind!],number);
+  return compileStudyBlock(item.studyKind!,item.attributes?.title,body,designs?.[item.studyKind!],number,answer);
+}
+// Resolve all occurrence numbers before rendering so forward and cross-file links work.
+function indexAnswers(sections:readonly {blocks:readonly ({kind:'block';item:SemanticItem}|{kind:'pagebreak'})[]}[],library?:ComponentLibrary){
+  const numbering=createStudyNumbering(),targets=new Map<string,StudyAnswer>();
+  for(const section of sections){
+    numbering.beginSection();
+    for(const block of section.blocks){
+      if(block.kind==='pagebreak')continue;
+      const item=block.item;
+      if(item.kind==='heading')numbering.heading(item.level!);
+      if(item.kind!=='study')continue;
+      const number=numbering.next(item.componentId??item.studyKind!);
+      if(item.origin.persistentId&&!item.attributes?.['answer-to']){
+        const entry=item.componentId?library?.entries.find(e=>e.id===item.componentId&&e.usage==='study'):undefined;
+        if(item.componentId&&!entry)continue;
+        targets.set(item.origin.persistentId,{number,kind:entry?.name??studyKindName(item.studyKind!),title:item.attributes?.title});
+      }
+    }
+  }
+  return (item:SemanticItem):StudyAnswer|undefined=>{
+    const id=item.attributes?.['answer-to'];
+    if(!id)return;
+    const target=targets.get(id);
+    if(!target)throw RangeError('Cannot resolve answer target: '+id);
+    return target;
+  };
 }
 export function prepareBrowserPreview<S extends Scan>(document:Manuscript,revision:string,fingerprint:string,content:{width:number;height:number},deps:PreparationDependencies<S>,typography?:PreviewTypography,library?:ComponentLibrary){
   const fonts=resolvePreviewTypography(typography);
@@ -18,6 +44,7 @@ export function prepareBrowserPreview<S extends Scan>(document:Manuscript,revisi
   const blocks=[];
   const reject=(origin:{documentId:string;range:{start:number;end:number}},message:string)=>diagnostics.push({code:'BC_PREVIEW_UNSUPPORTED',message,documentId:origin.documentId,range:origin.range});
   if(!result.input)return {diagnostics,publicationReady:false as const};
+  const answerFor=indexAnswers(result.input.sections,catalog);
   const numbering=createStudyNumbering();numbering.beginSection();
   for(const block of result.input.sections[0].blocks){
     if(block.kind==='pagebreak'){reject(block.origin,'Manual pagebreak not yet supported by the browser preview');continue;}
@@ -28,7 +55,7 @@ export function prepareBrowserPreview<S extends Scan>(document:Manuscript,revisi
     if(offset<0||raw.slice(offset,offset+item.text.length)!==item.text){reject(item.origin,'Cannot establish exact source mapping');continue;}
     if(item.kind==='heading')numbering.heading(item.level!);
     let study:ReturnType<typeof compileStudyBlock>|undefined;
-    if(item.kind==='study')try{study=resolveStudy(item,fonts.body,undefined,catalog,numbering.next(item.componentId??item.studyKind!));}catch(e){reject(item.origin,String(e instanceof Error?e.message:e));continue;}
+    if(item.kind==='study')try{study=resolveStudy(item,fonts.body,undefined,catalog,numbering.next(item.componentId??item.studyKind!),answerFor(item));}catch(e){reject(item.origin,String(e instanceof Error?e.message:e));continue;}
     blocks.push({origin:item.origin,request:{text:item.text,width:block.width,fontSize:study?.fontSize??(item.kind==='heading'?6500:4200),...(study?.textStyle??(item.kind==='heading'?fonts.heading:fonts.body)),lineHeight:study?.lineHeight??1.8},splitPolicy:block.splitPolicy,...(study?{component:study.component}:{}),
       sourceTextStart:item.origin.range.start+offset,...(block.startPosition?{startPosition:block.startPosition,startPositionSource:block.startPositionSource}:{})});
   }
@@ -45,6 +72,7 @@ export function prepareBookBrowserPreview<S extends Scan>(documents:readonly Man
   const paragraph=paragraphDesign?compileParagraphDesign(paragraphDesign,fonts.body):undefined;
   const prepared=prepareManuscript(documents,revision,fingerprint,content,deps),diagnostics=[...prepared.diagnostics];
   if(!prepared.input)return {diagnostics,publicationReady:false as const};
+  const answerFor=indexAnswers(prepared.input.sections,catalog);
   const byId=new Map(documents.map(d=>[d.documentId,d]));
   let chapter=0;
   const numbering=createStudyNumbering();
@@ -65,7 +93,7 @@ export function prepareBookBrowserPreview<S extends Scan>(documents:readonly Man
       if(item.kind==='study')try{
         const number=numbering.next(item.componentId??item.studyKind!);
         if(!active){chapter=number.chapter;active=true;chapterTitle=undefined;counters.fill(0);counters[0]=chapter;}
-        design=resolveStudy(item,fonts.body,studyDesigns,catalog,number);
+        design=resolveStudy(item,fonts.body,studyDesigns,catalog,number,answerFor(item));
       }catch(e){diagnostics.push({code:'BC_PREVIEW_COMPONENT',message:String(e instanceof Error?e.message:e),documentId:item.origin.documentId,range:item.origin.range});continue;}
       if(item.kind==='heading'){
         const level=item.level!;
