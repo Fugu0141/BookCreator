@@ -306,3 +306,26 @@ test('named study slots preserve independent exact source offsets and reject mis
   for(const bad of [source.replace('name="hint"','name="unknown"'),source.replace('name="hint"','name="content"'),source.replace('同じ文章。\r\n:::','**強調**\r\n:::'),':::component{name="'+id+'"}\n本文。\n:::\n'])assert.equal(run(bad).options,undefined,bad);
   assert.equal(run(source,{...library,entries:[{...library.entries[0],design:defaultHeadingDesign()}]}).options,undefined);
 });
+
+test('optional study slots may be omitted in implicit or explicit primary-only source',()=>{
+  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds};
+  const id='component-00000000-0000-4000-8000-000000000001';
+  const hint={id:'hint',type:'slot',name:'hint',optional:true,width:'fill',fontSize:3500,lineHeight:1.5,color:'#123456'};
+  const group={id:'hint-group',type:'group',direction:'column',width:'fill',padding:2000,gap:1000,background:'#ffffff',showWhenSlot:'hint',children:[hint]};
+  const design={...defaultHeadingDesign(),direction:'column',children:[{id:'content',type:'content'},group]};
+  const library={schemaVersion:3,entries:[{id,name:'自作問題',usage:'study',design}]};
+  const implicit=':::component{name="'+id+'"}\n本文。\n:::\n';
+  const explicit='::::component{name="'+id+'"}\n:::slot{name="content"}\n本文。\n:::\n::::\n';
+  const complete=explicit.replace('::::\n',':::slot{name="hint"}\nヒント。\n:::\n::::\n');
+  const run=source=>prepareBookBrowserPreview([{documentId:'s',revision:'1',source,startOn:'page'}],'1','optional',{width:100000,height:100000},deps,undefined,undefined,undefined,undefined,undefined,library);
+  for(const source of [implicit,explicit]){
+    const result=run(source);assert.deepEqual(result.diagnostics,[]);
+    const b=result.options.sections[0].blocks[0];assert.equal(b.namedSlots,undefined);assert.deepEqual(b.component.children.map(n=>n.id),['content']);
+    assert.equal(source.slice(b.sourceTextStart,b.sourceTextStart+b.request.text.length),'本文。');
+  }
+  const result=run(complete);assert.deepEqual(result.diagnostics,[]);
+  const b=result.options.sections[0].blocks[0];assert.deepEqual(b.component.children.map(n=>n.id),['content','hint-group']);
+  assert.equal(complete.slice(b.namedSlots[0].sourceTextStart,b.namedSlots[0].sourceTextStart+b.namedSlots[0].request.text.length),'ヒント。');
+  assert.equal(run(complete.replace('name="hint"','name="other"')).options,undefined);
+  assert.equal(run(complete.replace('ヒント。\n','')).options,undefined);
+});
