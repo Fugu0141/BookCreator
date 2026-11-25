@@ -47,13 +47,13 @@ if(new URLSearchParams(location.search).has('smoke')){
     if(source.selectionStart!==slice.start||source.selectionEnd!==slice.end||source.value.slice(slice.start,slice.end)!==fragment.textContent)throw Error('Source mapping mismatch');
     const pages=latest.plan.pages.length;
     const formula='\\frac{a^2}{b}';
-    source.value='導入。\n\n$\n'+formula+'\n$\n\n結び。';
+    source.value='導入。\n\n$$\n'+formula+'\n$$\n\n結び。';
     source.dispatchEvent(new Event('input'));await render();
     const math=latest?.element.shadowRoot.querySelector('[data-display-math]');
-    if(!math?.querySelector('math mfrac msup'))throw Error('Display math not rendered as MathML');
+    if(!math?.querySelector('math mfrac msup'))throw Error('Display math not rendered as MathML: '+status.textContent);
     math.click();
     if(source.value.slice(source.selectionStart,source.selectionEnd)!==formula)throw Error('Display math source mapping mismatch');
-    source.value='$\n\\input{secret}\n$\n';source.dispatchEvent(new Event('input'));await render();
+    source.value='$$\n\\input{secret}\n$$\n';source.dispatchEvent(new Event('input'));await render();
     if(latest||target.children.length)throw Error('Unsafe formula rendered');
     source.value='[unsupported](https://example.invalid)';source.dispatchEvent(new Event('input'));if(target.children.length)throw Error('Stale preview remained');
     await render();if(latest||target.children.length)throw Error('Unsupported input rendered');
