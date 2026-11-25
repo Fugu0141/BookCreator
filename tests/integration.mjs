@@ -260,3 +260,31 @@ test('study numbering follows manuscript order and semantic identity, not shared
   assert.deepEqual(labels(run([b,a])),[['1.1','1'],['1.1','1'],['2.1','2'],['3.1','3'],['3.1','1'],['3.2','4'],['3.1','2']]);
   for(const s of r.options.sections)for(const item of s.blocks.filter(b=>b.component)){const source=item.origin.documentId==='a'?a.source:b.source;assert.equal(item.request.text,'本文。');assert.equal(source.slice(item.sourceTextStart,item.sourceTextStart+item.request.text.length),'本文。');}
 });
+
+test('forward and cross-manuscript answer links follow question order without source changes',()=>{
+  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds};
+  const q=(id,title)=>':::component{name="exercise" #'+id+' title="'+title+'"}\n問題本文。\n:::\n\n';
+  const a=(id)=>':::component{name="explanation" answer-to="'+id+'"}\n解答本文。\n:::\n\n';
+  const questions={documentId:'q',revision:'1',source:'# 問題\n\n'+q('q1','基本')+q('q2','応用'),startOn:'page'};
+  const answers={documentId:'a',revision:'1',source:'# 解答\n\n'+a('q2')+a('q1'),startOn:'page'};
+  const size={width:100000,height:100000};
+  const run=docs=>prepareBookBrowserPreview(docs,'1','answers',size,deps);
+  const labels=(result,id)=>result.options.sections.find(s=>s.id===id).blocks.filter(b=>b.component).map(b=>b.component.children[0].text);
+  const forward=run([answers,questions]);assert.deepEqual(forward.diagnostics,[]);assert.deepEqual(labels(forward,'a'),['解説 2.2','解説 2.1']);
+  const normal=run([questions,answers]);assert.deepEqual(labels(normal,'a'),['解説 1.2','解説 1.1']);
+  const swapped=run([{...questions,source:'# 問題\n\n'+q('q2','応用')+q('q1','基本')},answers]);assert.deepEqual(labels(swapped,'a'),['解説 1.1','解説 1.2']);
+  for(const b of normal.options.sections[1].blocks.filter(b=>b.component))assert.equal(answers.source.slice(b.sourceTextStart,b.sourceTextStart+b.request.text.length),'解答本文。');
+  const one=prepareBrowserPreview({...questions,source:a('q1')+q('q1','基本')},'1','one',size,deps);assert.deepEqual(one.diagnostics,[]);assert.equal(one.options.blocks[0].component.children[0].text,'解説 1.1');
+  for(const source of [a('missing'),a('bad')+':::callout{kind="note" #bad}\n補足。\n:::\n',a('linked')+':::component{name="explanation" #linked answer-to="q1"}\n解答。\n:::\n\n'+q('q1','基本'),q('q1','基本')+q('q1','応用')]){
+    const bad=run([{...questions,source}]);assert.equal(bad.options,undefined);assert.ok(bad.diagnostics.length);
+  }
+});
+test('custom question and custom answer resolve target metadata by instance ID rather than template ID',()=>{
+  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds};
+  const id='component-00000000-0000-4000-8000-000000000001';
+  const design={...defaultHeadingDesign(),direction:'column',children:[{id:'answer',type:'dynamic',field:'answer-title',prefix:'',suffix:'',fallback:'なし',width:'fill',fontSize:4000,lineHeight:1.5,color:'#123456'},{id:'content',type:'content'}]};
+  const library={schemaVersion:3,entries:[{id,name:'自作',usage:'study',design}]};
+  const source=':::component{name="'+id+'" #q1 title="自作問題"}\n問題。\n:::\n\n:::component{name="'+id+'" answer-to="q1"}\n答え。\n:::\n';
+  const r=prepareBookBrowserPreview([{documentId:'custom',revision:'1',source,startOn:'page'}],'1','custom-links',{width:100000,height:100000},deps,undefined,undefined,undefined,undefined,undefined,library);
+  assert.deepEqual(r.diagnostics,[]);assert.deepEqual(r.options.sections[0].blocks.map(b=>b.component.children[0].text),['なし','自作問題']);
+});
