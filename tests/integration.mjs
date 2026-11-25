@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
-import {editDocument,compileMeasuredManuscript} from '../dist/index.js';
+import {editDocument,compileMeasuredManuscript,canReviewLayout} from '../dist/index.js';
 const load = (variable, fallback) => import(pathToFileURL(resolve(process.env[variable] ?? fallback)).href);
 const bcm = await load('BCM_DIST', '../BookCreator_Markdown/dist/index.js');
 const engine = await load('ENGINE_DIST', '../BookCreator_LayoutEngine/dist/index.js');
@@ -40,7 +40,7 @@ test('real scanner -> compiler -> measured pagination, preserving source and fig
   const compiled=compileMeasuredManuscript(docs,'1','fixture',{width:100,height:100},deps);
   assert.deepEqual(compiled.diagnostics,[]);assert.equal(compiled.publicationReady,false);
   const plan=engine.paginateMeasured(compiled.input);
-  assert.equal(plan.completeness,'full');assert.equal(plan.publicationReady,false);
+  assert.equal(plan.completeness,'full');assert.equal(plan.publicationReady,false);assert.equal(canReviewLayout({revision:'1',fingerprint:'fixture'},plan),false);
   assert.deepEqual(plan.pages.map(p=>p.fragments.map(f=>f.origin.documentId+':'+f.origin.blockKey)),[
     ["a:0","a:13","a:22","b:0","b:13"],["b:19"],["b:52"]
   ]);
