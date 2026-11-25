@@ -1,3 +1,4 @@
+import {projectFonts} from './project-fonts.mjs';
 import {open,lstat,realpath,rename,unlink,mkdir} from 'node:fs/promises';
 import {constants} from 'node:fs';
 import {dirname,join,resolve,relative,isAbsolute,basename} from 'node:path';
@@ -70,23 +71,23 @@ function parseManifest(raw){
 
 const FACE_IDS=new Map([['noto-sans-jp','BCFont_NotoSansJP'],['system-serif','serif'],['system-sans','sans-serif'],['system-monospace','monospace']]);
 const DEFAULT_ROLES={body:{font:'noto-sans-jp',weight:400},heading:{font:'noto-sans-jp',weight:700}};
-function checkedRoles(value){
+function checkedRoles(value,faces=[]){
   if(!record(value)||Object.keys(value).some(k=>!['body','heading'].includes(k)))fail('THEME','Unsupported typography role');
   const result={};
   for(const role of ['body','heading']){
     const v=value[role];
-    if(!record(v)||Object.keys(v).some(k=>!['font','weight'].includes(k))||!FACE_IDS.has(v.font)||![400,500,600,700].includes(v.weight))fail('THEME','Unsupported font ID or weight');
+    if(!record(v)||Object.keys(v).some(k=>!['font','weight'].includes(k))||!(FACE_IDS.has(v.font)?[400,500,600,700].includes(v.weight):faces.some(f=>f.id===v.font&&f.weight===v.weight)))fail('THEME','Unsupported font ID or weight');
     result[role]={font:v.font,weight:v.weight};
   }
   return result;
 }
-function readTypography(doc){
+function readTypography(doc,faces){
   const t=doc.toJS({maxAliasCount:0});
   if(!record(t)||t.schemaVersion!==1)fail('THEME','Unsupported theme format');
   if(t.extends!==undefined||t.parent!==undefined)fail('THEME','Theme inheritance is not supported by this editor');
   if(t.typography===undefined)return null;
   if(!record(t.typography)||t.typography.schemaVersion!==1||Object.keys(t.typography).some(k=>!['schemaVersion','roles'].includes(k)))fail('THEME','Unsupported typography schema');
-  return checkedRoles(t.typography.roles);
+  return checkedRoles(t.typography.roles,faces);
 }
 async function writeNew(path,text){
   const f=await open(path,'wx',0o644);
@@ -137,6 +138,7 @@ export async function openWorkspace(manifestPath){
     seen.add(identity);files.set(s.id,{path,relativePath:s.path});
   }
   let busy=false;
+  const fontStore=projectFonts(root);
   async function checkManifest(){
     const latest=await readRegular(await inside(root,'book.yaml'),MAX_MANIFEST);
     if(hash(latest.bytes)!==manifestHash)fail('CONFLICT','book.yaml changed externally; reopen the project');
@@ -153,19 +155,21 @@ export async function openWorkspace(manifestPath){
     try{path=await inside(root,summary.themePath);}catch(e){if(e.code==='ENOENT')return {editable:false,roles:null,revision:null,message:'Theme file missing; preview defaults only'};throw e;}
     const st=await lstat(path);if(!st.isFile()||st.nlink!==1||path===manifest||[...files.values()].some(f=>f.path===path))fail('THEME','Unsafe theme file');
     const r=await readRegular(path,MAX_MANIFEST),doc=safeYaml(decode(r.bytes));
-    try{return {editable:true,roles:readTypography(doc),revision:hash(r.bytes),path,doc,...r};}
+    try{return {editable:true,roles:readTypography(doc,await fontStore.list()),revision:hash(r.bytes),path,doc,...r};}
     catch(e){if(e.code==='THEME')return {editable:false,roles:null,revision:null,message:e.message};throw e;}
   }
   function publicTheme(t){return {editable:t.editable,roles:t.roles,revision:t.revision,...(t.message?{message:t.message}:{})};}
   return {
     summary:structuredClone(summary),
+    async fonts(includeBytes=false){await checkManifest();return fontStore.list({includeBytes});},
+    async importFont(path,rights){if(busy)fail('BUSY','Another write is in progress');busy=true;try{await checkManifest();return await fontStore.add(path,rights);}finally{busy=false;}},
     async typography(){await checkManifest();return publicTheme(await readTheme());},
     async saveTypography(expectedRevision,roles){
       if(busy)fail('BUSY','Another write is in progress');
       if(typeof expectedRevision!=='string'||!/^[a-f0-9]{64}$/.test(expectedRevision))fail('INPUT','Invalid theme revision');
-      const value=checkedRoles(roles);busy=true;let temp;
+      busy=true;let temp;
       try{
-        await checkManifest();const t=await readTheme();
+        await checkManifest();const value=checkedRoles(roles,await fontStore.list());const t=await readTheme();
         if(!t.editable||t.revision!==expectedRevision)fail('CONFLICT','Theme changed or is not editable; changes were not saved');
         if(JSON.stringify(t.roles)===JSON.stringify(value))return publicTheme(t);
         // Edit only the recognized subtree; YAML formatting may be normalized on serialization.

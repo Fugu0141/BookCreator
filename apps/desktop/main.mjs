@@ -11,7 +11,12 @@ if(smokeRoot)app.setPath('userData',smokeRoot);
 protocol.registerSchemesAsPrivileged([{scheme:'bookcreator',privileges:{standard:true,secure:true,supportFetchAPI:true}}]);
 const PAGE='bookcreator://app/index.html';
 const ASSETS=new Map([['/index.html',['index.html','text/html; charset=utf-8']],['/renderer.js',['build/renderer.js','text/javascript; charset=utf-8']],['/style.css',['style.css','text/css; charset=utf-8']]]);
-let win,workspace,closing=false,busy=false;
+let win,workspace,closing=false,busy=false,projectFontAssets=new Map();
+async function loadProjectFonts(next){
+  const faces=await next.fonts(true);const assets=new Map();
+  const info=faces.map(({bytes,...face})=>{assets.set('/project-fonts/'+face.sha256,{bytes,format:face.format});return face;});
+  projectFontAssets=assets;return info;
+}
 const CSP="default-src 'none'; font-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'none'; connect-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'";
 function sender(event){
   if(!win||event.sender!==win.webContents||event.senderFrame!==win.webContents.mainFrame||event.senderFrame.url!==PAGE)throw Error('Untrusted IPC sender');
@@ -36,6 +41,9 @@ async function run(){
   for(const name of fontManifest.assets)ASSETS.set('/fonts/'+name,['build/fonts/'+name,name.endsWith('.woff2')?'font/woff2':'font/woff']);
   protocol.handle('bookcreator',async request=>{
     const u=new URL(request.url),entry=ASSETS.get(u.pathname);
+    if(u.host==='app'&&request.method==='GET'&&!u.search&&projectFontAssets.has(u.pathname)){
+      const f=projectFontAssets.get(u.pathname);return new Response(f.bytes,{headers:{'Content-Type':f.format==='ttf'?'font/ttf':'font/otf','Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Content-Security-Policy':CSP}});
+    }
     if(u.host!=='app'||request.method!=='GET'||u.search||!entry)return new Response('Not found',{status:404});
     const data=await readFile(new URL(entry[0],import.meta.url));
     return new Response(data,{headers:{'Content-Type':entry[1],'Content-Security-Policy':CSP,'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
@@ -54,13 +62,20 @@ async function run(){
     checkArgs(args,0);
     const selected=SMOKE?{canceled:false,filePaths:[join(smokeRoot,'book.yaml')]}:await dialog.showOpenDialog(win,{title:'book.yaml を開く',properties:['openFile'],filters:[{name:'BookCreator project',extensions:['yaml']}]});
     if(selected.canceled)return null;
-    const next=await openWorkspace(selected.filePaths[0]);const typography=await next.typography();workspace=next;return {...next.summary,typography};
+    const next=await openWorkspace(selected.filePaths[0]);const typography=await next.typography(),fonts=await loadProjectFonts(next);workspace=next;return {...next.summary,typography,fonts};
   });
   handle('create',async(...args)=>{
     checkArgs(args,1);
     const selected=SMOKE?{canceled:false,filePaths:[smokeRoot]}:await dialog.showOpenDialog(win,{title:'新規書籍の保存先（親フォルダ）',properties:['openDirectory']});
     if(selected.canceled)return null;
-    const next=await createProject(selected.filePaths[0],args[0]);const typography=await next.typography();workspace=next;return {...next.summary,typography};
+    const next=await createProject(selected.filePaths[0],args[0]);const typography=await next.typography(),fonts=await loadProjectFonts(next);workspace=next;return {...next.summary,typography,fonts};
+  });
+  handle('importFont',async(...args)=>{
+    checkArgs(args,1);const current=requireWorkspace();
+    const chosen=SMOKE?{canceled:false,filePaths:[process.env.BC_TEST_FONT]}:await dialog.showOpenDialog(win,{title:'プロジェクトにフォントをコピー',properties:['openFile'],filters:[{name:'Static OpenType / TrueType',extensions:['ttf','otf']}]});
+    if(chosen.canceled)return null;
+    const result=await current.importFont(chosen.filePaths[0],args[0]);
+    const fonts=await loadProjectFonts(current);return {...result,fonts};
   });
   handle('saveTypography',async(...args)=>{checkArgs(args,2);return requireWorkspace().saveTypography(...args);});
   handle('read',async(...args)=>{checkArgs(args,1);if(typeof args[0]!=='string')throw Error('Invalid section');return requireWorkspace().read(args[0]);});
@@ -111,7 +126,24 @@ async function smoke(){
   await until("!!document.querySelector('[data-section=chapter-01]')");
   if(!(await readFile(join(smokeRoot,'new-book','book.yaml'),'utf8')).includes('再読込テスト書籍'))throw Error('Created book missing');
   if(!await exec("document.querySelector('#body-font').value==='BCFont_NotoSansJP'"))throw Error('New book default typography missing');
-  console.log('PASS Electron project creation, theme save/reopen, Electron sandbox, project open/read, React editing, bundled Noto, independent font roles, stale invalidation, measured preview, source selection and save');
+  if(!process.env.BC_TEST_FONT)throw Error('Missing test font path');
+  await until("!document.querySelector('#open').disabled");
+  await exec("document.querySelector('#font-manager').click()");
+  await until("!!document.querySelector('#font-license')");
+  await exec("(()=>{for(const [id,value] of [['font-license','Liberation Sans test font'],['font-license-text','Disposable CI fixture, Liberation Sans font license recorded for testing']]){const e=document.getElementById(id);Object.getOwnPropertyDescriptor((e.tagName==='TEXTAREA'?HTMLTextAreaElement:HTMLInputElement).prototype,'value').set.call(e,value);e.dispatchEvent(new Event('input',{bubbles:true}));}document.querySelector('#font-copy').click();})()");
+  await until("!document.querySelector('#import-font').disabled");
+  await exec("document.querySelector('#import-font').click()");
+  await until("!document.querySelector('#open').disabled && !!document.querySelector('[data-project-font][data-loaded=true]')");
+  await exec("(()=>{const el=document.querySelector('#body-font');el.value=[...el.options].find(o=>/^BCFont_[a-f0-9]{64}$/.test(o.value)).value;el.dispatchEvent(new Event('change',{bubbles:true}));})()");
+  await until("!document.querySelector('#save-theme').disabled");
+  await exec("document.querySelector('#save-theme').click()");
+  await until("!document.querySelector('#open').disabled && document.querySelector('#status').textContent.includes('テーマを保存しました')");
+  await exec("document.querySelector('[data-section=chapter-01]').click()");
+  await until("!document.querySelector('#open').disabled && document.querySelector('#source').value.includes('はじめに')");
+  await exec("document.querySelector('#preview-button').click()");
+  await until("!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-start]')");
+  if(!await exec("Array.from(document.querySelector('#preview > div').shadowRoot.querySelectorAll('[data-start]')).some(l=>/BCFont_[a-f0-9]{64}/.test(l.style.fontFamily))"))throw Error('Imported face not used in measured preview');
+  console.log('PASS imported project font, license metadata, theme selection, actual font rendering; Electron project creation, theme save/reopen, Electron sandbox, project open/read, React editing, bundled Noto, independent font roles, stale invalidation, measured preview, source selection and save');
   closing=true;win.destroy();await rm(smokeRoot,{recursive:true,force:true});app.exit(0);
 }
 app.on('window-all-closed',()=>{if(!SMOKE)app.quit();});
