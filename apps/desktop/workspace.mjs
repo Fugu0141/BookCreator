@@ -1,4 +1,4 @@
-import {validateHeadingDesign,validateHeadingLevels,validateComponentLibrary,emptyComponentLibrary} from '../../dist/preview-component.js';
+import {validateHeadingDesign,validateHeadingLevels,validateComponentLibrary,emptyComponentLibrary,validateHeadingBindings,resolveHeadingBindings} from '../../dist/preview-component.js';
 import {resolvePageSettings,paperGeometry,marginString} from './book-settings.mjs';
 import {projectImages} from './project-images.mjs';
 import {projectFonts} from './project-fonts.mjs';
@@ -174,22 +174,25 @@ export async function openWorkspace(manifestPath){
     const st=await lstat(path);if(!st.isFile()||st.nlink!==1||path===manifest||[...files.values()].some(f=>f.path===path))fail('THEME','Unsafe theme file');
     const r=await readRegular(path,MAX_MANIFEST),doc=safeYaml(decode(r.bytes));
     try{const roles=readTypography(doc,await fontStore.list());const raw=doc.toJS({maxAliasCount:0}).previewComponents;
-      let headingDesign=null,headingLevels={},componentEditable=true,componentMessage;
+      let library=emptyComponentLibrary(),libraryEditable=true,libraryMessage;
+      try{const rawLibrary=doc.toJS({maxAliasCount:0}).previewComponentLibrary;if(rawLibrary!==undefined)library=validateComponentLibrary(rawLibrary);}
+      catch(e){libraryEditable=false;libraryMessage=e.message;}
+      let headingDesign=null,headingLevels={},localHeading=null,localLevels={},bindings={},componentEditable=true,componentMessage;
       if(raw!==undefined){try{
-        if(!record(raw)||![1,2].includes(raw.schemaVersion)||Object.keys(raw).some(k=>!(raw.schemaVersion===1?['schemaVersion','heading']:['schemaVersion','heading','levels']).includes(k)))throw Error('Unsupported component schema');
-        headingDesign=raw.heading===null&&raw.schemaVersion===2?null:validateHeadingDesign(raw.heading);
-        headingLevels=raw.schemaVersion===2?validateHeadingLevels(raw.levels):{};
+        if(!record(raw)||![1,2,3].includes(raw.schemaVersion)||Object.keys(raw).some(k=>!(raw.schemaVersion===1?['schemaVersion','heading']:raw.schemaVersion===2?['schemaVersion','heading','levels']:['schemaVersion','heading','levels','bindings']).includes(k)))throw Error('Unsupported component schema');
+        localHeading=raw.heading===null&&raw.schemaVersion>=2?null:validateHeadingDesign(raw.heading);
+        localLevels=raw.schemaVersion>=2?validateHeadingLevels(raw.levels):{};
+        bindings=raw.schemaVersion===3?validateHeadingBindings(raw.bindings):{};
+        if(Object.keys(bindings).length&&!libraryEditable)throw Error('Shared component library unsupported');
+        ({headingDesign,headingLevels}=resolveHeadingBindings(localHeading,localLevels,bindings,library));
         const faces=await fontStore.list();
         for(const design of [headingDesign,...Object.values(headingLevels)].filter(Boolean))checkComponentFonts(design,faces);
         await checkComponentImages([headingDesign,...Object.values(headingLevels)],imageStore);
       }catch(e){componentEditable=false;componentMessage=e.message;headingDesign=null;headingLevels={};}}
-      let library=emptyComponentLibrary(),libraryEditable=true,libraryMessage;
-      try{const rawLibrary=doc.toJS({maxAliasCount:0}).previewComponentLibrary;if(rawLibrary!==undefined)library=validateComponentLibrary(rawLibrary);}
-      catch(e){libraryEditable=false;libraryMessage=e.message;}
-      return {editable:true,roles,headingDesign,headingLevels,componentEditable,componentMessage,library,libraryEditable,libraryMessage,revision:hash(r.bytes),path,doc,...r};}
+      return {editable:true,roles,headingDesign,headingLevels,localHeading,localLevels,bindings,componentEditable,componentMessage,library,libraryEditable,libraryMessage,revision:hash(r.bytes),path,doc,...r};}
     catch(e){if(e.code==='THEME')return {editable:false,roles:null,revision:null,message:e.message};throw e;}
   }
-  function publicTheme(t){return {editable:t.editable,roles:t.roles,revision:t.revision,headingDesign:t.headingDesign??null,headingLevels:t.headingLevels??{},componentMessage:t.componentMessage,componentEditable:t.componentEditable===true,library:t.library??emptyComponentLibrary(),libraryEditable:t.libraryEditable===true,libraryMessage:t.libraryMessage,...(t.message?{message:t.message}:{})};}
+  function publicTheme(t){return {editable:t.editable,roles:t.roles,revision:t.revision,headingDesign:t.headingDesign??null,headingLevels:t.headingLevels??{},componentMessage:t.componentMessage,componentEditable:t.componentEditable===true,bindings:t.bindings??{},library:t.library??emptyComponentLibrary(),libraryEditable:t.libraryEditable===true,libraryMessage:t.libraryMessage,...(t.message?{message:t.message}:{})};}
   function settingsView(){return {revision:manifestHash,page:summary.pageSettings,sections:structuredClone(summary.sections),message:summary.pageMessage};}
   return {
     get summary(){return structuredClone(summary);},
@@ -282,7 +285,10 @@ export async function openWorkspace(manifestPath){
         if(action.type==='add')entries.push({id:'component-'+randomUUID(),name:action.name,usage:'heading',design:validateHeadingDesign(action.design)});
         else{
           const i=entries.findIndex(e=>e.id===action.id);if(i<0)fail('INPUT','Component not found');
-          if(action.type==='delete')entries.splice(i,1);
+          if(action.type==='delete'){
+            if(!t.componentEditable||Object.values(t.bindings).includes(action.id))fail('THEME','Cannot delete a referenced component or one with unresolved bindings');
+            entries.splice(i,1);
+          }
           else if(action.type==='rename')entries[i].name=action.name;
           else entries[i].design=validateHeadingDesign(action.design);
         }
@@ -290,6 +296,12 @@ export async function openWorkspace(manifestPath){
         if(action.type==='add'||action.type==='replace'){
           const design=action.type==='add'?library.entries.at(-1).design:library.entries.find(e=>e.id===action.id).design;
           checkComponentFonts(design,await fontStore.list());await checkComponentImages([design],imageStore);
+        }
+        if(action.type==='replace'&&Object.values(t.bindings).includes(action.id)){
+          if(!t.componentEditable)fail('THEME','Shared heading bindings are unsupported');
+          const resolved=resolveHeadingBindings(t.localHeading,t.localLevels,t.bindings,library);
+          for(const design of [resolved.headingDesign,...Object.values(resolved.headingLevels)].filter(Boolean))checkComponentFonts(design,await fontStore.list());
+          await checkComponentImages([resolved.headingDesign,...Object.values(resolved.headingLevels)],imageStore);
         }
         if(JSON.stringify(library)===JSON.stringify(t.library))return publicTheme(t);
         t.doc.set('previewComponentLibrary',library);
@@ -304,31 +316,39 @@ export async function openWorkspace(manifestPath){
         await checkManifest();const current=await readTheme();
         if(!current.editable||!current.libraryEditable||current.path!==t.path||current.revision!==expectedRevision)fail('CONFLICT','Theme changed before replacement');
         await rename(temp,t.path);temp=undefined;
-        return {...publicTheme(t),library,revision:hash(bytes)};
+        return publicTheme(await readTheme());
       }finally{if(temp)await unlink(temp).catch(()=>{});busy=false;}
     },
     async saveHeadingDesign(expectedRevision,value,level='default'){
       if(busy)fail('BUSY','Another write is in progress');
       if(!['default','1','2','3','4','5','6'].includes(level))fail('THEME','Invalid heading level');
-      const design=value===null?null:validateHeadingDesign(value);busy=true;let temp;
+      const reference=record(value)&&Object.keys(value).length===1&&Object.hasOwn(value,'componentId');
+      const design=value===null||reference?null:validateHeadingDesign(value);
+      const ref=reference?validateHeadingBindings({[level]:value.componentId})[level]:null;
+      busy=true;let temp;
       try{
         await checkManifest();const t=await readTheme();
         if(!t.editable||!t.componentEditable||t.revision!==expectedRevision)fail('CONFLICT','Theme changed or component format unsupported');
         if(design)checkComponentFonts(design,await fontStore.list());
-        const heading=level==='default'?design:t.headingDesign,levels={...t.headingLevels};
+        if(ref&&!t.libraryEditable)fail('THEME','Library unavailable');
+        const heading=level==='default'?design:t.localHeading,levels={...t.localLevels},bindings={...t.bindings};
         if(level!=='default'){if(design)levels[level]=design;else delete levels[level];}
-        await checkComponentImages([heading,...Object.values(levels)],imageStore);
-        t.doc.set('previewComponents',{schemaVersion:2,heading,levels});
+        if(ref)bindings[level]=ref;else delete bindings[level];
+        const resolved=resolveHeadingBindings(heading,levels,bindings,t.library);
+        for(const d of [resolved.headingDesign,...Object.values(resolved.headingLevels)].filter(Boolean))checkComponentFonts(d,await fontStore.list());
+        await checkComponentImages([resolved.headingDesign,...Object.values(resolved.headingLevels)],imageStore);
+        t.doc.set('previewComponents',Object.keys(bindings).length?{schemaVersion:3,heading,levels,bindings}:{schemaVersion:2,heading,levels});
         const info=sourceInfo(t.bytes);if(!info.editable)fail('FORMAT','Mixed theme line endings are read-only');
         const bytes=Buffer.from((info.bom?'\uFEFF':'')+t.doc.toString().replace(/\n/g,info.eol),'utf8');
         if(bytes.length>MAX_MANIFEST)fail('INPUT','Theme too large');
+        safeYaml(decode(bytes));
         temp=join(dirname(t.path),'.bookcreator-'+randomUUID()+'.tmp');
         const f=await open(temp,'wx',t.mode);
         try{await f.writeFile(bytes);await f.chmod(t.mode);await f.sync();}finally{await f.close();}
         await checkManifest();const current=await readTheme();
         if(!current.editable||!current.componentEditable||current.path!==t.path||current.revision!==expectedRevision)fail('CONFLICT','Theme changed before replacement');
         await rename(temp,t.path);temp=undefined;
-        return {...publicTheme(t),headingDesign:heading,headingLevels:levels,revision:hash(bytes)};
+        return publicTheme(await readTheme());
       }finally{if(temp)await unlink(temp).catch(()=>{});busy=false;}
     },
     async read(id){
