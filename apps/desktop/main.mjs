@@ -135,6 +135,7 @@ async function smoke(){
   await exec("document.querySelector('#import-font').click()");
   await until("!document.querySelector('#open').disabled && !!document.querySelector('[data-project-font][data-loaded=true]')");
   await exec("(()=>{const el=document.querySelector('#body-font');el.value=[...el.options].find(o=>/^BCFont_[a-f0-9]{64}$/.test(o.value)).value;el.dispatchEvent(new Event('change',{bubbles:true}));})()");
+  await until("!document.querySelector('#save-theme').disabled");
   await exec("document.querySelector('#save-theme').click()");
   await until("!document.querySelector('#open').disabled && document.querySelector('#status').textContent.includes('テーマを保存しました')");
   await exec("document.querySelector('[data-section=chapter-01]').click()");

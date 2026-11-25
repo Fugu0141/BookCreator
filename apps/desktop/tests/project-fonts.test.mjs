@@ -18,9 +18,10 @@ test('real font import, deduplication, exact weight, theme roundtrip, tamper det
   const root=await mkdtemp(join(tmpdir(),'bc-font-'));t.after(()=>rm(root,{recursive:true,force:true}));
   const w=await createProject(root,{title:'Fonts',folder:'book',size:'A5'});
   const first=await w.importFont(font,rights);assert.equal(first.duplicate,false);
-  const second=await w.importFont(font,rights);assert.equal(second.duplicate,true);assert.equal(first.id,second.id);
-  const [f]=await w.fonts();assert.equal(f.id,first.id);assert.equal(f.copyAllowed,true);assert.equal(f.embedAllowed,false);
+  const second=await w.importFont(font,{...rights,license:'Different declaration',embedAllowed:true});assert.equal(second.duplicate,true);assert.equal(first.id,second.id);
+  const [f]=await w.fonts();assert.equal(f.id,first.id);assert.equal(f.copyAllowed,true);assert.equal(f.license,rights.license);assert.equal(f.embedAllowed,false);
   const theme=await w.typography(),roles={...theme.roles,body:{font:f.id,weight:f.weight}};
+  await assert.rejects(w.saveTypography(theme.revision,{...roles,body:{font:f.id,weight:f.weight===400?700:400}}),{code:'THEME'});
   await w.saveTypography(theme.revision,roles);
   const reopened=await openWorkspace(join(root,'book','book.yaml'));assert.deepEqual((await reopened.typography()).roles,roles);
   const path=join(root,'book','fonts','imported',f.sha256,'font'+extname(font).toLowerCase());
