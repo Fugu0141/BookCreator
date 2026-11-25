@@ -1,5 +1,7 @@
+import {resolvePreviewTypography,type PreviewTypography} from './preview-typography.js';
 import {prepareManuscript,type Manuscript,type PreparationDependencies,type Scan} from './manuscript-poc.js';
-export function prepareBrowserPreview<S extends Scan>(document:Manuscript,revision:string,fingerprint:string,content:{width:number;height:number},deps:PreparationDependencies<S>){
+export function prepareBrowserPreview<S extends Scan>(document:Manuscript,revision:string,fingerprint:string,content:{width:number;height:number},deps:PreparationDependencies<S>,typography?:PreviewTypography){
+  const fonts=resolvePreviewTypography(typography);
   const result=prepareManuscript([document],revision,fingerprint,content,deps);
   const diagnostics=[...result.diagnostics];
   const blocks=[];
@@ -12,7 +14,7 @@ export function prepareBrowserPreview<S extends Scan>(document:Manuscript,revisi
     const raw=document.source.slice(item.origin.range.start,item.origin.range.end);
     const offset=item.kind==='heading'?raw.indexOf(item.text):0;
     if(offset<0||raw.slice(offset,offset+item.text.length)!==item.text){reject(item.origin,'Cannot establish exact source mapping');continue;}
-    blocks.push({origin:item.origin,request:{text:item.text,width:block.width,fontSize:item.kind==='heading'?6500:4200,fontFamily:'sans-serif' as const,lineHeight:1.8},splitPolicy:block.splitPolicy,
+    blocks.push({origin:item.origin,request:{text:item.text,width:block.width,fontSize:item.kind==='heading'?6500:4200,...(item.kind==='heading'?fonts.heading:fonts.body),lineHeight:1.8},splitPolicy:block.splitPolicy,
       sourceTextStart:item.origin.range.start+offset,...(block.startPosition?{startPosition:block.startPosition,startPositionSource:block.startPositionSource}:{})});
   }
   if(!blocks.length&&!diagnostics.length)diagnostics.push({code:'BC_PREVIEW_EMPTY',message:'No supported content to preview',documentId:document.documentId,range:{start:0,end:0}});

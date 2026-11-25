@@ -80,3 +80,15 @@ test('browser preview preparation separates parsing from measurement and verifie
   assert.equal(prepareBrowserPreview({...doc,source:'::figure{src="a.png"}\n'},'3','fixture',{width:100000,height:70000},deps).options,undefined);
   assert.equal(prepareBrowserPreview({...doc,source:'One\nTwo\n'},'3','fixture',{width:100000,height:70000},deps).options,undefined);
 });
+
+test('independent font role settings are forwarded and invalid font CSS is rejected',()=>{
+  const doc={documentId:'fonts',revision:'1',source:'# 見出し\n\n本文。\n',startOn:'page'};
+  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds};
+  const settings={body:{fontFamily:'BCFont_NotoSansJP',fontWeight:400},heading:{fontFamily:'serif',fontWeight:700}};
+  const result=prepareBrowserPreview(doc,'1','fonts',{width:100000,height:70000},deps,settings);
+  assert.equal(result.options.blocks[0].request.fontFamily,'serif');
+  assert.equal(result.options.blocks[0].request.fontWeight,700);
+  assert.equal(result.options.blocks[1].request.fontFamily,'BCFont_NotoSansJP');
+  assert.equal(result.options.blocks[1].request.fontWeight,400);
+  assert.throws(()=>prepareBrowserPreview(doc,'1','bad',{width:100000,height:70000},deps,{...settings,body:{fontFamily:'serif; color:red',fontWeight:400}}));
+});

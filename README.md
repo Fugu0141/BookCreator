@@ -59,3 +59,5 @@ Build BookCreator, BookCreator_Markdown and BookCreator_LayoutEngine in sibling 
 ## Experimental desktop application
 
 See [desktop workspace PoC](docs/DESKTOP_WORKSPACE_POC.md) for build instructions and supported project features. The app is a development prototype, not a release.
+
+Desktop preview includes locally bundled Noto Sans JP Variable (SIL OFL 1.1, Fontsource package pinned); its license notice is copied into the generated build directory. Body, heading and editor fonts can be selected independently in the experimental UI; book typography is not persisted yet.

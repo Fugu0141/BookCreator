@@ -27,3 +27,4 @@ export function canReviewLayout(current: Pick<LayoutTicket,'revision'|'fingerpri
 export {compileMeasuredManuscript, type Manuscript, type SemanticItem} from './manuscript-poc.js';
 export {prepareManuscript, type PreparationDependencies} from './manuscript-poc.js';
 export {prepareBrowserPreview} from './browser-preview.js';
+export {resolvePreviewTypography,type PreviewTypography,type PreviewTextStyle,type PreviewFontFamily} from './preview-typography.js';
