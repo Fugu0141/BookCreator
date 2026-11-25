@@ -136,7 +136,7 @@ export function prepareManuscript<S extends Scan>(documents:readonly Manuscript[
           const p=deps.parseReference!(token,doc.documentId,offset);
           if(p.diagnostics.length||!p.reference||!['number','label-number'].includes(p.reference.format))throw RangeError('Expected a supported equation number reference');
           references.push({target:p.reference.target,documentId:doc.documentId,range:{start:offset,end:offset+token.length}});
-          return '(1.1)';
+          return '1.1';
         }:undefined);}catch(e){unsupported({start,end},'Unsupported paragraph: '+String(e instanceof Error?e.message:e));continue;}
         emit({kind:'paragraph',origin:origin({start,end}),text:body},content.width);
       }else if(b.kind==='directive'&&b.closed&&b.header.kind==='container'){
