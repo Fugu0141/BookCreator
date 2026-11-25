@@ -3,7 +3,7 @@ import {studyKind,customStudyId} from './study-blocks.js';
 import {validNamedSlot} from './preview-component.js';
 import type {Scan} from './manuscript-poc.js';
 
-export type InlineFormat='bold'|'italic'|'underline'|'combined'|{color:string|null}|{font:string|null;weight?:number};
+export type InlineFormat='bold'|'italic'|'underline'|'combined'|{color:string|null}|{font:string|null;weight?:number}|{fontSize:number|null}|{baseline:'super'|'sub'|null};
 function changeStyle(style:InlineStyle,format:InlineFormat,legacy:boolean):InlineStyle{
   const next={...style};
   if(format==='bold'){
@@ -17,6 +17,12 @@ function changeStyle(style:InlineStyle,format:InlineFormat,legacy:boolean):Inlin
     else{next.fontWeight=700;next.italic=true;}
   }else if(format==='underline'){
     if(next.underline)delete next.underline;else next.underline=true;
+  }else if(format&&typeof format==='object'&&Object.hasOwn(format,'fontSize')&&Object.keys(format).length===1){
+    const size=(format as {fontSize:number|null}).fontSize;
+    if(size===null)delete next.fontSize;else next.fontSize=size;
+  }else if(format&&typeof format==='object'&&Object.hasOwn(format,'baseline')&&Object.keys(format).length===1){
+    const baseline=(format as {baseline:'super'|'sub'|null}).baseline;
+    if(baseline===null||baseline===next.baseline)delete next.baseline;else next.baseline=baseline;
   }else if(format&&typeof format==='object'&&Object.hasOwn(format,'color')&&Object.keys(format).length===1){
     const color=(format as {color:string|null}).color;
     if(color===null)delete next.color;else next.color=color;
@@ -88,7 +94,7 @@ export function planInlineFormat(source:string,start:number,end:number,format:In
     const s=hits[0];
     if(!((start===s.outerStart&&end===s.outerEnd)||(start===s.rawStart&&end===s.rawStart+s.end-s.start)))return fail();
     logicalStart=s.start;logicalEnd=s.end;patchStart=s.outerStart;patchEnd=s.outerEnd;
-    inner=before.text.slice(s.start,s.end);preferSpan=source.startsWith(':style{',s.outerStart);
+    inner=before.text.slice(s.start,s.end);preferSpan=source.startsWith(':style{',s.outerStart)||source[s.outerStart]==='^'||source[s.outerStart]==='~';
     const run=before.inlineStyles.find(r=>r.start===s.start&&r.end===s.end);if(!run)return fail();
     const {start:_,end:__,...style}=run;previous=style;
   }else{
