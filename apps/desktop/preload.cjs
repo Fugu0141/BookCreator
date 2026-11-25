@@ -2,6 +2,7 @@ const {contextBridge,ipcRenderer}=require('electron');
 contextBridge.exposeInMainWorld('bookcreator',Object.freeze({
   open:()=>ipcRenderer.invoke('bookcreator:open'),
   create:options=>ipcRenderer.invoke('bookcreator:create',options),
+  readImage:id=>ipcRenderer.invoke('bookcreator:readImage',id),
   listImages:()=>ipcRenderer.invoke('bookcreator:listImages'),
   importImage:allowed=>ipcRenderer.invoke('bookcreator:importImage',allowed),
   importFont:rights=>ipcRenderer.invoke('bookcreator:importFont',rights),
