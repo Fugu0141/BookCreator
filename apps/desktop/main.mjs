@@ -4,7 +4,7 @@ import {mkdtempSync} from 'node:fs';
 import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {fileURLToPath} from 'node:url';
-import {openWorkspace} from './workspace.mjs';
+import {openWorkspace,createProject} from './workspace.mjs';
 const SMOKE=process.argv.includes('--smoke');
 const smokeRoot=SMOKE?mkdtempSync(join(tmpdir(),'bc-electron-')):undefined;
 if(smokeRoot)app.setPath('userData',smokeRoot);
@@ -47,19 +47,28 @@ async function run(){
   win.on('close',e=>{
     if(closing||SMOKE||!workspace)return;
     e.preventDefault();if(busy)return;
-    const choice=dialog.showMessageBoxSync(win,{type:'warning',buttons:['キャンセル','終了'],defaultId:0,cancelId:0,message:'未保存の原稿がある可能性があります。終了しますか？'});
+    const choice=dialog.showMessageBoxSync(win,{type:'warning',buttons:['キャンセル','終了'],defaultId:0,cancelId:0,message:'未保存の原稿・テーマ設定がある可能性があります。終了しますか？'});
     if(choice===1){closing=true;win.close();}
   });
   handle('open',async(...args)=>{
     checkArgs(args,0);
     const selected=SMOKE?{canceled:false,filePaths:[join(smokeRoot,'book.yaml')]}:await dialog.showOpenDialog(win,{title:'book.yaml を開く',properties:['openFile'],filters:[{name:'BookCreator project',extensions:['yaml']}]});
     if(selected.canceled)return null;
-    const next=await openWorkspace(selected.filePaths[0]);workspace=next;return next.summary;
+    const next=await openWorkspace(selected.filePaths[0]);const typography=await next.typography();workspace=next;return {...next.summary,typography};
   });
+  handle('create',async(...args)=>{
+    checkArgs(args,1);
+    const selected=SMOKE?{canceled:false,filePaths:[smokeRoot]}:await dialog.showOpenDialog(win,{title:'新規書籍の保存先（親フォルダ）',properties:['openDirectory']});
+    if(selected.canceled)return null;
+    const next=await createProject(selected.filePaths[0],args[0]);const typography=await next.typography();workspace=next;return {...next.summary,typography};
+  });
+  handle('saveTypography',async(...args)=>{checkArgs(args,2);return requireWorkspace().saveTypography(...args);});
   handle('read',async(...args)=>{checkArgs(args,1);if(typeof args[0]!=='string')throw Error('Invalid section');return requireWorkspace().read(args[0]);});
   handle('save',async(...args)=>{checkArgs(args,3);if(typeof args[0]!=='string')throw Error('Invalid section');return requireWorkspace().save(...args);});
   if(SMOKE){
     await mkdir(join(smokeRoot,'manuscript'));
+    await mkdir(join(smokeRoot,'themes','default'),{recursive:true});
+    await writeFile(join(smokeRoot,'themes','default','theme.yaml'),'schemaVersion: 1\nid: default\nname: Default\n');
     await writeFile(join(smokeRoot,'book.yaml'),'schemaVersion: 1\ndocumentFormat: {name: bcm, version: 1}\ntitle: "Desktop smoke"\nlanguage: ja\ntheme: themes/default/theme.yaml\npage: {size: A4}\nsections:\n  - {id: chapter, type: manuscript, role: body, path: manuscript/chapter.md}\n');
     await writeFile(join(smokeRoot,'manuscript','chapter.md'),'# 見出し\n\n'+('日本語と English text の実測組版です。 '.repeat(30)).trim()+'\n');
   }
@@ -91,7 +100,18 @@ async function smoke(){
   await exec("document.querySelector('#save').click()");
   await until("document.querySelector('#status').textContent.includes('保存しました')");
   if(!(await readFile(join(smokeRoot,'manuscript','chapter.md'),'utf8')).endsWith('追記'))throw Error('Saved source missing');
-  console.log('PASS Electron sandbox, project open/read, React editing, bundled Noto, independent font roles, stale invalidation, measured preview, source selection and save');
+  await exec("document.querySelector('#save-theme').click()");
+  await until("document.querySelector('#status').textContent.includes('テーマを保存しました')");
+  await exec("document.querySelector('#open').click()");
+  await until("document.querySelector('#body-font').value==='serif' && !document.querySelector('#save-theme').disabled===false && document.querySelector('#source').disabled");
+  await exec("document.querySelector('#new-project').click()");
+  await until("!!document.querySelector('#new-title')");
+  await exec("(()=>{const el=document.querySelector('#new-title');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(el,'新しい書籍');el.dispatchEvent(new Event('input',{bubbles:true}));})()");
+  await exec("document.querySelector('#create-project').click()");
+  await until("!!document.querySelector('[data-section=chapter-01]')");
+  if(!(await readFile(join(smokeRoot,'new-book','book.yaml'),'utf8')).includes('新しい書籍'))throw Error('Created book missing');
+  if(!await exec("document.querySelector('#body-font').value==='BCFont_NotoSansJP'"))throw Error('New book default typography missing');
+  console.log('PASS Electron project creation, theme save/reopen, Electron sandbox, project open/read, React editing, bundled Noto, independent font roles, stale invalidation, measured preview, source selection and save');
   closing=true;win.destroy();await rm(smokeRoot,{recursive:true,force:true});app.exit(0);
 }
 app.on('window-all-closed',()=>{if(!SMOKE)app.quit();});
