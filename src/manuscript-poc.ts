@@ -25,6 +25,8 @@ type PreparedBlock=Omit<MeasuredBlock,'unitHeights'>&{item:SemanticItem};
 type PreparedInput=Omit<Input,'sections'>&{sections:{id:string;startOn:'page'|'continuous';blocks:(PreparedBlock|Break)[]}[]};
 const plain=(s:string)=>/^[\p{L}\p{M}\p{N} .,!?、。・「」『』（）！？　]+$/u.test(s)&&!/^\s|^\d+\.\s/.test(s);
 const stripEnd=(s:string)=>s.replace(/(?:\r\n|\r|\n)$/,'');
+// Keep raw UTF-16 offsets and reject unsupported line content, not just its normalized copy.
+const plainBody=(s:string)=>s.length>0&&s.length<=10000&&!/\r(?!\n)/.test(s)&&(s.match(/\n/g)?.length??0)<=255&&s.split(/\r\n|\n/).some(line=>line.length>0)&&s.split(/\r\n|\n/).every(line=>line===''||plain(line));
 export function prepareManuscript<S extends Scan>(documents:readonly Manuscript[],revision:string,fingerprint:string,content:Input['content'],deps:PreparationDependencies<S>):{input?:PreparedInput;items:SemanticItem[];diagnostics:Issue[];publicationReady:false} {
   const diagnostics:Issue[]=[],items:SemanticItem[]=[];
   const failed=()=>({items:[],diagnostics,publicationReady:false as const});
@@ -65,38 +67,45 @@ export function prepareManuscript<S extends Scan>(documents:readonly Manuscript[
         if(!match||!plain(match[2])){unsupported(b.range,'Only plain ATX headings supported');continue;}
         emit({kind:'heading',origin:origin(b.range),level:match[1].length,text:match[2]},content.width);
       }else if(b.kind==='raw'){
-        const start=b.range.start;let end=b.range.end,lines=[text];
-        while(scan.blocks[n+1]?.kind==='raw'){
-          const next=scan.blocks[++n];end=next.range.end;lines.push(stripEnd(doc.source.slice(next.range.start,end)));
+        const start=b.range.start;let end=b.range.end;
+        // Blank lines between raw paragraphs belong to this contiguous source run.
+        // Do not absorb leading/trailing blank lines at headings or directives.
+        while(n+1<scan.blocks.length){
+          let j=n+1;while(scan.blocks[j]?.kind==='blank')j++;
+          if(scan.blocks[j]?.kind!=='raw')break;
+          n=j;end=scan.blocks[n].range.end;
         }
-        if(!lines.every(plain)){unsupported({start,end},'Unsupported Markdown; plain paragraphs only');continue;}
-        emit({kind:'paragraph',origin:origin({start,end}),text:lines.join('\n')},content.width);
+        const body=stripEnd(doc.source.slice(start,end));
+        if(!plainBody(body)){unsupported({start,end},'Unsupported Markdown; bounded plain paragraphs only');continue;}
+        emit({kind:'paragraph',origin:origin({start,end}),text:body},content.width);
       }else if(b.kind==='directive'&&b.closed&&b.header.kind==='container'){
         const h=b.header,attrs=Object.fromEntries(h.attributes.map(a=>[a.key,a.value])),kind=studyKind(h.name,attrs),componentId=customStudyId(h.name,attrs);
         const children=b.children.filter(child=>child.kind!=='blank');
-        const readLine=(child:ScanBlock|undefined,parent:Range,headerEnd:number)=>{
-          if(!child||child.kind!=='raw'||child.range.start<headerEnd||child.range.end>parent.end)return;
-          const text=stripEnd(doc.source.slice(child.range.start,child.range.end));
-          if(!plain(text))return;
-          return {text,sourceTextStart:child.range.start};
+        const readBody=(blocks:readonly ScanBlock[],parent:Range,headerEnd:number)=>{
+          const visible=blocks.filter(c=>c.kind!=='blank');
+          if(!visible.length||visible.some(c=>c.kind!=='raw'))return;
+          const first=visible[0],last=visible.at(-1)!;
+          if(first.range.start<headerEnd||last.range.end>parent.end)return;
+          const text=stripEnd(doc.source.slice(first.range.start,last.range.end));
+          if(!plainBody(text))return;
+          return {text,sourceTextStart:first.range.start};
         };
         if(!kind&&!componentId){unsupported(b.range,'Unsupported study container');continue;}
         let primary:{text:string;sourceTextStart:number}|undefined;
         const namedSlots:NamedSlotSource[]=[];
-        if(children.length===1&&children[0].kind==='raw')primary=readLine(children[0],b.range,h.range.end);
+        if(children.length&&children.every(c=>c.kind==='raw'))primary=readBody(b.children,b.range,h.range.end);
         else if(h.name==='component'&&children.length>=1&&children.length<=9){
           const names=new Set<string>();let invalid=false;
           for(const slot of children){
             if(slot.kind!=='directive'||!slot.closed||slot.header.kind!=='container'||slot.header.name!=='slot'||slot.header.id||slot.header.attributes.length!==1||slot.header.attributes[0].key!=='name'||slot.range.start<h.range.end||slot.range.end>b.range.end){invalid=true;break;}
-            const name=slot.header.attributes[0].value,body=slot.children.filter(c=>c.kind!=='blank');
-            const source=body.length===1?readLine(body[0],slot.range,slot.header.range.end):undefined;
+            const name=slot.header.attributes[0].value,source=readBody(slot.children,slot.range,slot.header.range.end);
             if((name!=='content'&&!validNamedSlot(name))||names.has(name)||!source){invalid=true;break;}
             names.add(name);
             if(name==='content')primary=source;else namedSlots.push({name,...source});
           }
           if(invalid)primary=undefined;
         }
-        if(!primary){unsupported(b.range,'Expected one plain body line or explicit content and named slots with one plain line each');continue;}
+        if(!primary){unsupported(b.range,'Expected plain paragraphs or explicit content and named slots containing plain paragraphs');continue;}
         emit({kind:'study',...(kind?{studyKind:kind}:{componentId}),origin:origin(b.range,h.id),...primary,...(namedSlots.length?{namedSlots}:{}),attributes:attrs},content.width);
       }else if(b.kind==='directive'&&b.closed&&b.header.kind==='leaf'){
         const h=b.header, attrs=Object.fromEntries(h.attributes.map(a=>[a.key,a.value]));

@@ -10,12 +10,12 @@ export type DynamicField=typeof dynamicFields[number]|typeof studyDynamicFields[
 export type HeadingContext=Readonly<Partial<Record<DynamicField,string>>>;
 export type DynamicLabel=Omit<FixedLabel,'type'|'text'>&{type:'dynamic';field:DynamicField;prefix:string;suffix:string;fallback:string};
 export interface ImageCrop {left:number;top:number;right:number;bottom:number}
-export type NamedSlot=Omit<FixedLabel,'type'|'text'>&{type:'slot';name:string;optional?:boolean};
+export type NamedSlot=Omit<FixedLabel,'type'|'text'>&{type:'slot';name:string;optional?:boolean;paragraphGap?:number};
 export const validNamedSlot=(v:unknown):v is string=>typeof v==='string'&&/^[a-z][a-z0-9-]{0,31}$/.test(v)&&v!=='content';
 export type HeadingChild=({id:string;type:'content';width?:number}|{id:string;type:'rect';width:number|'fill';height:number;color:string}|FixedLabel|DynamicLabel|NamedSlot|{id:string;type:'image';width:number|'fill';height:number;assetId:string;fit:'contain'|'cover';alt:string;crop?:ImageCrop}|{id:string;type:'group';width:number|'fill';direction:'row'|'column'|'canvas';height?:number;gap:number;padding:number;background:string;showWhenSlot?:string;children:HeadingChild[]}) & {x?:number;y?:number};
 export interface HeadingDesign {
   schemaVersion:1;
-  fontSize:number; lineHeight:number; font?:ComponentFont;
+  fontSize:number; lineHeight:number; font?:ComponentFont; paragraphGap?:number;
   direction:'row'|'column'; gap:number; padding:number; background:string; textColor:string;
   children:HeadingChild[];
 }
@@ -34,10 +34,11 @@ function validCrop(v:unknown){
 function validateFont(v:unknown){
   if(!record(v)||!exact(v,['id','weight'])||typeof v.id!=='string'||!(Object.hasOwn(builtin,v.id)||/^font-[a-f0-9]{64}$/.test(v.id))||!len(v.weight,100,900))throw RangeError('Invalid component font ID or weight');
 }
-export function validateHeadingDesign(value:unknown,scope:'heading'|'study'='heading'):HeadingDesign{
+export function validateHeadingDesign(value:unknown,scope:'heading'|'study'|'paragraph'='heading'):HeadingDesign{
   const fail=()=>{throw RangeError('Invalid experimental heading component');};
-  if(!record(value)||!exact(value,['schemaVersion','fontSize','lineHeight','direction','gap','padding','background','textColor','children'],['font'])||value.schemaVersion!==1||!len(value.fontSize,2000,30000)||!line(value.lineHeight)||!['row','column'].includes(String(value.direction))||!len(value.gap)||!len(value.padding)||!color(value.background)||!color(value.textColor)||!Array.isArray(value.children)||value.children.length<1||value.children.length>8)throw fail();
+  if(!record(value)||!exact(value,['schemaVersion','fontSize','lineHeight','direction','gap','padding','background','textColor','children'],['font',...(scope==='heading'?[]:['paragraphGap'])])||value.schemaVersion!==1||!len(value.fontSize,2000,30000)||!line(value.lineHeight)||!['row','column'].includes(String(value.direction))||!len(value.gap)||!len(value.padding)||!color(value.background)||!color(value.textColor)||!Array.isArray(value.children)||value.children.length<1||value.children.length>8)throw fail();
   if(Object.hasOwn(value,'font'))validateFont(value.font);
+  if(Object.hasOwn(value,'paragraphGap')&&!len(value.paragraphGap,0,30000))throw fail();
   const ids=new Set<string>(),names=new Set<string>();let slots=0,count=0;
   function visit(children:unknown[],depth:number,canvas=false){
   if(depth>4||children.length<1||children.length>8)throw fail();
@@ -57,7 +58,7 @@ export function validateHeadingDesign(value:unknown,scope:'heading'|'study'='hea
     if(child.type==='image'&&exact(child,['id','type','width','height','assetId','fit','alt',...pos],['crop'])&&len(child.height,1)&&typeof child.assetId==='string'&&/^[a-f0-9]{64}$/.test(child.assetId)&&['contain','cover'].includes(String(child.fit))&&typeof child.alt==='string'&&child.alt.length<=256&&(!Object.hasOwn(child,'crop')||validCrop(child.crop))&&!/[\p{Cc}\p{Cs}]/u.test(child.alt))continue;
     if(!color(child.color))throw fail();
     if(child.type==='rect'&&exact(child,['id','type','width','height','color',...pos])&&len(child.height,1))continue;
-    if(scope==='study'&&child.type==='slot'&&exact(child,['id','type','name','width','fontSize','lineHeight','color',...pos],['font','optional'])&&(!Object.hasOwn(child,'optional')||typeof child.optional==='boolean')&&validNamedSlot(child.name)&&!names.has(child.name)&&names.size<8&&len(child.fontSize,2000,30000)&&line(child.lineHeight)){
+    if(scope==='study'&&child.type==='slot'&&exact(child,['id','type','name','width','fontSize','lineHeight','color',...pos],['font','optional','paragraphGap'])&&(!Object.hasOwn(child,'paragraphGap')||len(child.paragraphGap,0,30000))&&(!Object.hasOwn(child,'optional')||typeof child.optional==='boolean')&&validNamedSlot(child.name)&&!names.has(child.name)&&names.size<8&&len(child.fontSize,2000,30000)&&line(child.lineHeight)){
       names.add(child.name);if(Object.hasOwn(child,'font'))validateFont(child.font);continue;
     }
     if(child.type==='dynamic'&&exact(child,['id','type','width','field','prefix','suffix','fallback','fontSize','lineHeight','color',...pos],['font'])&&(scope==='study'?(studyDynamicFields as readonly string[]):(dynamicFields as readonly string[])).includes(String(child.field))&&plainLabel(child.prefix,0,64)&&plainLabel(child.suffix,0,64)&&plainLabel(child.fallback,1,64)&&len(child.fontSize,2000,30000)&&line(child.lineHeight)){
@@ -86,11 +87,11 @@ export function hasDynamicLabels(design:HeadingDesign|null|undefined):boolean{
   const visit=(nodes:HeadingChild[]):boolean=>nodes.some(n=>n.type==='dynamic'||(n.type==='group'&&visit(n.children)));
   return !!design&&visit(design.children);
 }
-export function compileHeadingDesign(value:HeadingDesign,inherited:PreviewTextStyle={fontFamily:'sans-serif',fontWeight:400},context?:HeadingContext,scope:'heading'|'study'='heading'){
-  const {schemaVersion:_,fontSize,lineHeight,font,children,...rest}=validateHeadingDesign(value,scope);
+export function compileHeadingDesign(value:HeadingDesign,inherited:PreviewTextStyle={fontFamily:'sans-serif',fontWeight:400},context?:HeadingContext,scope:'heading'|'study'|'paragraph'='heading'){
+  const {schemaVersion:_,fontSize,lineHeight,font,paragraphGap,children,...rest}=validateHeadingDesign(value,scope);
   const textStyle=resolveFont(font,inherited);
-  const slotStyles:{name:string;fontSize:number;lineHeight:number;textStyle:PreviewTextStyle;optional?:boolean}[]=[],conditionalGroups:{id:string;name:string}[]=[];
-  type CompiledChild=Exclude<HeadingChild,FixedLabel|DynamicLabel|NamedSlot|{type:'group'}>|Omit<NamedSlot,'font'|'fontSize'|'lineHeight'|'optional'>|(Omit<FixedLabel,'font'>&PreviewTextStyle)|{id:string;type:'group';width:number|'fill';x?:number;y?:number;direction:'row'|'column'|'canvas';height?:number;gap:number;padding:number;background:string;children:CompiledChild[]};
+  const slotStyles:{name:string;fontSize:number;lineHeight:number;textStyle:PreviewTextStyle;optional?:boolean;paragraphGap?:number}[]=[],conditionalGroups:{id:string;name:string}[]=[];
+  type CompiledChild=Exclude<HeadingChild,FixedLabel|DynamicLabel|NamedSlot|{type:'group'}>|Omit<NamedSlot,'font'|'fontSize'|'lineHeight'|'optional'|'paragraphGap'>|(Omit<FixedLabel,'font'>&PreviewTextStyle)|{id:string;type:'group';width:number|'fill';x?:number;y?:number;direction:'row'|'column'|'canvas';height?:number;gap:number;padding:number;background:string;children:CompiledChild[]};
   function compile(child:HeadingChild):CompiledChild{
     if(child.type==='group'){
       const {showWhenSlot,...group}=child;if(showWhenSlot)conditionalGroups.push({id:child.id,name:showWhenSlot});
@@ -105,14 +106,14 @@ export function compileHeadingDesign(value:HeadingDesign,inherited:PreviewTextSt
       return {...label,type:'label',text,...resolveFont(font,inherited)};
     }
     if(child.type==='slot'){
-      const {font,fontSize,lineHeight,optional,...node}=child;
-      slotStyles.push({name:child.name,fontSize,lineHeight,textStyle:resolveFont(font,inherited),...(optional?{optional:true}:{})});return node;
+      const {font,fontSize,lineHeight,optional,paragraphGap,...node}=child;
+      slotStyles.push({name:child.name,fontSize,lineHeight,textStyle:resolveFont(font,inherited),...(optional?{optional:true}:{}),...(paragraphGap===undefined?{}:{paragraphGap})});return node;
     }
     if(child.type!=='label')return child;
     const {font,...label}=child;return {...label,...resolveFont(font,inherited)};
   }
   const component={...rest,children:children.map(compile)};
-  return {fontSize,lineHeight,textStyle,component,slotStyles,conditionalGroups};
+  return {fontSize,lineHeight,textStyle,component,slotStyles,conditionalGroups,paragraphGap};
 }
 
 /** Experimental project-local component library. Usage is explicit for future expansion. */
@@ -165,12 +166,12 @@ export function defaultParagraphDesign():HeadingDesign{
   return {schemaVersion:1,fontSize:4200,lineHeight:1.8,direction:'column',gap:0,padding:2000,background:'#f5f5f5',textColor:'#222222',children:[{id:'content',type:'content'}]};
 }
 export function validateParagraphDesign(value:unknown):HeadingDesign{
-  const design=validateHeadingDesign(value);
+  const design=validateHeadingDesign(value,'paragraph');
   if(design.direction!=='column'||design.gap!==0||design.children.length!==1||design.children[0].type!=='content')throw RangeError('Paragraph frame requires a single content slot and zero gap');
   return design;
 }
 export function compileParagraphDesign(value:HeadingDesign,inherited:PreviewTextStyle){
-  return compileHeadingDesign(validateParagraphDesign(value),inherited);
+  return compileHeadingDesign(validateParagraphDesign(value),inherited,undefined,'paragraph');
 }
 
 /** Old paragraph definitions are local v1; v2 is a reference only. */
@@ -226,6 +227,9 @@ export function conditionalSlotName(children:HeadingChild[]):string|undefined{
   function visit(nodes:HeadingChild[]){for(const n of nodes){if(n.type==='content')primary=true;else if(n.type==='slot')slots.push(n);else if(n.type==='group')visit(n.children);}}
   visit(children);return !primary&&slots.length===1&&slots[0].optional?slots[0].name:undefined;
 }
+export function multilineTextOptions(text:string,paragraphGap?:number){
+  return /\n/.test(text)?{multiline:true as const,...(paragraphGap===undefined?{}:{paragraphGap})}:{};
+}
 export interface NamedSlotSource {name:string;text:string;sourceTextStart?:number}
 export function compileNamedSlotRequests(compiled:ReturnType<typeof compileHeadingDesign>,sources:readonly NamedSlotSource[]){
   const byName=new Map(sources.map(s=>[s.name,s]));
@@ -235,7 +239,7 @@ export function compileNamedSlotRequests(compiled:ReturnType<typeof compileHeadi
     const source=byName.get(s.name);
     if(!source){if(s.optional)return [];throw RangeError('Missing named slot: '+s.name);}
     if(!source.text.length)throw RangeError('Empty named slot: '+s.name);
-    return [{name:s.name,request:{text:source.text,fontSize:s.fontSize,lineHeight:s.lineHeight,...s.textStyle},...(source.sourceTextStart===undefined?{}:{sourceTextStart:source.sourceTextStart})}];
+    return [{name:s.name,request:{text:source.text,fontSize:s.fontSize,lineHeight:s.lineHeight,...s.textStyle,...multilineTextOptions(source.text,s.paragraphGap)},...(source.sourceTextStart===undefined?{}:{sourceTextStart:source.sourceTextStart})}];
   });
 }
 /** Derive an occurrence tree without mutating its stored design or inventing source text. */

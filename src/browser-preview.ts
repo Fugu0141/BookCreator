@@ -1,5 +1,5 @@
 import {compileStudyBlock,compileCustomStudyBlock,createStudyNumbering,studyKindName,type StudyNumber,type StudyAnswer} from './study-blocks.js';
-import {compileHeadingDesign,compileParagraphDesign,validateHeadingLevels,compileNamedSlotRequests,resolveNamedSlotPresence,type HeadingDesign,type HeadingLevel,type HeadingLevels,type HeadingContext,type StudyDesigns,type ComponentLibrary,validateComponentLibrary} from './preview-component.js';
+import {compileHeadingDesign,compileParagraphDesign,validateHeadingLevels,compileNamedSlotRequests,resolveNamedSlotPresence,multilineTextOptions,type HeadingDesign,type HeadingLevel,type HeadingLevels,type HeadingContext,type StudyDesigns,type ComponentLibrary,validateComponentLibrary} from './preview-component.js';
 import {resolvePreviewTypography,type PreviewTypography} from './preview-typography.js';
 import {prepareManuscript,type Manuscript,type PreparationDependencies,type Scan,type SemanticItem} from './manuscript-poc.js';
 function resolveStudy(item:SemanticItem,body:ReturnType<typeof resolvePreviewTypography>['body'],designs?:StudyDesigns,library?:ComponentLibrary,number?:StudyNumber,answer?:StudyAnswer){
@@ -54,14 +54,14 @@ export function prepareBrowserPreview<S extends Scan>(document:Manuscript,revisi
   for(const block of result.input.sections[0].blocks){
     if(block.kind==='pagebreak'){reject(block.origin,'Manual pagebreak not yet supported by the browser preview');continue;}
     const {item}=block;
-    if(item.kind==='figure'||/[\r\n]/.test(item.text)){reject(item.origin,'Only contiguous single-line source paragraphs and ATX headings are supported');continue;}
+    if(item.kind==='figure'||(item.kind==='heading'&&/[\r\n]/.test(item.text))){reject(item.origin,'Only contiguous plain source paragraphs and ATX headings are supported');continue;}
     const raw=document.source.slice(item.origin.range.start,item.origin.range.end);
     const offset=item.kind==='study'?item.sourceTextStart!-item.origin.range.start:item.kind==='heading'?raw.indexOf(item.text):0;
     if(offset<0||raw.slice(offset,offset+item.text.length)!==item.text){reject(item.origin,'Cannot establish exact source mapping');continue;}
     if(item.kind==='heading')numbering.heading(item.level!);
     let study:ReturnType<typeof compileStudyBlock>|undefined,namedSlots:ReturnType<typeof compileNamedSlotRequests>=[];
     if(item.kind==='study')try{study=resolveStudy(item,fonts.body,undefined,catalog,numbering.next(item.componentId??item.studyKind!),answerFor(item));const resolved=slotRequests(item,study,document.source);study={...study,component:resolved.component};namedSlots=resolved.namedSlots;}catch(e){reject(item.origin,String(e instanceof Error?e.message:e));continue;}
-    blocks.push({origin:item.origin,request:{text:item.text,width:block.width,fontSize:study?.fontSize??(item.kind==='heading'?6500:4200),...(study?.textStyle??(item.kind==='heading'?fonts.heading:fonts.body)),lineHeight:study?.lineHeight??1.8},splitPolicy:block.splitPolicy,...(study?{component:study.component}:{}),...(namedSlots.length?{namedSlots}:{}),
+    blocks.push({origin:item.origin,request:{text:item.text,width:block.width,fontSize:study?.fontSize??(item.kind==='heading'?6500:4200),...(study?.textStyle??(item.kind==='heading'?fonts.heading:fonts.body)),lineHeight:study?.lineHeight??1.8,...multilineTextOptions(item.text,study?.paragraphGap)},splitPolicy:block.splitPolicy,...(study?{component:study.component}:{}),...(namedSlots.length?{namedSlots}:{}),
       sourceTextStart:item.origin.range.start+offset,...(block.startPosition?{startPosition:block.startPosition,startPositionSource:block.startPositionSource}:{})});
   }
   if(!blocks.length&&!diagnostics.length)diagnostics.push({code:'BC_PREVIEW_EMPTY',message:'No supported content to preview',documentId:document.documentId,range:{start:0,end:0}});
@@ -91,7 +91,7 @@ export function prepareBookBrowserPreview<S extends Scan>(documents:readonly Man
       const {item}=block;
       const raw=byId.get(item.origin.documentId)!.source.slice(item.origin.range.start,item.origin.range.end);
       const offset=item.kind==='study'?item.sourceTextStart!-item.origin.range.start:item.kind==='heading'?raw.indexOf(item.text):0;
-      if(item.kind==='figure'||/[\r\n]/.test(item.text)||offset<0||raw.slice(offset,offset+item.text.length)!==item.text){
+      if(item.kind==='figure'||(item.kind==='heading'&&/[\r\n]/.test(item.text))||offset<0||raw.slice(offset,offset+item.text.length)!==item.text){
         diagnostics.push({code:'BC_PREVIEW_UNSUPPORTED',message:'Only contiguous plain paragraphs and headings are supported',documentId:item.origin.documentId,range:item.origin.range});continue;
       }
       let design:ReturnType<typeof compileHeadingDesign>|undefined=item.kind==='paragraph'?paragraph:undefined;
@@ -113,7 +113,7 @@ export function prepareBookBrowserPreview<S extends Scan>(documents:readonly Man
           diagnostics.push({code:'BC_PREVIEW_COMPONENT',message:String(e instanceof Error?e.message:e),documentId:item.origin.documentId,range:item.origin.range});continue;
         }
       }
-      blocks.push({origin:item.origin,request:{text:item.text,width:block.width,fontSize:design?.fontSize??(item.kind==='heading'?6500:4200),...(design?.textStyle??(item.kind==='heading'?fonts.heading:fonts.body)),lineHeight:design?.lineHeight??1.8},splitPolicy:block.splitPolicy,...(design?{component:design.component}:{}),...(namedSlots.length?{namedSlots}:{}),sourceTextStart:item.origin.range.start+offset,...(block.startPosition?{startPosition:block.startPosition,startPositionSource:block.startPositionSource}:{})});
+      blocks.push({origin:item.origin,request:{text:item.text,width:block.width,fontSize:design?.fontSize??(item.kind==='heading'?6500:4200),...(design?.textStyle??(item.kind==='heading'?fonts.heading:fonts.body)),lineHeight:design?.lineHeight??1.8,...multilineTextOptions(item.text,design?.paragraphGap)},splitPolicy:block.splitPolicy,...(design?{component:design.component}:{}),...(namedSlots.length?{namedSlots}:{}),sourceTextStart:item.origin.range.start+offset,...(block.startPosition?{startPosition:block.startPosition,startPositionSource:block.startPositionSource}:{})});
     }
     return {id:section.id,startOn:section.startOn,blocks};
   });
