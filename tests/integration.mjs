@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
-import {editDocument,compileMeasuredManuscript,canReviewLayout,prepareBrowserPreview,prepareBookBrowserPreview,defaultHeadingDesign,previewSourceRange,planInlineFormat,planListFormat,planListIndent} from '../dist/index.js';
+import {editDocument,compileMeasuredManuscript,canReviewLayout,prepareBrowserPreview,prepareBookBrowserPreview,defaultHeadingDesign,previewSourceRange,planInlineFormat,planListFormat,planListIndent,planListBatch} from '../dist/index.js';
 const load = (variable, fallback) => import(pathToFileURL(resolve(process.env[variable] ?? fallback)).href);
 const bcm = await load('BCM_DIST', '../BookCreator_Markdown/dist/index.js');
 const engine = await load('ENGINE_DIST', '../BookCreator_LayoutEngine/dist/index.js');
@@ -549,4 +549,26 @@ test('list indent and outdent edit only leading whitespace, preserving CRLF and 
     const start=source.indexOf(word);
     assert.throws(()=>planListIndent(source,start,start+word.length,dir,bcm.scanDocument),RangeError,source);
   }
+});
+
+test('batch list formatting converts a whole isolated run, keeps markup and mixed line endings',()=>{
+  const source='# 見出し\r\n\r\n**第一項**\r\n第二項\n第三項。\r\n\r\n結び。';
+  let raw=source,range={start:raw.indexOf('**第一項**'),end:raw.indexOf('第三項。')+'第三項。'.length};
+  const expected=['- **第一項**\r\n- 第二項\n- 第三項。','1. **第一項**\r\n2. 第二項\n3. 第三項。','**第一項**\r\n第二項\n第三項。'];
+  for(const [i,kind] of ['bullet','ordered','ordered'].entries()){
+    const plan=planListBatch(raw,range.start,range.end,kind,bcm.scanDocument);
+    raw=bcm.applyPatches(raw,[plan.patch]);range=plan.selection;
+    assert.equal(raw,source.replace('**第一項**\r\n第二項\n第三項。',expected[i]));
+    assert.equal(raw.slice(range.start,range.end),expected[i]);
+    const p=prepareBrowserPreview({documentId:'batch',revision:'1',source:raw,startOn:'page'},'1','batch',{width:100000,height:70000},{scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds});
+    assert.deepEqual(p.diagnostics,[]);
+    assert.equal(p.options.blocks.filter(b=>b.listItem).length,i===2?0:3);
+  }
+  assert.equal(raw,source);
+  for(const raw of ['- one\n  - two\n','- one\n+ two\n','one\n\n two\n','one\n- two\n','one\n\`\`\`\ncode\n\`\`\`','- one\n- two\n\n- three\n','one\n[link](url)\n']){
+    const end=raw.includes('\n\n- three')?raw.indexOf('\n\n- three'):raw.length;
+    assert.throws(()=>planListBatch(raw,0,end,'ordered',bcm.scanDocument),RangeError,raw);
+  }
+  assert.throws(()=>planListBatch('first\nsecond\nthird',0,12,'bullet',bcm.scanDocument),RangeError);
+  assert.throws(()=>planListBatch('first\nsecond',1,12,'bullet',bcm.scanDocument),RangeError);
 });
