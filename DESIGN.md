@@ -1,10 +1,20 @@
 # BookCreator — 基本設計・機能仕様書
 
-- 文書バージョン: 0.8.4
+- 文書バージョン: 0.9.0
 - 状態: 設計ドラフト（実装前のレビュー用）
 - 作成日: 2026-11-26
 - 対象: BookCreator 本体、プロジェクト形式、組版・出版・共同編集
 - 言語: 日本語。仕様中の「必須」は製品の目標要件であり、最初のリリースですべて実装する意味ではない。
+
+## 詳細設計の管理先
+
+本書は製品要件・合意済みの仕様・代表受入条件を管理する。具体的なデータ/API/アルゴリズムは以下の詳細設計を参照する。詳細設計はドラフトであり、未決の判断を確定済みと扱わない。矛盾がある場合は合意済み要件を優先し、当該正本と判断記録を更新する。
+
+- [プロジェクト形式](docs/PROJECT_FORMAT.md)、[部品システム](docs/COMPONENT_SYSTEM.md)、[編集トランザクション](docs/EDITOR_TRANSACTIONS.md)
+- [UI](docs/UI_DESIGN.md)、[PDF出力](docs/PDF_EXPORT.md)、[Git連携](docs/GIT_INTEGRATION.md)、[プラットフォーム](docs/PLATFORM_ARCHITECTURE.md)
+- [横断開発計画・PoC](docs/DEVELOPMENT_PLAN.md)、[決定・未決事項](docs/DECISIONS.md)、[実装前レビュー](docs/PRE_IMPLEMENTATION_REVIEW.md)
+- [BCM言語仕様](https://github.com/Fugu0141/BookCreator_Markdown/blob/main/docs/SPECIFICATION.md)、[BCMライブラリ設計](https://github.com/Fugu0141/BookCreator_Markdown/blob/main/docs/ARCHITECTURE.md)
+- [Engine中立モデル](https://github.com/Fugu0141/BookCreator_LayoutEngine/blob/main/docs/LAYOUT_MODEL.md)、[ページ割付](https://github.com/Fugu0141/BookCreator_LayoutEngine/blob/main/docs/PAGINATION.md)、[出版面・描画](https://github.com/Fugu0141/BookCreator_LayoutEngine/blob/main/docs/PUBLICATION_RENDERING.md)
 
 ## 1. 背景と目的
 
@@ -391,8 +401,8 @@ split-policy=allowは分割可能、avoidは可能な限り同一ページ、str
 - サムネイル一覧、単ページ、見開き、ページ移動・ズーム、ページ検索、章アウトライン、警告一覧。
 - 表紙・裏表紙は独立した単独ページ種別。本文の面とPDF通し位置、エディタの見開きグループは別に管理する（F05-3）。表紙の表示・非表示で本文の面は変化しない。
 - 章開始は原稿順序と独立した条件として任意の面、左、右等を選べる。原稿ファイル（manuscriptセクション）の切替時は既定で新ページから開始する。個別のstartOn=continuousで連続配置を選べる。continuousは部品の自動開始条件に優先する（F04-4）。抑制範囲はファイル先頭のブロックのみとし、ファイル途中の部品開始条件は維持する（Q12追加回答A）。startOn=page/left/right/spread-start/spread-endを選択可能とする（暫定名）。文書先頭や既にページ先頭の場合は余分な空白を追加しない。章の意味的階層はファイル境界とは独立する。必要な空白を自動で生成する。自動空白は保存せず再計算し、手動空白は原稿に記録する。連続する意図的空白も保持。
-- ページ番号区間: 開始アンカーと終了アンカー、開始値、書式（算用数字/ローマ数字/非表示）、番号表示位置、フォント、空白を数えるか、空白に印字するかを設定する。既定は前付・表紙に番号を印字せず、本文先頭を1、後付も指定区間内なら連番。物理ページ位置・誌面番号カウンタ・印字可否を区別する。countBlankとprintBlankは別属性であり、数えないページには新しい番号を割り当てず印字もしない。個別blank-pageのnumbered属性（暫定）は印字可否を上書きし、カウンタの増分は区間ルールに従う。面調整用の派生空白が区間の開始直前にある場合は開始アンカーより前のページとして扱う。前の番号区間に含まれていればその区間の規則、どの区間にも含まれなければ番号未割当とする。個別の区間境界と空白カウント設定で制御できる。
-- アンカーは章IDまたは永続ブロックIDの境界。区間開始・終了はページ境界にする（必要時は出版設定を根拠に派生改ページを生成する。Markdownへのpagebreak挿入は行わない）。開始を含み終了を含まない。区間の重複、逆順、欠落はエラー。ページ途中から別番号を表示しない。
+- ページ番号区間: 開始アンカーと終了アンカー、開始値、書式（算用数字/ローマ数字）、印字有無（独立属性）、番号表示位置、フォント、空白を数えるか、空白に印字するかを設定する。既定は前付・表紙に番号を印字せず、本文先頭を1、後付も指定区間内なら連番。物理ページ位置・誌面番号カウンタ・印字可否を区別する。countBlankとprintBlankは別属性であり、数えないページには新しい番号を割り当てず印字もしない。個別blank-pageのnumbered属性（暫定）は印字可否を上書きし、カウンタの増分は区間ルールに従う。面調整用の派生空白が区間の開始直前にある場合は開始アンカーより前のページとして扱う。前の番号区間に含まれていればその区間の規則、どの区間にも含まれなければ番号未割当とする。個別の区間境界と空白カウント設定で制御できる。
+- アンカーはセクションIDまたは永続ブロックIDの境界。区間開始・終了はページ境界にする（必要時は出版設定を根拠に派生改ページを生成する。Markdownへのpagebreak挿入は行わない）。開始を含み終了を含まない。区間の重複、逆順、欠落はエラー。ページ途中から別番号を表示しない。
 - 目次は見出し階層から自動生成。挿入位置は明示的な書籍設定または専用ブロックとし、原稿を自動書換えしない。表示ページ番号は最終ページ計画を参照。番号非表示と番号未割当を区別する。番号未割当の見出しは目次に含められるが、ページ番号欄は空欄とし、PDF内部リンクの対象にはできる。目次の増減でページ番号が変わるため、安定するまで回数制限付き再組版し、収束しない場合は出力前に診断する。
 - 表示番号とPDF内部のページ位置を併記。空白ページ・表紙を含む物理ページ数を別に表示。章の並べ替えは章を移動し、再流動する本文ページ自体を勝手にドラッグ移動しない。
 
@@ -576,12 +586,13 @@ BCMは独立した公開文書形式・TypeScriptライブラリとして開発�
       .bookcreator/      # キャッシュ・復旧・個人設定（Git除外）
       dist/              # PDF等の生成物（原則Git除外）
 
-book.yaml例（暫定）:
+book.yaml例（概要。詳細スキーマはPROJECT_FORMAT.mdを参照）:
 
     schemaVersion: 1
+    documentFormat: {name: bcm, version: 1}
     title: "共同制作のためのゲーム開発入門書"
     language: ja
-    theme: themes/default
+    theme: themes/default/theme.yaml
     page:
       size: A4
       binding: left
@@ -589,11 +600,11 @@ book.yaml例（暫定）:
       defaultSectionStart: page
       margin: {top: 18mm, bottom: 20mm, inner: 23mm, outer: 18mm}
     sections:
-      - {id: cover, type: cover, src: assets/cover.png, fit: cover}
-      - {id: intro, type: manuscript, path: manuscript/01-introduction.md}
-      - {id: unity, type: manuscript, path: manuscript/02-unity.md, startOn: right}
-      - {id: git, type: manuscript, path: manuscript/03-git.md}
-      - {id: back, type: blank} # 番号区間の終端例。裏表紙は別のcover種別として指定
+      - {id: cover, type: cover, role: front-cover, src: assets/cover.png, fit: cover}
+      - {id: intro, type: manuscript, role: front-matter, path: manuscript/01-introduction.md}
+      - {id: unity, type: manuscript, role: body, path: manuscript/02-unity.md, startOn: right}
+      - {id: git, type: manuscript, role: body, path: manuscript/03-git.md}
+      - {id: back, type: blank, count: 1} # 番号区間の終端例。裏表紙はcover種別
     numbering:
       - start: "section:unity"
         endExclusive: "section:back"
@@ -611,7 +622,7 @@ book.yaml例（暫定）:
 
 MarkdownをGUI操作の記録先とするのは、原稿の個別の内容・配置・レイアウト指示に限る。画像の75%幅・中央寄せ・クロップ等はfigure属性、共通画像スタイルはテーマのimage部品、表紙画像のフィット等はbook.yaml内の表紙設定へ記録する。選択した画像の個別編集と全画像に適用する既定値編集を別の操作として明示する。単一の幅指定を複数ファイルに重複保存しない。
 
-GUI操作は有効な型付き属性へ変換し、原稿の該当ノードだけに書き戻す。マウスドラッグ中の中間サイズや座標は一時状態であり、ドラッグ終了/適用時に一回のUndo可能な編集として保存対象に加える。自動的に縮小された画像やレイアウト上の計測値は派生値であって、Markdownに書き戻さない。幅の%は表示領域に対する割合、mm/ptは物理寸法、autoは部品既定値とする。元画像の画素数を書き換えない。
+GUI操作は有効な型付き属性へ変換し、原稿の該当ノードだけに書き戻す。マウスドラッグ中の中間サイズや座標は一時状態であり、ドラッグ終了/適用時に一回のUndo可能な編集として保存対象に加える。自動的に縮小された画像やレイアウト上の計測値は派生値であって、Markdownに書き戻さない。幅の%は表示領域に対する割合、mm/ptは物理寸法。属性省略は部品既定値の継承、明示autoは自然寸法等の計測による解決と区別する。元画像の画素数を書き換えない。
 
 外部から画像を追加する際はプロジェクト内の素材ファイルの追加とMarkdown参照の更新を一つの論理操作として扱う。コピー失敗時に参照だけを残さず、参照更新に失敗した場合も回復可能にする。GitHub接続でも同じローカルファイル操作を用いる。生成されたサムネイルやプレビュー画像はキャッシュ扱い。画像サイズ変更による変更差分は原則Markdownまたはテーマだけに現れ、元画像のバイナリ差分は発生しない。
 
@@ -845,7 +856,7 @@ rendererは未信頼の原稿・テーマ・素材を扱う。nodeIntegrationを
 8. 性能・品質基準の数値化と試験環境。
 9. 組版境界のGUI操作、警告分類、Finalize状態管理の実装検証。試し出力を許す方針は初期案として採用し、正式版とのUI上の区別を検証する。
 
-この文書は実装を開始する前の基本設計であり、候補技術や暫定記法を既に実装済み・検証済みと扱わない。次はPhase 0と並行して画面設計・形式仕様・データスキーマ・エラー仕様を詳細化し、設計判断を記録する。
+この文書は実装を開始する前の基本設計であり、候補技術や暫定記法を既に実装済み・検証済みと扱わない。詳細設計の初稿を分離済み。次はDEVELOPMENT_PLANのD01〜D07を基礎としてPoCを実施し、未達・設計判断を記録する。公開範囲、番号体系、脚注の反復表示はDECISIONS.md Q15〜Q17を確認する。Q11/Q14は引き続き保留。
 
 ### 11.1 仕様レビュー回答（2026-11-26）
 
