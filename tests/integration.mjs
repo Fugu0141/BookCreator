@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
-import {editDocument,compileMeasuredManuscript,canReviewLayout,prepareBrowserPreview,prepareBookBrowserPreview,defaultHeadingDesign,previewSourceRange,planInlineFormat,planListFormat} from '../dist/index.js';
+import {editDocument,compileMeasuredManuscript,canReviewLayout,prepareBrowserPreview,prepareBookBrowserPreview,defaultHeadingDesign,previewSourceRange,planInlineFormat,planListFormat,planListIndent,planListBatch} from '../dist/index.js';
 const load = (variable, fallback) => import(pathToFileURL(resolve(process.env[variable] ?? fallback)).href);
 const bcm = await load('BCM_DIST', '../BookCreator_Markdown/dist/index.js');
 const engine = await load('ENGINE_DIST', '../BookCreator_LayoutEngine/dist/index.js');
@@ -516,4 +516,59 @@ test('isolated line list toolbar preserves exact CRLF source and selection',()=>
     const word=source.includes('one')?'one':'code',start=source.indexOf(word);
     assert.throws(()=>planListFormat(source,start,start+word.length,'ordered',bcm.scanDocument),RangeError,source);
   }
+});
+
+test('list indent and outdent edit only leading whitespace, preserving CRLF and styled body',()=>{
+  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds};
+  for(const [parent,prefix] of [['- ','  '],['3. ','   ']]){
+    const source=parent+'親項目\r\n'+prefix+'- 既存の子\r\n- **重要**な項目\r\n- 次の項目\r\n';
+    const start=source.indexOf('重要'),end=start+2;
+    const p=planListIndent(source,start,end,'indent',bcm.scanDocument);
+    assert.deepEqual(p.patch,{range:{start:source.indexOf('- **'),end:source.indexOf('- **')},expected:'',replacement:prefix});
+    const next=bcm.applyPatches(source,[p.patch]);
+    assert.equal(next,source.replace('- **',prefix+'- **'));
+    assert.equal(next.slice(p.selection.start,p.selection.end),'重要');
+    const compiled=prepareBrowserPreview({documentId:'list',revision:'1',source:next,startOn:'page'},'1','indent',{width:100000,height:70000},deps);
+    assert.deepEqual(compiled.diagnostics,[]);
+    assert.deepEqual(compiled.options.blocks.map(b=>b.listItem.depth),[0,1,1,0]);
+    const out=planListIndent(next,p.selection.start,p.selection.end,'outdent',bcm.scanDocument);
+    assert.equal(bcm.applyPatches(next,[out.patch]),source);
+    assert.deepEqual(out.selection,{start,end});
+  }
+  for(const [source,word,dir] of [
+    ['- one\n- two\n','one','indent'],
+    ['- one\n\n- two\n','two','indent'],
+    ['- one\n  - two\n','one','indent'],
+    ['- one\n  - two\n  - three\n','two','outdent'],
+    ['12. one\n- two\n','two','indent'],
+    ['- one\n  - two\n','two','indent'],
+    ['- one\n- two\n','two','outdent'],
+    ['- one\n- two\ncontinuation\n','two','indent'],
+    [':::callout{kind="tip"}\n- one\n- two\n:::\n','two','indent']
+  ]){
+    const start=source.indexOf(word);
+    assert.throws(()=>planListIndent(source,start,start+word.length,dir,bcm.scanDocument),RangeError,source);
+  }
+});
+
+test('batch list formatting converts a whole isolated run, keeps markup and mixed line endings',()=>{
+  const source='# 見出し\r\n\r\n**第一項**\r\n第二項\n第三項。\r\n\r\n結び。';
+  let raw=source,range={start:raw.indexOf('**第一項**'),end:raw.indexOf('第三項。')+'第三項。'.length};
+  const expected=['- **第一項**\r\n- 第二項\n- 第三項。','1. **第一項**\r\n2. 第二項\n3. 第三項。','**第一項**\r\n第二項\n第三項。'];
+  for(const [i,kind] of ['bullet','ordered','ordered'].entries()){
+    const plan=planListBatch(raw,range.start,range.end,kind,bcm.scanDocument);
+    raw=bcm.applyPatches(raw,[plan.patch]);range=plan.selection;
+    assert.equal(raw,source.replace('**第一項**\r\n第二項\n第三項。',expected[i]));
+    assert.equal(raw.slice(range.start,range.end),expected[i]);
+    const p=prepareBrowserPreview({documentId:'batch',revision:'1',source:raw,startOn:'page'},'1','batch',{width:100000,height:70000},{scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds});
+    assert.deepEqual(p.diagnostics,[]);
+    assert.equal(p.options.blocks.filter(b=>b.listItem).length,i===2?0:3);
+  }
+  assert.equal(raw,source);
+  for(const raw of ['- one\n  - two\n','- one\n+ two\n','one\n\n two\n','one\n- two\n','one\n\`\`\`\ncode\n\`\`\`','- one\n- two\n\n- three\n','one\n[link](url)\n']){
+    const end=raw.includes('\n\n- three')?raw.indexOf('\n\n- three'):raw.length;
+    assert.throws(()=>planListBatch(raw,0,end,'ordered',bcm.scanDocument),RangeError,raw);
+  }
+  assert.throws(()=>planListBatch('first\nsecond\nthird',0,12,'bullet',bcm.scanDocument),RangeError);
+  assert.throws(()=>planListBatch('first\nsecond',1,12,'bullet',bcm.scanDocument),RangeError);
 });
