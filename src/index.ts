@@ -38,4 +38,4 @@ export * from './inline-edit.js';
 
 export {planListIndent,planListBatch} from './list-edit.js';
 
-export {inspectDisplayMath,planDisplayMath} from './math-edit.js';
+export {inspectDisplayMath,planDisplayMath,inspectInlineMath,planInlineMath} from './math-edit.js';
