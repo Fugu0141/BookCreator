@@ -17,10 +17,11 @@ export function editDocument(snapshot: DocumentSnapshot, expectedRevision: numbe
   if (!Number.isSafeInteger(snapshot.revision + 1)) throw new RangeError('Revision overflow');
   return Object.freeze({ ...snapshot, source, revision: snapshot.revision + 1 });
 }
-export interface LayoutTicket { readonly revision: string; readonly fingerprint: string; readonly completeness: 'full'|'partial' }
+export interface LayoutTicket { readonly revision: string; readonly fingerprint: string; readonly completeness: 'full'|'partial'; readonly publicationReady?: boolean }
 export function canAcceptLayout(current: Pick<LayoutTicket,'revision'|'fingerprint'>, result: LayoutTicket): boolean {
   return current.revision === result.revision && current.fingerprint === result.fingerprint;
 }
 export function canReviewLayout(current: Pick<LayoutTicket,'revision'|'fingerprint'>, result: LayoutTicket): boolean {
-  return canAcceptLayout(current,result) && result.completeness === 'full';
+  return canAcceptLayout(current,result) && result.completeness === 'full' && result.publicationReady === true;
 }
+export {compileMeasuredManuscript, type Manuscript, type SemanticItem} from './manuscript-poc.js';
