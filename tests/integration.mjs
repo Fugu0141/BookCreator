@@ -572,3 +572,36 @@ test('batch list formatting converts a whole isolated run, keeps markup and mixe
   assert.throws(()=>planListBatch('first\nsecond\nthird',0,12,'bullet',bcm.scanDocument),RangeError);
   assert.throws(()=>planListBatch('first\nsecond',1,12,'bullet',bcm.scanDocument),RangeError);
 });
+
+
+test('BCM display math -> strict engine block and exact formula offsets (LF and CRLF)',()=>{
+  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds,validateDisplayMath:engine.parsePreviewMath};
+  const size={width:100000,height:70000},formula='  \\frac{a_1^2}{\\sqrt{b}} ';
+  for(const nl of ['\n','\r\n']){
+    const source=['導入。','','$$ ',formula,'$$','','結び。'].join(nl);
+    const doc={documentId:'math',revision:'1',source,startOn:'page'};
+    const one=prepareBrowserPreview(doc,'1','math',size,deps);
+    const book=prepareBookBrowserPreview([doc],'1','math',size,deps);
+    for(const p of [one,book]){
+      assert.deepEqual(p.diagnostics,[]);
+      const blocks=p.options.blocks??p.options.sections[0].blocks;
+      assert.equal(blocks.length,3);
+      const math=blocks[1];assert.equal(math.displayMath,true);assert.equal(math.splitPolicy,'strict');
+      assert.equal(math.request.text,formula);assert.equal(math.request.inlineStyles,undefined);
+      assert.equal(math.component,undefined);assert.equal(math.sourceMap,undefined);
+      assert.equal(math.sourceTextStart,source.indexOf(formula));
+      assert.equal(source.slice(math.sourceTextStart,math.sourceTextStart+formula.length),formula);
+      assert.equal(source.slice(math.origin.range.start,math.origin.range.end),['$$ ',formula,'$$',''].join(nl));
+      assert.equal(engine.parsePreviewMath(math.request.text).children[0].kind,'frac');
+    }
+  }
+});
+test('display math rejects incomplete fences, unsupported formulas and absent validator',()=>{
+  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds,validateDisplayMath:engine.parsePreviewMath};
+  const run=(source,d=deps)=>prepareBrowserPreview({documentId:'math',revision:'1',source,startOn:'page'},'1','math',{width:100000,height:70000},d);
+  for(const source of ['$$\n\n$$\n','$$\nx+y\nz\n$$\n','$$\nx^2\n','$$\n\\input{secret}\n$$\n','$$\nx^2^3\n$$\n','$$\n'+ 'x'.repeat(2049)+'\n$$\n','$$\rx+1\r$$\r',':::callout{kind="note"}\n$$\nx\n$$\n:::\n']){
+    assert.equal(run(source).options,undefined,source);
+  }
+  assert.equal(run('$$\nx\n$$\n',{...deps,validateDisplayMath:undefined}).options,undefined);
+  assert.ok(run('$$\nx\n$$').options);
+});

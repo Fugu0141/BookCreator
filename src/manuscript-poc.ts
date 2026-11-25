@@ -9,13 +9,15 @@ export interface Scan {source:string;blocks:readonly ScanBlock[];diagnostics:rea
 export interface Manuscript {documentId:string;revision:string;source:string;startOn:'page'|'continuous'}
 export interface Origin {documentId:string;revision:string;blockKey:string;range:Range;persistentId?:string}
 export type SemanticListItem=({kind:'bullet'}|{kind:'ordered';number:number})&{depth:number};
-export interface SemanticItem {kind:'heading'|'paragraph'|'figure'|'study'|'list';listItem?:SemanticListItem;studyKind?:StudyKind;componentId?:string;sourceTextStart?:number;namedSlots?:NamedSlotSource[];origin:Origin;text:string;level?:number;attributes?:Readonly<Record<string,string>>}
+export interface SemanticItem {kind:'heading'|'paragraph'|'figure'|'study'|'list'|'math';listItem?:SemanticListItem;studyKind?:StudyKind;componentId?:string;sourceTextStart?:number;namedSlots?:NamedSlotSource[];origin:Origin;text:string;level?:number;attributes?:Readonly<Record<string,string>>}
 type MeasuredBlock={kind:'block';origin:Origin;width:number;unitHeights:readonly number[];splitPolicy:'allow'|'strict';startPosition?:'page-top';startPositionSource?:'component'};
 type Break={kind:'pagebreak';origin:Origin};
 interface Input {schemaVersion:1;revision:string;fingerprint:string;content:{width:number;height:number};sections:{id:string;startOn:'page'|'continuous';blocks:(MeasuredBlock|Break)[]}[]}
 export interface Issue {code:string;message:string;documentId:string;range:Range}
 export interface PreparationDependencies<S extends Scan> {
   scan:(source:string)=>S;
+  /** Host supplies the Engine's bounded formula parser; no duplicate TeX grammar here. */
+  validateDisplayMath?:(formula:string)=>unknown;
   validate:(parsed:S)=>{diagnostics:readonly {code:string;range:Range;message:string}[]};
   index:(docs:readonly {documentId:string;revision:string;parsed:S}[])=>{diagnostics:readonly {code:string;occurrence:{documentId:string;range:Range}}[]};
 }
@@ -78,6 +80,14 @@ export function prepareManuscript<S extends Scan>(documents:readonly Manuscript[
         const match=/^ {0,3}(#{1,6})[ \t]+(.+)$/.exec(text);
         if(!match||!plainBody(match[2])){unsupported(b.range,'Only supported inline text in ATX headings');continue;}
         emit({kind:'heading',origin:origin(b.range),level:match[1].length,text:match[2]},content.width);
+      }else if(b.kind==='math'){
+        // Only a scanner-owned, three-line display fence. Keep formula bytes/UTF-16 offsets,
+        // including ordinary spaces, and never reinterpret TeX as inline Markdown.
+        const raw=doc.source.slice(b.range.start,b.range.end);
+        const match=/^(\$\$[ \t]*(?:\r\n|\n))([^\r\n]+)(?:\r\n|\n)\$\$[ \t]*(?:\r\n|\n)?$/.exec(raw);
+        if(!match||!match[2].trim()||match[2].length>2048||!deps.validateDisplayMath){unsupported(b.range,'Expected a supported single-line display math formula');continue;}
+        try{deps.validateDisplayMath(match[2]);}catch(e){unsupported(b.range,'Unsupported display math: '+String(e instanceof Error?e.message:e));continue;}
+        emit({kind:'math',origin:origin(b.range),text:match[2],sourceTextStart:b.range.start+match[1].length},content.width);
       }else if(b.kind==='raw'&&listLine(b)){
         let root:{marker:string;number:number;contentIndent:number}|undefined;
         let child:{marker:string;number:number}|undefined;
