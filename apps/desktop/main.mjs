@@ -246,12 +246,27 @@ async function smoke(){
   await until("Number(document.querySelector('#lab-canvas-x')?.value)==="+draggedX+" && document.querySelector('#lab-apply').disabled");
   await exec("document.querySelector('#lab-measure').click()");
   await until("!document.querySelector('#lab-apply').disabled");
+  const originalWidth=await exec("Number(document.querySelector('#lab-canvas-content-width').value)");
+  const handlePoint=await exec("(()=>{const h=document.querySelector('#lab-preview > div').shadowRoot.querySelector('[data-content-slot] [data-lab-resize-handle]');h.scrollIntoView({block:'center',inline:'center'});const r=h.getBoundingClientRect();return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)};})()");
+  win.webContents.sendInputEvent({type:'mouseMove',...handlePoint});
+  win.webContents.sendInputEvent({type:'mouseDown',...handlePoint,button:'left',clickCount:1});
+  win.webContents.sendInputEvent({type:'mouseMove',x:handlePoint.x-8,y:handlePoint.y,button:'left'});
+  win.webContents.sendInputEvent({type:'mouseUp',x:handlePoint.x-8,y:handlePoint.y,button:'left',clickCount:1});
+  await until("Number(document.querySelector('#lab-canvas-content-width')?.value)<"+originalWidth+" && !document.querySelector('#lab-apply').disabled");
+  const resizedWidth=await exec("Number(document.querySelector('#lab-canvas-content-width').value)");
+  await exec("document.querySelector('#lab-undo').click()");
+  await until("Number(document.querySelector('#lab-canvas-content-width')?.value)==="+originalWidth+" && document.querySelector('#lab-apply').disabled");
+  await exec("document.querySelector('#lab-redo').click()");
+  await until("Number(document.querySelector('#lab-canvas-content-width')?.value)==="+resizedWidth+" && document.querySelector('#lab-apply').disabled");
+  await exec("document.querySelector('#lab-measure').click()");
+  await until("!document.querySelector('#lab-apply').disabled");
   await exec("document.querySelector('#lab-apply').click()");
   await until("!document.querySelector('#open').disabled && !document.querySelector('#lab-measure')");
   await exec("document.querySelector('#preview-book').click()");
   await until("!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-component-canvas]')");
   if(!await exec("Math.abs(parseFloat(document.querySelector('#preview > div').shadowRoot.querySelector('[data-component-canvas] [data-content-slot]').style.left)-"+draggedX+"*96/25.4)<.02"))throw Error('Dragged coordinate not persisted');
-  console.log('PASS Canvas actual mouse drag, undo/redo and persisted paper; Canvas numeric coordinates and actual paper rendering; nested component grouping and actual book preview; H1-specific fixed label and independent font; Component Lab measure, discard, apply and actual book rendering; book settings save and physical whole-book preview; imported project font, license metadata, theme selection, actual font rendering; Electron project creation, theme save/reopen, Electron sandbox, project open/read, React editing, bundled Noto, independent font roles, stale invalidation, measured preview, source selection and save');
+  if(!await exec("Math.abs(parseFloat(document.querySelector('#preview > div').shadowRoot.querySelector('[data-content-slot]').style.width)-"+resizedWidth+"*96/25.4)<.02 && !document.querySelector('#preview > div').shadowRoot.querySelector('[data-lab-resize-handle]')"))throw Error('Resized width not persisted or editor handle leaked');
+  console.log('PASS Canvas resize, undo/redo and persisted width; Canvas actual mouse drag, undo/redo and persisted paper; Canvas numeric coordinates and actual paper rendering; nested component grouping and actual book preview; H1-specific fixed label and independent font; Component Lab measure, discard, apply and actual book rendering; book settings save and physical whole-book preview; imported project font, license metadata, theme selection, actual font rendering; Electron project creation, theme save/reopen, Electron sandbox, project open/read, React editing, bundled Noto, independent font roles, stale invalidation, measured preview, source selection and save');
   closing=true;win.destroy();await rm(smokeRoot,{recursive:true,force:true});app.exit(0);
 }
 app.on('window-all-closed',()=>{if(!SMOKE)app.quit();});
