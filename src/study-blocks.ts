@@ -1,4 +1,4 @@
-import {compileHeadingDesign,studyKinds,type StudyKind,type HeadingDesign} from './preview-component.js';
+import {compileHeadingDesign,studyKinds,type StudyKind,type HeadingDesign,type ComponentLibraryEntry} from './preview-component.js';
 import type {PreviewTextStyle} from './preview-typography.js';
 export {type StudyKind} from './preview-component.js';
 const presets:Readonly<Record<StudyKind,{label:string;background:string;color:string}>>=Object.freeze({
@@ -36,4 +36,19 @@ export function studyTemplate(kind:StudyKind){
   if(!studyKinds.includes(kind))throw RangeError('Unknown study block');
   const directive=['note','tip','warning','important'].includes(kind)?'callout{kind="'+kind+'"}':'component{name="'+kind+'"}';
   return ':::'+directive+'\n'+presets[kind].label+'の本文を入力してください。\n:::\n';
+}
+
+export const isCustomComponentId=(value:unknown):value is string=>typeof value==='string'&&/^component-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(value);
+export function customStudyId(name:string,attrs:Readonly<Record<string,string>>):string|undefined{
+  if(name!=='component'||!isCustomComponentId(attrs.name)||Object.keys(attrs).some(k=>k!=='name'&&k!=='title'))return;
+  if(Object.hasOwn(attrs,'title')&&(!attrs.title.trim()||attrs.title.length>128||/[\p{Cc}\p{Cs}\p{Cf}\p{Zl}\p{Zp}]/u.test(attrs.title)))return;
+  return attrs.name;
+}
+export function compileCustomStudyBlock(entry:ComponentLibraryEntry,title:string|undefined,body:PreviewTextStyle){
+  if(entry.usage!=='study'||!isCustomComponentId(entry.id))throw RangeError('Component usage does not match custom study block');
+  return compileHeadingDesign(entry.design,body,{'study-label':title===undefined?entry.name:entry.name+'：'+title,'study-title':title,'study-kind':entry.name},'study');
+}
+export function customStudyTemplate(id:string){
+  if(!isCustomComponentId(id))throw RangeError('Invalid custom component ID');
+  return ':::component{name="'+id+'"}\n本文を入力してください。\n:::\n';
 }

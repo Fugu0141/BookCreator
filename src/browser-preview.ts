@@ -1,9 +1,18 @@
-import {compileStudyBlock} from './study-blocks.js';
-import {compileHeadingDesign,compileParagraphDesign,validateHeadingLevels,type HeadingDesign,type HeadingLevel,type HeadingLevels,type HeadingContext,type StudyDesigns} from './preview-component.js';
+import {compileStudyBlock,compileCustomStudyBlock} from './study-blocks.js';
+import {compileHeadingDesign,compileParagraphDesign,validateHeadingLevels,type HeadingDesign,type HeadingLevel,type HeadingLevels,type HeadingContext,type StudyDesigns,type ComponentLibrary,validateComponentLibrary} from './preview-component.js';
 import {resolvePreviewTypography,type PreviewTypography} from './preview-typography.js';
-import {prepareManuscript,type Manuscript,type PreparationDependencies,type Scan} from './manuscript-poc.js';
-export function prepareBrowserPreview<S extends Scan>(document:Manuscript,revision:string,fingerprint:string,content:{width:number;height:number},deps:PreparationDependencies<S>,typography?:PreviewTypography){
+import {prepareManuscript,type Manuscript,type PreparationDependencies,type Scan,type SemanticItem} from './manuscript-poc.js';
+function resolveStudy(item:SemanticItem,body:ReturnType<typeof resolvePreviewTypography>['body'],designs?:StudyDesigns,library?:ComponentLibrary){
+  if(item.componentId){
+    const entry=library?.entries.find(e=>e.id===item.componentId);
+    if(!entry)throw RangeError('Missing custom study component: '+item.componentId);
+    return compileCustomStudyBlock(entry,item.attributes?.title,body);
+  }
+  return compileStudyBlock(item.studyKind!,item.attributes?.title,body,designs?.[item.studyKind!]);
+}
+export function prepareBrowserPreview<S extends Scan>(document:Manuscript,revision:string,fingerprint:string,content:{width:number;height:number},deps:PreparationDependencies<S>,typography?:PreviewTypography,library?:ComponentLibrary){
   const fonts=resolvePreviewTypography(typography);
+  const catalog=library===undefined?undefined:validateComponentLibrary(library);
   const result=prepareManuscript([document],revision,fingerprint,content,deps);
   const diagnostics=[...result.diagnostics];
   const blocks=[];
@@ -16,7 +25,8 @@ export function prepareBrowserPreview<S extends Scan>(document:Manuscript,revisi
     const raw=document.source.slice(item.origin.range.start,item.origin.range.end);
     const offset=item.kind==='study'?item.sourceTextStart!-item.origin.range.start:item.kind==='heading'?raw.indexOf(item.text):0;
     if(offset<0||raw.slice(offset,offset+item.text.length)!==item.text){reject(item.origin,'Cannot establish exact source mapping');continue;}
-    const study=item.kind==='study'?compileStudyBlock(item.studyKind!,item.attributes?.title,fonts.body):undefined;
+    let study:ReturnType<typeof compileStudyBlock>|undefined;
+    if(item.kind==='study')try{study=resolveStudy(item,fonts.body,undefined,catalog);}catch(e){reject(item.origin,String(e instanceof Error?e.message:e));continue;}
     blocks.push({origin:item.origin,request:{text:item.text,width:block.width,fontSize:study?.fontSize??(item.kind==='heading'?6500:4200),...(study?.textStyle??(item.kind==='heading'?fonts.heading:fonts.body)),lineHeight:study?.lineHeight??1.8},splitPolicy:block.splitPolicy,...(study?{component:study.component}:{}),
       sourceTextStart:item.origin.range.start+offset,...(block.startPosition?{startPosition:block.startPosition,startPositionSource:block.startPositionSource}:{})});
   }
@@ -26,8 +36,9 @@ export function prepareBrowserPreview<S extends Scan>(document:Manuscript,revisi
 }
 
 /** Whole-book PoC; preserve section ordering, explicit breaks and exact source ranges. */
-export function prepareBookBrowserPreview<S extends Scan>(documents:readonly Manuscript[],revision:string,fingerprint:string,content:{width:number;height:number},deps:PreparationDependencies<S>,typography?:PreviewTypography,headingDesign?:HeadingDesign|null,headingLevels?:HeadingLevels,paragraphDesign?:HeadingDesign|null,studyDesigns?:StudyDesigns){
+export function prepareBookBrowserPreview<S extends Scan>(documents:readonly Manuscript[],revision:string,fingerprint:string,content:{width:number;height:number},deps:PreparationDependencies<S>,typography?:PreviewTypography,headingDesign?:HeadingDesign|null,headingLevels?:HeadingLevels,paragraphDesign?:HeadingDesign|null,studyDesigns?:StudyDesigns,library?:ComponentLibrary){
   const fonts=resolvePreviewTypography(typography);
+  const catalog=library===undefined?undefined:validateComponentLibrary(library);
   const levels=validateHeadingLevels(headingLevels??{});
   const paragraph=paragraphDesign?compileParagraphDesign(paragraphDesign,fonts.body):undefined;
   const prepared=prepareManuscript(documents,revision,fingerprint,content,deps),diagnostics=[...prepared.diagnostics];
@@ -47,7 +58,7 @@ export function prepareBookBrowserPreview<S extends Scan>(documents:readonly Man
         diagnostics.push({code:'BC_PREVIEW_UNSUPPORTED',message:'Only contiguous plain paragraphs and headings are supported',documentId:item.origin.documentId,range:item.origin.range});continue;
       }
       let design:ReturnType<typeof compileHeadingDesign>|undefined=item.kind==='paragraph'?paragraph:undefined;
-      if(item.kind==='study')try{design=compileStudyBlock(item.studyKind!,item.attributes?.title,fonts.body,studyDesigns?.[item.studyKind!]);}catch(e){diagnostics.push({code:'BC_PREVIEW_COMPONENT',message:String(e instanceof Error?e.message:e),documentId:item.origin.documentId,range:item.origin.range});continue;}
+      if(item.kind==='study')try{design=resolveStudy(item,fonts.body,studyDesigns,catalog);}catch(e){diagnostics.push({code:'BC_PREVIEW_COMPONENT',message:String(e instanceof Error?e.message:e),documentId:item.origin.documentId,range:item.origin.range});continue;}
       if(item.kind==='heading'){
         const level=item.level!;
         if(level===1||!active){chapter++;active=true;chapterTitle=level===1?item.text:undefined;counters.fill(0);counters[0]=chapter;}

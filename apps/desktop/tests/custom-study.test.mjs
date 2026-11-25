@@ -1,0 +1,22 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtemp,rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {createProject,openWorkspace} from '../workspace.mjs';
+import {defaultStudyDesign,customStudyTemplate} from '../../../dist/index.js';
+test('saved manuscript references prevent deletion even without a theme binding',async t=>{
+  const root=await mkdtemp(join(tmpdir(),'bc-custom-study-'));t.after(()=>rm(root,{recursive:true,force:true}));
+  const ws=await createProject(root,{title:'Custom',folder:'book',size:'A5'});
+  const initial=await ws.typography(),added=await ws.changeComponentLibrary(initial.revision,{type:'add',usage:'study',name:'用語解説',design:defaultStudyDesign('note')});
+  const id=added.library.entries[0].id,docs=await ws.readBook(),doc=docs[0];
+  await ws.save(doc.documentId,doc.revision,doc.source+'\n\n'+customStudyTemplate(id));
+  await assert.rejects(ws.changeComponentLibrary(added.revision,{type:'delete',id}),/referenced in manuscript/);
+  const renamed=await ws.changeComponentLibrary(added.revision,{type:'rename',id,name:'用語集'});
+  const reopened=await openWorkspace(join(root,'book','book.yaml'));
+  const saved=await reopened.typography();assert.equal(saved.library.entries[0].id,id);assert.equal(saved.library.entries[0].name,'用語集');
+  const manuscript=await reopened.read(doc.documentId);assert.ok(manuscript.text.includes(id));
+  await reopened.save(doc.documentId,manuscript.revision,doc.source);
+  const deleted=await reopened.changeComponentLibrary(renamed.revision,{type:'delete',id});
+  assert.deepEqual(deleted.library.entries,[]);
+});

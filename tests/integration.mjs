@@ -224,3 +224,23 @@ test('study customization resolves semantic title and source range without affec
   assert.equal(a.component.children[0].text,'注意：確認');assert.equal(b.component.children[0].text,'例題');
   assert.equal(a.splitPolicy,'strict');assert.equal(source.slice(a.sourceTextStart,a.sourceTextStart+a.request.text.length),'本文。');
 });
+
+test('custom component references use stable library identity, not the display name',()=>{
+  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds};
+  const id='component-00000000-0000-4000-8000-000000000001';
+  const source=':::component{#glossary name="'+id+'" title="用語"}\n用語の説明です。\n:::\n';
+  const doc={documentId:'s',revision:'1',source,startOn:'page'},size={width:100000,height:100000};
+  const design={...defaultHeadingDesign(),direction:'column',children:[{id:'custom',type:'dynamic',field:'study-label',prefix:'',suffix:'',fallback:'なし',width:'fill',fontSize:4000,lineHeight:1.5,color:'#123456'},{id:'content',type:'content'}]};
+  const entry={id,name:'用語集',usage:'study',design},catalog={schemaVersion:3,entries:[entry]};
+  const run=library=>prepareBookBrowserPreview([doc],'1','custom',size,deps,undefined,undefined,undefined,undefined,undefined,library);
+  const a=run(catalog),b=run({...catalog,entries:[{...entry,name:'用語解説'}]});
+  assert.deepEqual(a.diagnostics,[]);assert.deepEqual(b.diagnostics,[]);
+  assert.equal(a.options.sections[0].blocks[0].component.children[0].text,'用語集：用語');
+  const block=b.options.sections[0].blocks[0];assert.equal(block.component.children[0].text,'用語解説：用語');
+  assert.equal(block.origin.persistentId,'glossary');assert.equal(source.slice(block.sourceTextStart,block.sourceTextStart+block.request.text.length),'用語の説明です。');
+  const one=prepareBrowserPreview(doc,'1','one',size,deps,undefined,catalog);assert.deepEqual(one.diagnostics,[]);
+  assert.equal(one.options.blocks[0].component.children[0].text,'用語集：用語');
+  assert.equal(run(undefined).options,undefined);assert.match(run(undefined).diagnostics[0].message,/Missing custom/);
+  const wrong=run({schemaVersion:1,entries:[{id,name:'Heading',usage:'heading',design:defaultHeadingDesign()}]});
+  assert.match(wrong.diagnostics[0].message,/usage/);assert.equal(wrong.options,undefined);
+});
