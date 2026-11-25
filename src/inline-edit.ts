@@ -1,9 +1,32 @@
-import {parsePreviewInline,type InlineRun} from './inline-preview.js';
+import {parsePreviewInline,normalizeInlineStyle,serializeInlineStyle,inlineFontFamily,type InlineRun,type InlineStyle} from './inline-preview.js';
 import {studyKind,customStudyId} from './study-blocks.js';
 import {validNamedSlot} from './preview-component.js';
 import type {Scan} from './manuscript-poc.js';
 
-export type InlineFormat='bold'|'italic';
+export type InlineFormat='bold'|'italic'|'underline'|'combined'|{color:string|null}|{font:string|null;weight?:number};
+function changeStyle(style:InlineStyle,format:InlineFormat,legacy:boolean):InlineStyle{
+  const next={...style};
+  if(format==='bold'){
+    if(next.fontWeight===700)delete next.fontWeight;else next.fontWeight=700;
+    if(legacy)delete next.italic;
+  }else if(format==='italic'){
+    if(next.italic)delete next.italic;else next.italic=true;
+    if(legacy)delete next.fontWeight;
+  }else if(format==='combined'){
+    if(next.fontWeight===700&&next.italic){delete next.fontWeight;delete next.italic;}
+    else{next.fontWeight=700;next.italic=true;}
+  }else if(format==='underline'){
+    if(next.underline)delete next.underline;else next.underline=true;
+  }else if(format&&typeof format==='object'&&Object.hasOwn(format,'color')&&Object.keys(format).length===1){
+    const color=(format as {color:string|null}).color;
+    if(color===null)delete next.color;else next.color=color;
+  }else if(format&&typeof format==='object'&&Object.hasOwn(format,'font')&&Object.keys(format).every(k=>k==='font'||k==='weight')){
+    const f=format as {font:string|null;weight?:number};
+    if(f.font===null){delete next.fontFamily;delete next.fontWeight;}
+    else{next.fontFamily=inlineFontFamily(f.font);if(f.weight!==undefined)next.fontWeight=f.weight;}
+  }else throw RangeError('Invalid inline format');
+  return normalizeInlineStyle(next);
+}
 export interface InlineEditPlan {
   patch:{range:{start:number;end:number};expected:string;replacement:string};
   selection:{start:number;end:number}; action:'apply'|'remove'|'replace';
@@ -21,7 +44,7 @@ function slot(b:Extract<Block,{kind:'directive'}>){
 }
 /** Local source edit; the scanner identifies protected ranges. No general Markdown rewriting. */
 export function planInlineFormat(source:string,start:number,end:number,format:InlineFormat,scan:(source:string)=>Scan):InlineEditPlan{
-  if(typeof source!=='string'||source.length>1000000||!Number.isSafeInteger(start)||!Number.isSafeInteger(end)||start<0||end<=start||end>source.length||!['bold','italic'].includes(format))throw RangeError('Invalid inline selection');
+  if(typeof source!=='string'||source.length>1000000||!Number.isSafeInteger(start)||!Number.isSafeInteger(end)||start<0||end<=start||end>source.length)throw RangeError('Invalid inline selection');
   const parsed=scan(source);
   if(parsed.source!==source||parsed.diagnostics.length)throw RangeError('Resolve manuscript scanner diagnostics before formatting');
   const boundaries=new Set([...new Intl.Segmenter(undefined,{granularity:'grapheme'}).segment(source)].map(g=>g.index));boundaries.add(source.length);
@@ -56,29 +79,35 @@ export function planInlineFormat(source:string,start:number,end:number,format:In
   body(parsed.blocks,true);
   if(!target||start<target.start||end>target.end)return fail();
   const line=source.slice(target.start,target.end),before=parsePreviewInline(line,target.start);
-  const mark=format==='bold'?'**':'*';
+  let previous:InlineStyle={},preferSpan=false,inner:string;
   const styled=before.sourceMap.segments.filter(s=>s.rawStart!==s.outerStart);
   const hits=styled.filter(s=>start<s.outerEnd&&end>s.outerStart);
-  let logicalStart:number,logicalEnd:number,patchStart=start,patchEnd=end,replacement:string,action:InlineEditPlan['action'];
+  let logicalStart:number,logicalEnd:number,patchStart=start,patchEnd=end;
   if(hits.length){
     if(hits.length!==1)return fail();
     const s=hits[0];
     if(!((start===s.outerStart&&end===s.outerEnd)||(start===s.rawStart&&end===s.rawStart+s.end-s.start)))return fail();
     logicalStart=s.start;logicalEnd=s.end;patchStart=s.outerStart;patchEnd=s.outerEnd;
-    const inner=before.text.slice(s.start,s.end),old=source.slice(s.outerStart,s.rawStart);
-    action=old===mark?'remove':'replace';replacement=action==='remove'?inner:mark+inner+mark;
+    inner=before.text.slice(s.start,s.end);preferSpan=source.startsWith(':style{',s.outerStart);
+    const run=before.inlineStyles.find(r=>r.start===s.start&&r.end===s.end);if(!run)return fail();
+    const {start:_,end:__,...style}=run;previous=style;
   }else{
     const first=before.sourceMap.segments.find(s=>s.rawStart<=start&&start<s.rawStart+s.end-s.start);
     const last=before.sourceMap.segments.find(s=>s.rawStart<end&&end<=s.rawStart+s.end-s.start);
     if(!first||!last)return fail();
     logicalStart=first.start+start-first.rawStart;logicalEnd=last.start+end-last.rawStart;
     const selected=source.slice(start,end);if(!selected.trim()||selected.trim()!==selected)return fail();
-    replacement=mark+selected+mark;action='apply';
+    inner=selected;
   }
+  const style=changeStyle(previous,format,!preferSpan&&(format==='bold'||format==='italic'));
+  const serialized=serializeInlineStyle(inner,style,preferSpan||typeof format==='object'||format==='underline'||format==='combined');
+  const replacement=serialized.raw;
+  if(source.slice(patchStart,patchEnd)===replacement)throw RangeError('No format change');
+  const action:InlineEditPlan['action']=!Object.keys(style).length?'remove':hits.length?'replace':'apply';
   const nextLine=line.slice(0,patchStart-target.start)+replacement+line.slice(patchEnd-target.start);
   const after=parsePreviewInline(nextLine,target.start);
   const expected:InlineRun[]=before.inlineStyles.filter(s=>s.end<=logicalStart||s.start>=logicalEnd);
-  if(action!=='remove')expected.push({start:logicalStart,end:logicalEnd,...(format==='bold'?{fontWeight:700}:{italic:true})});
+  if(action!=='remove')expected.push({start:logicalStart,end:logicalEnd,...style});
   expected.sort((a,b)=>a.start-b.start);
   if(after.text!==before.text||JSON.stringify(after.inlineStyles)!==JSON.stringify(expected))return fail();
   // Compare structural scanner identity and source boundaries after the hypothetical patch.
@@ -89,6 +118,6 @@ export function planInlineFormat(source:string,start:number,end:number,format:In
     return [b.kind,shift(b.range.start),shift(b.range.end),b.kind==='directive'?[b.closed,b.header.name,b.header.id,b.header.attributes.map(a=>[a.key,a.value]),signature(b.children,changed)]:b.level];
   });
   if(rescanned.source!==next||rescanned.diagnostics.length||JSON.stringify(signature(parsed.blocks,true))!==JSON.stringify(signature(rescanned.blocks,false)))return fail();
-  const innerStart=patchStart+(action==='remove'?0:mark.length);
+  const innerStart=patchStart+serialized.innerOffset;
   return {patch:{range:{start:patchStart,end:patchEnd},expected:source.slice(patchStart,patchEnd),replacement},selection:{start:innerStart,end:innerStart+logicalEnd-logicalStart},action};
 }
