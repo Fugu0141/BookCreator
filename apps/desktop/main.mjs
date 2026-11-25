@@ -90,6 +90,7 @@ async function run(){
     const fonts=await loadProjectFonts(current);return {...result,fonts};
   });
   handle('changeComponentLibrary',async(...args)=>{checkArgs(args,2);return requireWorkspace().changeComponentLibrary(...args);});
+  handle('saveParagraphDesign',async(...args)=>{checkArgs(args,2);return requireWorkspace().saveParagraphDesign(...args);});
   handle('saveHeadingDesign',async(...args)=>{checkArgs(args,3);return requireWorkspace().saveHeadingDesign(...args);});
   handle('saveTypography',async(...args)=>{checkArgs(args,2);return requireWorkspace().saveTypography(...args);});
   handle('readBook',async(...args)=>{checkArgs(args,0);return requireWorkspace().readBook();});
