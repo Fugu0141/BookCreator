@@ -84,7 +84,7 @@ export function prepareManuscript<S extends Scan>(documents:readonly Manuscript[
         let primary:{text:string;sourceTextStart:number}|undefined;
         const namedSlots:NamedSlotSource[]=[];
         if(children.length===1&&children[0].kind==='raw')primary=readLine(children[0],b.range,h.range.end);
-        else if(h.name==='component'&&children.length>=2&&children.length<=9){
+        else if(h.name==='component'&&children.length>=1&&children.length<=9){
           const names=new Set<string>();let invalid=false;
           for(const slot of children){
             if(slot.kind!=='directive'||!slot.closed||slot.header.kind!=='container'||slot.header.name!=='slot'||slot.header.id||slot.header.attributes.length!==1||slot.header.attributes[0].key!=='name'||slot.range.start<h.range.end||slot.range.end>b.range.end){invalid=true;break;}
