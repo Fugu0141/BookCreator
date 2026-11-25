@@ -130,7 +130,7 @@ async function smoke(){
   await until("!document.querySelector('#open').disabled");
   await exec("document.querySelector('#font-manager').click()");
   await until("!!document.querySelector('#font-license')");
-  await exec("(()=>{for(const [id,value] of [['font-license','DejaVu test font'],['font-license-text','Disposable CI fixture, DejaVu font license recorded for testing']]){const e=document.getElementById(id);Object.getOwnPropertyDescriptor((e.tagName==='TEXTAREA'?HTMLTextAreaElement:HTMLInputElement).prototype,'value').set.call(e,value);e.dispatchEvent(new Event('input',{bubbles:true}));}document.querySelector('#font-copy').click();})()");
+  await exec("(()=>{for(const [id,value] of [['font-license','Liberation Sans test font'],['font-license-text','Disposable CI fixture, Liberation Sans font license recorded for testing']]){const e=document.getElementById(id);Object.getOwnPropertyDescriptor((e.tagName==='TEXTAREA'?HTMLTextAreaElement:HTMLInputElement).prototype,'value').set.call(e,value);e.dispatchEvent(new Event('input',{bubbles:true}));}document.querySelector('#font-copy').click();})()");
   await until("!document.querySelector('#import-font').disabled");
   await exec("document.querySelector('#import-font').click()");
   await until("!document.querySelector('#open').disabled && !!document.querySelector('[data-project-font][data-loaded=true]')");

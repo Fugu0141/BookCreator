@@ -37,7 +37,7 @@ jobs:
         working-directory: BookCreator/apps/desktop
       - name: Select a real static font fixture
         run: |
-          FONT="$(fc-match -f '%{file}' 'DejaVu Sans')"
+          FONT="$(fc-match -f '%{file}' 'Liberation Sans')"
           test -f "$FONT"
           echo "BC_TEST_FONT=$FONT" >> "$GITHUB_ENV"
       - run: npm test && npm run build

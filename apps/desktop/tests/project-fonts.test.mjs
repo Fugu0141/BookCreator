@@ -5,7 +5,7 @@ import {tmpdir} from 'node:os';
 import {join,extname} from 'node:path';
 import {inspectStaticFont,projectFonts} from '../project-fonts.mjs';
 import {createProject,openWorkspace} from '../workspace.mjs';
-const rights={license:'DejaVu fixture',licenseText:'Disposable test fixture; see installed font license',copyAllowed:true,embedAllowed:false};
+const rights={license:'Liberation Sans fixture',licenseText:'Disposable test fixture; see installed font license',copyAllowed:true,embedAllowed:false};
 const font=process.env.BC_TEST_FONT;
 test('malformed SFNT and missing copy permission rejected',async t=>{
   assert.throws(()=>inspectStaticFont(Buffer.alloc(12)),{code:'FONT'});
