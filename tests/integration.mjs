@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
-import {editDocument,compileMeasuredManuscript,canReviewLayout,prepareBrowserPreview,prepareBookBrowserPreview,defaultHeadingDesign,previewSourceRange,planInlineFormat} from '../dist/index.js';
+import {editDocument,compileMeasuredManuscript,canReviewLayout,prepareBrowserPreview,prepareBookBrowserPreview,defaultHeadingDesign,previewSourceRange,planInlineFormat,planListFormat} from '../dist/index.js';
 const load = (variable, fallback) => import(pathToFileURL(resolve(process.env[variable] ?? fallback)).href);
 const bcm = await load('BCM_DIST', '../BookCreator_Markdown/dist/index.js');
 const engine = await load('ENGINE_DIST', '../BookCreator_LayoutEngine/dist/index.js');
@@ -500,5 +500,20 @@ test('scanner list subset preserves marker-free source ranges, numbering and nes
   for(const source of ['  - orphan\n','1. Parent\n  - wrong indent\n','- Parent\n    - deep\n','- Parent\n\n  - loose child\n','- Parent\ncontinuation\n','Paragraph\n- item\n','999. last\n1. overflow\n','- [link](url)\n','- \n']){
     const result=prepareBrowserPreview({...doc,source},'1','bad-list',{width:100000,height:70000},deps);
     assert.equal(result.options,undefined,source);assert.ok(result.diagnostics.length,source);
+  }
+});
+
+test('isolated line list toolbar preserves exact CRLF source and selection',()=>{
+  const source='# 見出し\r\n\r\n**重要**な項目。\r\n\r\n結び。\r\n';
+  let raw=source,selection={start:source.indexOf('重要'),end:source.indexOf('重要')+2};
+  for(const [kind,marker] of [['bullet','- '],['ordered','1. '],['ordered','']]){
+    const plan=planListFormat(raw,selection.start,selection.end,kind,bcm.scanDocument);
+    raw=bcm.applyPatches(raw,[plan.patch]);selection=plan.selection;
+    assert.equal(raw,source.replace('**重要**',marker+'**重要**'));
+    assert.equal(raw.slice(selection.start,selection.end),'重要');
+  }
+  for(const source of ['- one\n- two\n','- one\n\n- two\n','- one\n  - child\n','one\ntwo\n','    code\n',':::callout{kind="tip"}\none\n:::\n','- [one](url)\n']){
+    const word=source.includes('one')?'one':'code',start=source.indexOf(word);
+    assert.throws(()=>planListFormat(source,start,start+word.length,'ordered',bcm.scanDocument),RangeError,source);
   }
 });
