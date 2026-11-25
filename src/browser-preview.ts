@@ -1,3 +1,4 @@
+import {compileHeadingDesign,type HeadingDesign} from './preview-component.js';
 import {resolvePreviewTypography,type PreviewTypography} from './preview-typography.js';
 import {prepareManuscript,type Manuscript,type PreparationDependencies,type Scan} from './manuscript-poc.js';
 export function prepareBrowserPreview<S extends Scan>(document:Manuscript,revision:string,fingerprint:string,content:{width:number;height:number},deps:PreparationDependencies<S>,typography?:PreviewTypography){
@@ -23,12 +24,13 @@ export function prepareBrowserPreview<S extends Scan>(document:Manuscript,revisi
 }
 
 /** Whole-book PoC; preserve section ordering, explicit breaks and exact source ranges. */
-export function prepareBookBrowserPreview<S extends Scan>(documents:readonly Manuscript[],revision:string,fingerprint:string,content:{width:number;height:number},deps:PreparationDependencies<S>,typography?:PreviewTypography){
+export function prepareBookBrowserPreview<S extends Scan>(documents:readonly Manuscript[],revision:string,fingerprint:string,content:{width:number;height:number},deps:PreparationDependencies<S>,typography?:PreviewTypography,headingDesign?:HeadingDesign|null){
+  const heading=headingDesign?compileHeadingDesign(headingDesign):undefined;
   const fonts=resolvePreviewTypography(typography),prepared=prepareManuscript(documents,revision,fingerprint,content,deps),diagnostics=[...prepared.diagnostics];
   if(!prepared.input)return {diagnostics,publicationReady:false as const};
   const byId=new Map(documents.map(d=>[d.documentId,d]));
   const sections=prepared.input.sections.map(section=>{
-    const blocks:(NonNullable<ReturnType<typeof prepareBrowserPreview<S>>['options']>['blocks'][number]|Extract<typeof section.blocks[number],{kind:'pagebreak'}>)[]=[];
+    const blocks:(NonNullable<ReturnType<typeof prepareBrowserPreview<S>>['options']>['blocks'][number] & {component?:ReturnType<typeof compileHeadingDesign>['component']} | Extract<typeof section.blocks[number],{kind:'pagebreak'}>)[]=[];
     for(const block of section.blocks){
       if(block.kind==='pagebreak'){blocks.push(block);continue;}
       const {item}=block;
@@ -37,7 +39,8 @@ export function prepareBookBrowserPreview<S extends Scan>(documents:readonly Man
       if(item.kind==='figure'||/[\r\n]/.test(item.text)||offset<0||raw.slice(offset,offset+item.text.length)!==item.text){
         diagnostics.push({code:'BC_PREVIEW_UNSUPPORTED',message:'Only contiguous plain paragraphs and headings are supported',documentId:item.origin.documentId,range:item.origin.range});continue;
       }
-      blocks.push({origin:item.origin,request:{text:item.text,width:block.width,fontSize:item.kind==='heading'?6500:4200,...(item.kind==='heading'?fonts.heading:fonts.body),lineHeight:1.8},splitPolicy:block.splitPolicy,sourceTextStart:item.origin.range.start+offset,...(block.startPosition?{startPosition:block.startPosition,startPositionSource:block.startPositionSource}:{})});
+      const design=item.kind==='heading'?heading:undefined;
+      blocks.push({origin:item.origin,request:{text:item.text,width:block.width,fontSize:design?.fontSize??(item.kind==='heading'?6500:4200),...(item.kind==='heading'?fonts.heading:fonts.body),lineHeight:design?.lineHeight??1.8},splitPolicy:block.splitPolicy,...(design?{component:design.component}:{}),sourceTextStart:item.origin.range.start+offset,...(block.startPosition?{startPosition:block.startPosition,startPositionSource:block.startPositionSource}:{})});
     }
     return {id:section.id,startOn:section.startOn,blocks};
   });

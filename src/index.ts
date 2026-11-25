@@ -29,3 +29,4 @@ export {prepareManuscript, type PreparationDependencies} from './manuscript-poc.
 export {prepareBrowserPreview} from './browser-preview.js';
 export {resolvePreviewTypography,type PreviewTypography,type PreviewTextStyle,type PreviewFontFamily} from './preview-typography.js';
 export {prepareBookBrowserPreview} from './browser-preview.js';
+export * from './preview-component.js';
