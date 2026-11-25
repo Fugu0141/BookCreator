@@ -244,7 +244,7 @@ export function resolveNamedSlotPresence(compiled:ReturnType<typeof compileHeadi
   const present=new Set(namedSlots.map(s=>s.name)),conditions=new Map(compiled.conditionalGroups.map(g=>[g.id,g.name]));
   type Child=typeof compiled.component.children[number];
   function prune(nodes:Child[]):Child[]{
-    return nodes.flatMap(n=>{
+    return nodes.flatMap((n):Child[]=>{
       if(n.type==='slot')return present.has(n.name)?[n]:[];
       if(n.type==='group'){
         const condition=conditions.get(n.id);if(condition&&!present.has(condition))return [];
