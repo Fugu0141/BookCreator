@@ -213,3 +213,14 @@ test('unsupported study forms and duplicate IDs fail closed',()=>{
     ':::callout{kind="tip" #dup}\n本文。\n:::\n\n:::component{name="example" #dup}\n本文。\n:::\n'
   ])assert.equal(run(source).options,undefined,source);
 });
+
+test('study customization resolves semantic title and source range without affecting other kinds',()=>{
+  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds};
+  const source=':::callout{kind="warning" title="確認"}\n本文。\n:::\n\n:::component{name="example"}\n例題。\n:::\n';
+  const warning={...defaultHeadingDesign(),direction:'column',children:[{id:'custom',type:'dynamic',field:'study-title',prefix:'注意：',suffix:'',fallback:'なし',width:'fill',fontSize:4000,lineHeight:1.5,color:'#123456'},{id:'content',type:'content'}]};
+  const result=prepareBookBrowserPreview([{documentId:'s',revision:'1',source,startOn:'page'}],'1','study-custom',{width:100000,height:100000},deps,undefined,undefined,undefined,undefined,{warning});
+  assert.deepEqual(result.diagnostics,[]);
+  const [a,b]=result.options.sections[0].blocks;
+  assert.equal(a.component.children[0].text,'注意：確認');assert.equal(b.component.children[0].text,'例題');
+  assert.equal(a.splitPolicy,'strict');assert.equal(source.slice(a.sourceTextStart,a.sourceTextStart+a.request.text.length),'本文。');
+});

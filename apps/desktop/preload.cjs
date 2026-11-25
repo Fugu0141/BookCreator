@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld('bookcreator',Object.freeze({
   importImage:allowed=>ipcRenderer.invoke('bookcreator:importImage',allowed),
   importFont:rights=>ipcRenderer.invoke('bookcreator:importFont',rights),
   changeComponentLibrary:(revision,action)=>ipcRenderer.invoke('bookcreator:changeComponentLibrary',revision,action),
+  saveStudyDesign:(revision,design,kind)=>ipcRenderer.invoke('bookcreator:saveStudyDesign',revision,design,kind),
   saveParagraphDesign:(revision,design)=>ipcRenderer.invoke('bookcreator:saveParagraphDesign',revision,design),
   saveHeadingDesign:(revision,design,level)=>ipcRenderer.invoke('bookcreator:saveHeadingDesign',revision,design,level),
   saveTypography:(revision,roles)=>ipcRenderer.invoke('bookcreator:saveTypography',revision,roles),

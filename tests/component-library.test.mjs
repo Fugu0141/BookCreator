@@ -11,7 +11,7 @@ test('library validates and clones independent definitions',()=>{
 test('reject duplicate normalized names, IDs, unsupported usage, malformed and oversize registry',()=>{
   const another={...entry,id:'component-00000000-0000-4000-8000-000000000002'};
   for(const entries of [[entry,another],[entry,{...entry,name:'別名'}],[{...entry,usage:'paragraph'}],[{...entry,name:' '}],[{...entry,id:'__proto__'}],[{...entry,design:{}}],[...Array(33).fill(entry)],[{...entry,name:'Café'},{...another,name:'Cafe\u0301'}]])assert.throws(()=>validateComponentLibrary({schemaVersion:1,entries}),RangeError);
-  assert.throws(()=>validateComponentLibrary({schemaVersion:3,entries:[]}),RangeError);
+  assert.throws(()=>validateComponentLibrary({schemaVersion:4,entries:[]}),RangeError);
 });
 
 test('version 2 permits mixed usage, with strict target compatibility',()=>{
