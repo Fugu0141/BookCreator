@@ -1,3 +1,4 @@
+import {studyKind,type StudyKind} from './study-blocks.js';
 // Experimental adapter for a deliberately limited scanner subset, not a full BCM compiler.
 type Range={start:number;end:number};
 type Directive={kind:'leaf'|'container';name:string;id?:string;attributes:readonly {key:string;value:string}[];range:Range};
@@ -5,7 +6,7 @@ type ScanBlock={kind:'raw'|'code'|'math'|'heading'|'blank';range:Range;level?:nu
 export interface Scan {source:string;blocks:readonly ScanBlock[];diagnostics:readonly {code:string;range:Range;message:string}[]}
 export interface Manuscript {documentId:string;revision:string;source:string;startOn:'page'|'continuous'}
 export interface Origin {documentId:string;revision:string;blockKey:string;range:Range;persistentId?:string}
-export interface SemanticItem {kind:'heading'|'paragraph'|'figure';origin:Origin;text:string;level?:number;attributes?:Readonly<Record<string,string>>}
+export interface SemanticItem {kind:'heading'|'paragraph'|'figure'|'study';studyKind?:StudyKind;sourceTextStart?:number;origin:Origin;text:string;level?:number;attributes?:Readonly<Record<string,string>>}
 type MeasuredBlock={kind:'block';origin:Origin;width:number;unitHeights:readonly number[];splitPolicy:'allow'|'strict';startPosition?:'page-top';startPositionSource?:'component'};
 type Break={kind:'pagebreak';origin:Origin};
 interface Input {schemaVersion:1;revision:string;fingerprint:string;content:{width:number;height:number};sections:{id:string;startOn:'page'|'continuous';blocks:(MeasuredBlock|Break)[]}[]}
@@ -69,6 +70,16 @@ export function prepareManuscript<S extends Scan>(documents:readonly Manuscript[
         }
         if(!lines.every(plain)){unsupported({start,end},'Unsupported Markdown; plain paragraphs only');continue;}
         emit({kind:'paragraph',origin:origin({start,end}),text:lines.join('\n')},content.width);
+      }else if(b.kind==='directive'&&b.closed&&b.header.kind==='container'){
+        const h=b.header,attrs=Object.fromEntries(h.attributes.map(a=>[a.key,a.value])),kind=studyKind(h.name,attrs);
+        const children=b.children.filter(child=>child.kind!=='blank');
+        const child=children[0];
+        if(!kind||children.length!==1||child.kind!=='raw'||child.range.start<h.range.end||child.range.end>b.range.end){
+          unsupported(b.range,'Only supported study containers with one plain source line are available');continue;
+        }
+        const body=stripEnd(doc.source.slice(child.range.start,child.range.end));
+        if(!plain(body)){unsupported(child.range,'Study block requires plain single-line text');continue;}
+        emit({kind:'study',studyKind:kind,origin:origin(b.range,h.id),text:body,sourceTextStart:child.range.start,attributes:attrs},content.width);
       }else if(b.kind==='directive'&&b.closed&&b.header.kind==='leaf'){
         const h=b.header, attrs=Object.fromEntries(h.attributes.map(a=>[a.key,a.value]));
         if(h.name==='pagebreak'&&!h.id&&Object.keys(attrs).every(k=>k==='side')&&(attrs.side===undefined||attrs.side==='any')){
