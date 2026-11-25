@@ -85,3 +85,7 @@ Canvas宣言はschemaVersion/rootを持ち、rootはEngineノード定義に変�
 Appearance/Structure/Pagination、レイヤーツリー、Component/Page/Spread/Stressプレビュー。実原稿は文脈として読取専用、選択した定義を作業案として編集。サンプルと実誌面、部分組版と全体組版を区別。ドラッグ中は一時状態、確定時に一操作。フローは順序・gap・幅・整列を変える、Canvasは座標・アンカーを変える。変換で情報を失う場合は差分と確認。グループ化、整列、複製、ロック、スナップ、Undo/Redo。ガイドは出力しない。適用時はテーマのみ変更し、影響範囲を再組版して確定解除。
 
 CS-01 長いH1と縦線、CS-02 親テーマとvariant、CS-03 局所上書き、CS-04 名前付きスロット、CS-05 Canvas変換、CS-06 反復装飾、CS-07 作業案取消、CS-08 不正型・循環をfixture化する。配置の正しさはEngineの試験も必要。
+
+## Typography extension
+
+See [TYPOGRAPHY_AND_FONTS.md](TYPOGRAPHY_AND_FONTS.md) for proposed font registration, role selection, local import and layout fingerprint contracts. Existing format stays unchanged until schema and fixtures are implemented.
