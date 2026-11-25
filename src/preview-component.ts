@@ -3,7 +3,7 @@ import type {PreviewTextStyle,PreviewFontFamily} from './preview-typography.js';
 export interface ComponentFont {id:string;weight:number}
 export interface FixedLabel {x?:number;y?:number;id:string;type:'label';width:number|'fill';text:string;fontSize:number;lineHeight:number;color:string;font?:ComponentFont}
 export const dynamicFields=['chapter-number','chapter-title','heading-number','heading-title','heading-level'] as const;
-export const studyDynamicFields=['study-label','study-title','study-kind','study-number','study-index','study-sequence'] as const;
+export const studyDynamicFields=['study-label','study-title','study-kind','study-number','study-index','study-sequence','answer-number','answer-index','answer-sequence','answer-title','answer-kind'] as const;
 export const studyKinds=['note','tip','warning','important','example','exercise','explanation'] as const;
 export type StudyKind=typeof studyKinds[number];
 export type DynamicField=typeof dynamicFields[number]|typeof studyDynamicFields[number];
