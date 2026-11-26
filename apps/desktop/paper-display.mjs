@@ -48,10 +48,10 @@ export function createPaperDisplay(){
     const same=!!host&&target===key&&host.parentNode===viewport;
     const top=same?viewport.scrollTop:0,left=same?viewport.scrollLeft:0;
     if(same&&reusePages&&patchPaper(host,next)){
-      host.inert=false;host.dataset.paperFreshness='current';
+      host.inert=false;host.dataset.paperFreshness='current';host.dataset.sparsePaper='false';
     }else{
       next.inert=false;next.dataset.paperFreshness='current';
-      next.dataset.reusedPages='0';viewport.replaceChildren(next);
+      next.dataset.reusedPages='0';next.dataset.sparsePaper='false';viewport.replaceChildren(next);
       target=key;host=next;
     }
     viewport.scrollTop=top;viewport.scrollLeft=left;
@@ -73,6 +73,7 @@ export function createPaperDisplay(){
       if(!assembly.reused){
         const pages=describe(next.shadowRoot,assembly.pages);
         const retained=publish(viewport,key,next);
+        host.dataset.sparsePaper='true';host.dataset.generatedPages=String(assembly.pages.length);
         sparseBase=Object.freeze({host,snapshot:result.pageDelta.snapshot});
         return {retained,pages};
       }
@@ -87,6 +88,7 @@ export function createPaperDisplay(){
       }
       for(const node of assembly.removed)node.remove();
       host.dataset.reusedPages=String(assembly.reused);
+      host.dataset.sparsePaper='true';host.dataset.generatedPages=String(assembly.pages.length-assembly.reused);
       host.dataset.paperFreshness='current';host.inert=false;
       sparseBase=Object.freeze({host,snapshot:result.pageDelta.snapshot});
       viewport.scrollTop=top;viewport.scrollLeft=left;
