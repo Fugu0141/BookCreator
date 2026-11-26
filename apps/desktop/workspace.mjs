@@ -152,7 +152,7 @@ export async function recoveryManifest(manifestPath){
   const manifest=await inside(root,'book.yaml');
   const m=await readRegular(manifest,MAX_MANIFEST);
   const summary=parseManifest(decode(m.bytes));
-  return {manifestPath:manifest,sections:summary.sections.filter(s=>s.editable)};
+  return {manifestPath:manifest,themePath:summary.themePath,sections:summary.sections.filter(s=>s.editable)};
 }
 export async function openWorkspace(manifestPath){
   if(basename(manifestPath)!=='book.yaml'||(await lstat(manifestPath)).isSymbolicLink())fail('MANIFEST','Select a regular book.yaml file');
