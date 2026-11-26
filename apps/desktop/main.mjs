@@ -10,6 +10,7 @@ import {STIX_FONT,verifyPinnedFontBlob} from './bundled-math-font.mjs';
 import {createHash,randomUUID} from 'node:crypto';
 import {recoveryKey,recoveryStore,recoveryStatus} from './manuscript-recovery.mjs';
 import {listRecoveryCandidates} from './recovery-hub.mjs';
+import {settingsRecovery} from './settings-recovery.mjs';
 const PACKAGE_CRASH_PREPARE=process.argv.includes('--package-crash-prepare');
 const PACKAGE_CRASH_VERIFY=process.argv.includes('--package-crash-verify');
 const PACKAGE_RESTART_SMOKE=PACKAGE_CRASH_PREPARE||PACKAGE_CRASH_VERIFY||process.argv.includes('--package-restart-smoke');
@@ -54,12 +55,27 @@ async function run(){
   const catalog=projectCatalog(app.getPath('userData'));
   const recovery=recoveryStore(app.getPath('userData'));
   const recoverySessions=new Map();
+  const settingsDrafts=settingsRecovery(app.getPath('userData'));
+  let settingsToken=null;
+  let settingsTail=Promise.resolve();
+  function settingsSerial(fn){const result=settingsTail.then(fn);settingsTail=result.catch(()=>{});return result;}
+  async function inspectSettings(current,kind){
+    try{
+      const result=await settingsDrafts.inspect(current,kind);
+      if(result.candidate?.status==='already-saved'){
+        await settingsDrafts.remove(current,kind,result.candidate.version);result.candidate=null;
+      }
+      return result;
+    }catch(e){return {error:String(e.message??e)};}
+  }
   async function activate(next){
     const typography=await next.typography(),settings=await next.bookSettings(),fonts=await loadProjectFonts(next);
-    workspace=next;recoverySessions.clear();
+    await settingsTail;
+    workspace=next;recoverySessions.clear();settingsToken=randomUUID();
+    const settingRecovery={token:settingsToken,typography:await inspectSettings(next,'typography'),'book-settings':await inspectSettings(next,'book-settings')};
     let recent, catalogWarning;
     try{recent=await catalog.remember(next.manifestPath,next.summary.title);}catch(e){catalogWarning='書籍一覧を更新できませんでした: '+String(e.message??e);}
-    return {...next.summary,typography,fonts,settings,recent,catalogWarning,projectId:recent?.find(p=>p.path===next.manifestPath)?.id??null};
+    return {...next.summary,typography,fonts,settings,settingRecovery,recent,catalogWarning,projectId:recent?.find(p=>p.path===next.manifestPath)?.id??null};
   }
   handle('listRecoveryCandidates',async(...args)=>{checkArgs(args,0);return listRecoveryCandidates(catalog,recovery,recoveryManifest);});
   handle('listProjects',async(...args)=>{checkArgs(args,0);return catalog.list();});
@@ -108,7 +124,7 @@ async function run(){
     win.webContents.send('bookcreator:close-requested',pendingClose);
   });
   win.webContents.on('did-start-navigation',(_event,_url,isInPlace,isMainFrame)=>{
-    if(isMainFrame&&!isInPlace){pendingClose=null;recoverySessions.clear();}
+    if(isMainFrame&&!isInPlace){pendingClose=null;recoverySessions.clear();settingsToken=null;}
   });
   ipcMain.handle('bookcreator:complete-close',async(event,token,decision)=>{
     sender(event);
@@ -155,6 +171,21 @@ async function run(){
   handle('saveTypography',async(...args)=>{checkArgs(args,2);return requireWorkspace().saveTypography(...args);});
   handle('readBook',async(...args)=>{checkArgs(args,0);return requireWorkspace().readBook();});
   handle('saveBookSettings',async(...args)=>{checkArgs(args,2);return requireWorkspace().saveBookSettings(...args);});
+  ipcMain.handle('bookcreator:settings-recovery',async(event,request)=>{
+    try{
+      sender(event);
+      if(!request||typeof request!=='object'||!['typography','book-settings'].includes(request.kind)||typeof request.token!=='string'||request.token!==settingsToken)throw Error('Invalid settings recovery session');
+      const current=requireWorkspace(),token=settingsToken;
+      const value=await settingsSerial(async()=>{
+        if(workspace!==current||settingsToken!==token)throw Error('Stale settings recovery session');
+        if(request.action==='inspect')return inspectSettings(current,request.kind);
+        if(request.action==='put')return settingsDrafts.put(current,request.kind,request.baseRevision,request.value,request.version);
+        if(request.action==='remove')return settingsDrafts.remove(current,request.kind,request.version);
+        throw Error('Invalid settings recovery action');
+      });
+      return {ok:true,value};
+    }catch(e){return {ok:false,error:{code:e.code??'ERROR',message:String(e.message??e)}};}
+  });
   handle('read',async(...args)=>{
     checkArgs(args,1);if(typeof args[0]!=='string')throw Error('Invalid section');
     const current=requireWorkspace(),saved=await current.read(args[0]);
@@ -1136,6 +1167,7 @@ async function packageSmoke(){
   await until("document.querySelector('#source').value==="+JSON.stringify(sample+'\n追記。\n'));
   await writingJourneySmoke();
   await recoveryJourneySmoke();
+  await settingsRecoveryJourneySmoke();
   await nativeCloseSmoke('discard');
   const report='PASS portable Windows package: isolated renderer, workspace, math, bundled fonts, numbering, save, new-book writing journey and renderer reload';
   if(process.env.BC_PACKAGE_SMOKE_REPORT)await writeFile(process.env.BC_PACKAGE_SMOKE_REPORT,report+'\n',{flag:'wx'});
@@ -1481,6 +1513,49 @@ async function recoveryJourneySmoke(){
   await until('explicit discard',"!document.querySelector('#recovery-dialog').open&&!document.querySelector('#source').readOnly&&document.querySelector('#workspace-save-state').textContent==='保存済み'");
   if(await store.get(key)||await readFile(path,'utf8')!==saved)throw Error('Discard changed original or kept recovery');
   console.log('PASS UX-10f-2 packaged checkpoint, deferred review, restore without overwriting and explicit discard');
+}
+// Exercise the packaged typed settings recovery UI without modifying the
+// writing-journey restart oracle's saved manifest or theme.
+async function settingsRecoveryJourneySmoke(){
+  const raw=js=>win.webContents.executeJavaScript(js);
+  const until=async(label,js)=>{for(let i=0;i<150;i++){if(await raw(js))return;await new Promise(r=>setTimeout(r,100));}throw Error('Settings recovery journey: '+label+'; '+await raw("document.querySelector('#status')?.textContent"));};
+  const click=async selector=>{
+    await until('reachable '+selector,"(()=>{const e=document.querySelector("+JSON.stringify(selector)+");return !!e?.getClientRects().length&&!e.disabled;})()");
+    await raw("document.querySelector("+JSON.stringify(selector)+").click()");
+  };
+  const change=async(selector,value)=>raw("(()=>{const e=document.querySelector("+JSON.stringify(selector)+");if(!e?.getClientRects().length||e.disabled)throw Error('Select unavailable');e.value="+JSON.stringify(value)+";e.dispatchEvent(new Event('change',{bubbles:true}));})()");
+  const root=join(smokeRoot,'writing-journey'),manifest=join(root,'book.yaml'),theme=join(root,'themes','default','theme.yaml');
+  const savedManifest=await readFile(manifest,'utf8'),savedTheme=await readFile(theme,'utf8'),store=recoveryStore(smokeRoot,'settings');
+  await click('#mode-design');await click('#design-tab-styles');
+  const font=await raw("document.querySelector('#body-font').value==='serif'?'sans-serif':'serif'");
+  await change('#body-font',font);
+  await click('#book-settings');
+  const size=await raw("document.querySelector('#page-size').value==='A4'?'A5':'A4'");
+  await change('#page-size',size);
+  await until('both recorded',"['typography','book-settings'].every(k=>document.querySelector('#settings-recovery-state-'+k)?.dataset.phase==='recorded')");
+  if((await store.list()).records.length!==2||await readFile(manifest,'utf8')!==savedManifest||await readFile(theme,'utf8')!==savedTheme)throw Error('Settings checkpoint changed ordinary files');
+  await win.loadURL(PAGE);
+  await until('home catalog',"[...document.querySelectorAll('.hub-project-open')].some(e=>e.querySelector('strong')?.textContent==='執筆フロー検証書籍'&&!e.disabled)");
+  await raw("(()=>{const e=[...document.querySelectorAll('.hub-project-open')].find(e=>e.querySelector('strong')?.textContent==='執筆フロー検証書籍');e.click();})()");
+  await until('both candidates',"['typography','book-settings'].every(k=>!!document.querySelector('#settings-recovery-review-'+k))");
+  await click('#mode-design');await click('#design-tab-styles');
+  await until('locked typography',"document.querySelector('#body-font').disabled");
+  await click('#settings-recovery-review-typography');
+  await until('comparison',"document.querySelector('#settings-recovery-dialog').open&&!!document.querySelector('#settings-recovery-restore')");
+  await click('#settings-recovery-later');
+  await until('deferred',"!document.querySelector('#settings-recovery-dialog').open&&document.querySelector('#body-font').disabled");
+  await click('#settings-recovery-review-typography');await click('#settings-recovery-restore');
+  await until('font restored',"!document.querySelector('#settings-recovery-dialog').open&&document.querySelector('#body-font').value==="+JSON.stringify(font)+"&&document.querySelector('#workspace-save-state').textContent.includes('テーマ')");
+  await click('#settings-recovery-review-book-settings');await click('#settings-recovery-restore');
+  await until('size restored',"!document.querySelector('#settings-recovery-dialog').open&&document.querySelector('#page-size').value==="+JSON.stringify(size)+"&&document.querySelector('#workspace-save-state').textContent==='未保存：テーマ・書籍設定'");
+  if(await readFile(manifest,'utf8')!==savedManifest||await readFile(theme,'utf8')!==savedTheme)throw Error('Settings recovery overwrote original');
+  await click('#discard-book-settings');await click('#mode-design');await click('#design-tab-styles');await click('#discard-theme-roles');
+  await until('clean settings',"document.querySelector('#workspace-save-state').textContent==='保存済み'");
+  for(let i=0;i<100;i++){if(!(await store.list()).records.length)break;await new Promise(r=>setTimeout(r,100));}
+  if((await store.list()).records.length||await readFile(manifest,'utf8')!==savedManifest||await readFile(theme,'utf8')!==savedTheme)throw Error('Settings discard failed');
+  await click('#mode-writing');await click('[data-section=chapter-01]');
+  await until('manuscript returned',"document.querySelector('#workspace-save-state').textContent==='保存済み'&&!document.querySelector('#source').disabled");
+  console.log('PASS UX-10g-2 packaged settings checkpoint, locked review, restore and discard without changing originals');
 }
 async function nativeCloseSmoke(decision){
   const raw=js=>win.webContents.executeJavaScript(js);
