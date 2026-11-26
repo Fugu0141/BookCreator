@@ -84,10 +84,13 @@ export async function runBookBenchmark(win,app,root,fixture){
       throw Error('Missing or invalid phase metrics: '+scope+' '+enabled);
     return sample;
   }
-  await readPhaseSample('manuscript',false,false);
-  await readPhaseSample('book',false,false);
+  await readPhaseSample('manuscript',false,false,true);
+  await readPhaseSample('book',false,false,true);
   const baselineCache=await cacheStats(),baselineMath=await mathStats(),baselineParagraph=await paragraphStats();
-  if(await raw("document.querySelector('#performance-cache-enabled').checked||document.querySelector('#performance-math-cache-enabled').checked||document.querySelector('#performance-paragraph-cache-enabled').checked")||Object.values(baselineCache).some(n=>n!==0)||!mathEmpty(baselineMath)||!paragraphEmpty(baselineParagraph))throw Error('All experimental caches must start disabled and empty');
+  if(await raw("document.querySelector('#performance-cache-enabled').checked||document.querySelector('#performance-math-cache-enabled').checked||!document.querySelector('#performance-paragraph-cache-enabled').checked")||Object.values(baselineCache).some(n=>n!==0)||!mathEmpty(baselineMath)||baselineParagraph.entries<=0||baselineParagraph.hits<=0||baselineParagraph.misses<=0)throw Error('Expected default incremental cache reuse and disabled legacy caches');
+  // Keep each paired comparison isolated from the default incremental mode.
+  await click('#performance-paragraph-cache-enabled');
+  if(await raw("document.querySelector('#performance-paragraph-cache-enabled').checked")||!paragraphEmpty(await paragraphStats()))throw Error('Default paragraph cache was not disabled and released');
   const cachedPaper=await paperSignature();
   await click('#performance-close');
   // Reset the cache before each warm arm; prime both arms symmetrically.
@@ -270,7 +273,7 @@ export async function runBookBenchmark(win,app,root,fixture){
       if(await paperSignature()!==originalPaper||await readFile(join(root,'manuscript',large.id+'.md'),'utf8')!==large.source)throw Error('Live edit fixture not restored');
     }
   }
-  await setParagraphComparison(false);
+  await setParagraphComparison(true);
   const paragraphEditComparison=summarizeCacheComparison(paragraphEditComparisons.map(s=>({label:'cache-pair-'+s.pair+'-'+s.arm,scope:'manuscript',elapsedMs:s.elapsedMs})),'manuscript');
-  console.log('BENCH report '+JSON.stringify({version:8,fixtureVersion:2,paragraphEditComparison,paragraphEditComparisons,cacheComparison,phaseComparisons,mathComparison,mathComparisons,paragraphComparison,paragraphComparisons,chapters:fixture.chapters.map(c=>({id:c.id,characters:c.source.length,sections:c.sections,blocks:c.blocks})),initialMemory,finalMemory:memory(),samples,summary,baselineCache,baselineMath,baselineParagraph,finalCache}));
+  console.log('BENCH report '+JSON.stringify({version:9,fixtureVersion:2,defaultParagraphCacheEnabled:true,paragraphEditComparison,paragraphEditComparisons,cacheComparison,phaseComparisons,mathComparison,mathComparisons,paragraphComparison,paragraphComparisons,chapters:fixture.chapters.map(c=>({id:c.id,characters:c.source.length,sections:c.sections,blocks:c.blocks})),initialMemory,finalMemory:memory(),samples,summary,baselineCache,baselineMath,baselineParagraph,finalCache}));
 }
