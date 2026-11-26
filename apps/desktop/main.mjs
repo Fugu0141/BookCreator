@@ -2849,7 +2849,7 @@ async function smoke(){
   await until("!document.querySelector('#source-bold').disabled");
   await exec("document.querySelector('#source-bold').click()");
   await until("document.querySelector('#source').value.includes('第一段落。')&&!document.querySelector('#source').value.includes('**第一段落**')");
-  if(await exec("document.querySelector('#preview').children.length"))throw Error('Formatting did not invalidate preview');
+  if(!await exec("document.querySelector('#workspace-layout-state').dataset.phase==='stale'&&document.querySelector('#preview > div')?.dataset.paperFreshness==='previous'&&document.querySelector('#preview > div').inert"))throw Error('Formatting did not invalidate preview');
   await until("(()=>{const e=document.querySelector('#source');return e.value.slice(e.selectionStart,e.selectionEnd)==='第一段落';})()");
   await exec("document.querySelector('#source').dispatchEvent(new KeyboardEvent('keydown',{key:'i',ctrlKey:true,bubbles:true,cancelable:true}))");
   await until("document.querySelector('#source').value.includes('*第一段落*')");
@@ -2989,7 +2989,7 @@ async function smoke(){
   await until("!!document.querySelector('#math-draft-preview math msqrt') && document.querySelectorAll('#math-draft-preview math mtable mtr').length===2");
   await exec("document.querySelector('#math-apply').click()");
   await until("document.querySelector('#source').value==="+JSON.stringify(insertedMath.replace(mathFormula,changedFormula)));
-  if(await exec("document.querySelector('#preview').children.length"))throw Error('Old formula preview was not invalidated');
+  if(!await exec("document.querySelector('#workspace-layout-state').dataset.phase==='stale'&&document.querySelector('#preview > div')?.dataset.paperFreshness==='previous'&&document.querySelector('#preview > div').inert"))throw Error('Old formula preview was not invalidated');
   await exec("document.querySelector('#preview-book').click()");
   await until("document.querySelector(\'#workspace-layout-state\').dataset.phase===\'ready\' && ("+"!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-display-math] math msqrt') && document.querySelector('#preview > div').shadowRoot.querySelectorAll('[data-display-math] math mtable mtr').length===2"+")");
   await exec("document.querySelector('#preview > div').shadowRoot.querySelector('[data-display-math]').click()");
