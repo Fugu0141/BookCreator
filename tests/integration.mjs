@@ -1083,3 +1083,42 @@ test('GUI component numbering widens only necessary fences and refuses reference
     }
   }
 });
+
+
+test('study slots resolve and insert equation references without changing sibling text or math identity',()=>{
+  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds,validateDisplayMath:engine.parseDisplayMath,validateInlineMath:engine.parsePreviewMath,parseReference:bcm.parseReferenceToken};
+  const id='component-00000000-0000-4000-8000-000000000001';
+  const library={schemaVersion:3,entries:[{id,name:'数式部品',usage:'study',design:{...defaultHeadingDesign(),direction:'column',children:[{id:'content',type:'content'},{id:'hint',type:'slot',name:'hint',width:'fill',fontSize:3500,lineHeight:1.5,color:'#123456'}]}}]};
+  const size={width:100000,height:100000};
+  for(const nl of ['\n','\r\n']){
+    const wrap=[':::layout{#eq-local numbered="true"}','$$','x^2','$$',':::'].join(nl);
+    const source=['# 第一章','',':::::component{name="'+id+'"}','::::slot{name="hint"}','ヒント。','::::','','::::slot{name="content"}','**説明**。','',wrap,'','式 :ref{target="eq-other" format="number"} を参照。','::::',':::::',''].join(nl);
+    const doc={documentId:'a',revision:'1',source,startOn:'page'},other={documentId:'b',revision:'1',source:[':::layout{#eq-other numbered="true"}','$$','y^2','$$',':::',''].join(nl),startOn:'page'};
+    const run=raw=>prepareBookBrowserPreview([{...doc,source:raw},other],'1','slot-ref',size,deps,undefined,undefined,undefined,undefined,undefined,library);
+    const p=run(source);assert.deepEqual(p.diagnostics,[]);
+    const study=p.options.sections[0].blocks.find(b=>b.component);
+    assert.ok(study.request.text.includes('式 2.1 を参照。'));
+    const at=source.indexOf('ヒント。')+'ヒント'.length;
+    const plan=planEquationReference([doc,other],'a',at,at,'eq-local','label-number',deps);
+    const token=':ref{target="eq-local" format="label-number"}',next=bcm.applyPatches(source,[plan.patch]);
+    assert.equal(next,source.slice(0,at)+token+source.slice(at));
+    const q=run(next);assert.deepEqual(q.diagnostics,[]);
+    const updated=q.options.sections[0].blocks.find(b=>b.component),hint=updated.namedSlots.find(s=>s.name==='hint');
+    assert.equal(hint.request.text,'ヒント式 (1.1)。');
+    const pos=hint.request.text.indexOf('式 (1.1)');
+    const mapped=previewSourceRange(updated,{textStart:pos,textEnd:pos+'式 (1.1)'.length},'hint');
+    assert.equal(next.slice(mapped.start,mapped.end),token);
+    assert.deepEqual(updated.request,study.request);
+    const primaryAt=next.indexOf('を参照。');
+    const primary=planEquationReference([{...doc,source:next},other],'a',primaryAt,primaryAt,'eq-local','number',deps);
+    assert.ok(run(bcm.applyPatches(next,[primary.patch])).options);
+    for(const bad of [next.indexOf('説明')+1,next.indexOf('x^2')+1,next.indexOf('target="eq-local"')+2,next.indexOf('name="hint"')+2]){
+      assert.throws(()=>planEquationReference([{...doc,source:next},other],'a',bad,bad,'eq-other','number',deps),RangeError);
+    }
+    assert.equal(run(next.replace('target="eq-local"','target="missing"')).options,undefined);
+    const fAt=next.indexOf('x^2');
+    assert.throws(()=>planEquationNumbering([{...doc,source:next},other],'a',fAt,fAt+3,false,undefined,deps),RangeError);
+    const edit=planComponentDisplayMath(next,fAt,fAt+3,'z^2',deps,{documents:[{...doc,source:next},other],documentId:'a'});
+    assert.equal(bcm.applyPatches(next,[edit.patch]),next.replace('x^2','z^2'));
+  }
+});

@@ -1,4 +1,4 @@
-import {prepareManuscript,numberedEquationTargets,type Scan,type Manuscript,type PreparationDependencies} from './manuscript-poc.js';
+import {prepareManuscript,numberedEquationTargets,createEquationResolver,type SemanticItem,type Scan,type Manuscript,type PreparationDependencies} from './manuscript-poc.js';
 import {parsePreviewInline} from './inline-preview.js';
 import type {InlineEditPlan} from './inline-edit.js';
 
@@ -19,18 +19,19 @@ export function planEquationReference<S extends Scan>(documents:readonly Manuscr
   if(!doc||!Number.isSafeInteger(start)||start!==end||start<0||start>doc.source.length||!['number','label-number'].includes(format)||!/^[A-Za-z][A-Za-z0-9_.-]{0,127}$/.test(targetId))throw RangeError('Expected a caret and valid equation reference');
   const before=prepare(documents,deps),target=before.targets.find(t=>t.id===targetId);
   if(!target)throw RangeError('Target must be an identified numbered equation');
-  const item=before.items.find(i=>i.kind==='paragraph'&&i.origin.documentId===documentId&&start>=i.origin.range.start&&start<=i.origin.range.start+i.text.length);
-  if(!item)throw RangeError('Place the caret on ordinary body text');
-  const row=deps.scan(doc.source).blocks.find(b=>b.kind==='raw'&&start>=b.range.start&&start<=b.range.start+doc.source.slice(b.range.start,b.range.end).replace(/(?:\r\n|\r|\n)$/,'').length);
+  const slots=(item:SemanticItem)=>item.kind==='paragraph'||item.kind==='study'?[{name:'content',text:item.text,start:item.sourceTextStart??item.origin.range.start},...(item.namedSlots??[]).map(s=>({name:s.name,text:s.text,start:s.sourceTextStart!}))]:[];
+  const candidates=before.items.filter(i=>i.origin.documentId===documentId).flatMap(item=>slots(item).map(slot=>({item,slot})));
+  const candidate=candidates.find(({slot})=>start>=slot.start&&start<=slot.start+slot.text.length);
+  if(!candidate)throw RangeError('Place the caret on ordinary body or study slot text');
+  const {item,slot}=candidate;
+  if(doc.source.slice(slot.start,slot.start+slot.text.length)!==slot.text)throw RangeError('Cannot establish exact slot source');
+  const rawRows=(blocks:Scan['blocks']):Scan['blocks'][number][]=>blocks.flatMap(b=>b.kind==='raw'?[b]:b.kind==='directive'?rawRows(b.children):[]);
+  const row=rawRows(deps.scan(doc.source).blocks).find(b=>b.range.start>=slot.start&&start>=b.range.start&&start<=b.range.start+doc.source.slice(b.range.start,b.range.end).replace(/(?:\r\n|\r|\n)$/,'').length);
   if(!row)throw RangeError('Place the caret on a nonblank body line');
   const boundaries=new Set([...new Intl.Segmenter(undefined,{granularity:'grapheme'}).segment(doc.source)].map(g=>g.index));boundaries.add(doc.source.length);
   if(!boundaries.has(start))throw RangeError('Selection splits a grapheme');
-  const resolver=(token:string,offset:number)=>{
-    const r=deps.parseReference!(token,documentId,offset),ref=r.reference,t=before.targets.find(t=>t.id===ref?.target);
-    if(r.diagnostics.length||!t||!ref||!['number','label-number'].includes(ref.format))throw RangeError('Unresolved reference');
-    return ref.format==='number'?t.number:'式 ('+t.number+')';
-  };
-  const parsed=parsePreviewInline(item.text,item.origin.range.start,deps.validateInlineMath,resolver);
+  const resolver=createEquationResolver(before.items,deps,documentId)!;
+  const parsed=parsePreviewInline(slot.text,slot.start,deps.validateInlineMath,resolver,item.kind==='study',deps.validateDisplayMath,item.componentEquations);
   const seg=parsed.sourceMap.segments.find(s=>s.outerStart<=start&&start<=s.outerEnd);
   if(!seg||start>seg.outerStart&&start<seg.outerEnd&&(seg.derived||seg.rawStart!==seg.outerStart||seg.outerEnd-seg.outerStart!==seg.end-seg.start))throw RangeError('Cannot insert inside markup');
   const logical=start===seg.outerStart?seg.start:start===seg.outerEnd?seg.end:seg.start+start-seg.rawStart;
@@ -40,9 +41,17 @@ export function planEquationReference<S extends Scan>(documents:readonly Manuscr
   const index=before.items.indexOf(item),updated=after.items[index];
   if(after.items.length!==before.items.length||JSON.stringify(before.targets)!==JSON.stringify(after.targets)||after.items.some((a,i)=>{
     const b=before.items[i],local=b.origin.documentId===documentId,shift=local&&i>index?delta:0;
-    return a.kind!==b.kind||a.origin.documentId!==b.origin.documentId||a.origin.persistentId!==b.origin.persistentId||a.origin.range.start!==b.origin.range.start+shift||a.origin.range.end!==b.origin.range.end+(local&&i===index?delta:shift)||a.text!==(i===index?b.text.slice(0,start-b.origin.range.start)+token+b.text.slice(start-b.origin.range.start):b.text);
+    if(a.kind!==b.kind||a.origin.documentId!==b.origin.documentId||a.origin.persistentId!==b.origin.persistentId||a.origin.range.start!==b.origin.range.start+shift||a.origin.range.end!==b.origin.range.end+(local&&i===index?delta:shift))return true;
+    if(i!==index)return a.text!==b.text;
+    const oldSlots=slots(b),newSlots=slots(a);
+    return oldSlots.length!==newSlots.length||oldSlots.some((s,j)=>{
+      const n=newSlots[j],selected=s.name===slot.name;
+      const expected=selected?s.text.slice(0,start-s.start)+token+s.text.slice(start-s.start):s.text;
+      return n.name!==s.name||n.text!==expected||n.start!==s.start+(!selected&&s.start>start?delta:0);
+    });
   }))throw RangeError('Reference would change manuscript structure');
-  const checked=parsePreviewInline(updated.text,updated.origin.range.start,deps.validateInlineMath,resolver);
+  const updatedSlot=slots(updated).find(s=>s.name===slot.name)!;
+  const checked=parsePreviewInline(updatedSlot.text,updatedSlot.start,deps.validateInlineMath,resolver,updated.kind==='study',deps.validateDisplayMath,updated.componentEquations);
   const expectedStyles=parsed.inlineStyles.map(s=>({...s,start:s.start+(s.start>=logical?label.length:0),end:s.end+(s.end>logical?label.length:0)}));
   const expectedAtoms=parsed.inlineMath.map(a=>({...a,start:a.start+(a.start>=logical?label.length:0)}));
   if(checked.text!==parsed.text.slice(0,logical)+label+parsed.text.slice(logical)||JSON.stringify(checked.inlineStyles)!==JSON.stringify(expectedStyles)||JSON.stringify(checked.inlineMath)!==JSON.stringify(expectedAtoms)||!checked.sourceMap.segments.some(s=>s.derived&&s.outerStart===start&&s.outerEnd===start+delta))throw RangeError('Reference would reinterpret surrounding inline content');

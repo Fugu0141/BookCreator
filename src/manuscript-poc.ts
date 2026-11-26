@@ -55,6 +55,12 @@ export function prepareManuscript<S extends Scan>(documents:readonly Manuscript[
     const section:PreparedInput['sections'][number]={id:doc.documentId,startOn:doc.startOn,blocks:[]};
     const origin=(range:Range,persistentId?:string):Origin=>({documentId:doc.documentId,revision:doc.revision,blockKey:String(range.start),range:{...range},...(persistentId?{persistentId}:{})});
     const unsupported=(range:Range,message:string)=>diagnostics.push({code:'BC_POC_UNSUPPORTED',message,documentId:doc.documentId,range});
+    const collectReference=deps.parseReference?(token:string,offset:number)=>{
+      const p=deps.parseReference!(token,doc.documentId,offset);
+      if(p.diagnostics.length||!p.reference||!['number','label-number'].includes(p.reference.format))throw RangeError('Expected a supported equation number reference');
+      references.push({target:p.reference.target,documentId:doc.documentId,range:{start:offset,end:offset+token.length}});
+      return '1.1';
+    }:undefined;
     // Check complete top-level source coverage before interpreting any ranges.
     let covered=0;
     for(const b of scan.blocks){
@@ -132,12 +138,7 @@ export function prepareManuscript<S extends Scan>(documents:readonly Manuscript[
           n=j;end=scan.blocks[n].range.end;
         }
         const body=stripEnd(doc.source.slice(start,end));
-        try{parsePreviewInline(body,start,deps.validateInlineMath,deps.parseReference?(token,offset)=>{
-          const p=deps.parseReference!(token,doc.documentId,offset);
-          if(p.diagnostics.length||!p.reference||!['number','label-number'].includes(p.reference.format))throw RangeError('Expected a supported equation number reference');
-          references.push({target:p.reference.target,documentId:doc.documentId,range:{start:offset,end:offset+token.length}});
-          return '1.1';
-        }:undefined);}catch(e){unsupported({start,end},'Unsupported paragraph: '+String(e instanceof Error?e.message:e));continue;}
+        try{parsePreviewInline(body,start,deps.validateInlineMath,collectReference);}catch(e){unsupported({start,end},'Unsupported paragraph: '+String(e instanceof Error?e.message:e));continue;}
         emit({kind:'paragraph',origin:origin({start,end}),text:body},content.width);
       }else if(b.kind==='directive'&&b.closed&&b.header.kind==='container'){
         const h=b.header,attrs=Object.fromEntries(h.attributes.map(a=>[a.key,a.value])),kind=studyKind(h.name,attrs),componentId=customStudyId(h.name,attrs);
@@ -169,7 +170,7 @@ export function prepareManuscript<S extends Scan>(documents:readonly Manuscript[
             componentEquations.push({range:{start:c.range.start,end:c.range.start+stripEnd(doc.source.slice(c.range.start,c.range.end)).length},formulaStart:math.range.start+match[1].length,formula:match[2],id:c.header.id,numbered:attrs.numbered==='true'});
           }
           try{
-            const parsed=parsePreviewInline(text,first.range.start,deps.validateInlineMath,undefined,true,deps.validateDisplayMath,componentEquations);
+            const parsed=parsePreviewInline(text,first.range.start,deps.validateInlineMath,collectReference,true,deps.validateDisplayMath,componentEquations);
             const math=visible.filter(c=>c.kind==='math'||isWrapped(c)),atoms=parsed.inlineMath.filter(a=>a.display);
             if(math.length!==atoms.length||atoms.some((a,i)=>{
               const seg=parsed.sourceMap.segments.find(s=>s.start===a.start)!;
@@ -248,6 +249,17 @@ export function numberedEquationTargets(items:readonly SemanticItem[]){
     ...(i.kind==='math'&&i.origin.persistentId&&i.equationNumber?[{id:i.origin.persistentId,number:i.equationNumber,documentId:i.origin.documentId,formula:i.text}]:[]),
     ...(i.componentEquations??[]).flatMap(e=>e.id&&e.equationNumber?[{id:e.id,number:e.equationNumber,documentId:i.origin.documentId,formula:e.formula}]:[])
   ]);
+}
+
+/** Resolve validated equation references consistently in preview and editing. */
+export function createEquationResolver<S extends Scan>(items:readonly SemanticItem[],deps:PreparationDependencies<S>,documentId:string){
+  if(!deps.parseReference)return undefined;
+  const targets=new Map(numberedEquationTargets(items).map(t=>[t.id,t.number]));
+  return (token:string,offset:number)=>{
+    const parsed=deps.parseReference!(token,documentId,offset),ref=parsed.reference,number=ref&&targets.get(ref.target);
+    if(!ref||parsed.diagnostics.length||!number||!['number','label-number'].includes(ref.format))throw RangeError('Unresolved equation reference');
+    return ref.format==='number'?number:'式 ('+number+')';
+  };
 }
 
 export function compileMeasuredManuscript<S extends Scan>(documents:readonly Manuscript[],revision:string,fingerprint:string,content:Input['content'],deps:Dependencies<S>):{input?:Input;items:SemanticItem[];diagnostics:Issue[];publicationReady:false} {
