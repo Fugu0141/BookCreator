@@ -5,10 +5,10 @@ export function createPreviewPhaseMetrics(limit=200){
   if(!Number.isInteger(limit)||limit<1||limit>1000)throw RangeError('Invalid phase metrics limit');
   let rows=[];
   return {
-    record(scope,cacheEnabled,timings,mathCacheEnabled=false,paragraphCacheEnabled=false,pageCacheEnabled=false,reusePaperPages=false,sparsePaperPages=false){
-      if(!['book','manuscript'].includes(scope)||typeof cacheEnabled!=='boolean'||typeof mathCacheEnabled!=='boolean'||typeof paragraphCacheEnabled!=='boolean'||typeof pageCacheEnabled!=='boolean'||typeof reusePaperPages!=='boolean'||typeof sparsePaperPages!=='boolean'||(sparsePaperPages&&(pageCacheEnabled||reusePaperPages))||(cacheEnabled&&paragraphCacheEnabled)||!timings||
+    record(scope,cacheEnabled,timings,mathCacheEnabled=false,paragraphCacheEnabled=false,pageCacheEnabled=false,reusePaperPages=false,sparsePaperPages=false,retainedPreview=false){
+      if(!['book','manuscript'].includes(scope)||typeof cacheEnabled!=='boolean'||typeof mathCacheEnabled!=='boolean'||typeof paragraphCacheEnabled!=='boolean'||typeof pageCacheEnabled!=='boolean'||typeof reusePaperPages!=='boolean'||typeof sparsePaperPages!=='boolean'||typeof retainedPreview!=='boolean'||(retainedPreview&&!sparsePaperPages)||(sparsePaperPages&&(pageCacheEnabled||reusePaperPages))||(cacheEnabled&&paragraphCacheEnabled)||!timings||
         !phaseKeys.every(k=>Number.isFinite(timings[k])&&timings[k]>=0))return false;
-      rows.push({scope,cacheEnabled,mathCacheEnabled,paragraphCacheEnabled,pageCacheEnabled,reusePaperPages,sparsePaperPages,...Object.fromEntries(phaseKeys.map(k=>[k,timings[k]]))});
+      rows.push({scope,cacheEnabled,mathCacheEnabled,paragraphCacheEnabled,pageCacheEnabled,reusePaperPages,sparsePaperPages,retainedPreview,...Object.fromEntries(phaseKeys.map(k=>[k,timings[k]]))});
       if(rows.length>limit)rows.shift();
       return true;
     },
@@ -19,7 +19,7 @@ export function createPreviewPhaseMetrics(limit=200){
 export function summarizePreviewPhases(rows){
   const groups=new Map();
   for(const row of rows){
-    const key=row.scope+':'+row.cacheEnabled+':'+row.mathCacheEnabled+':'+row.paragraphCacheEnabled+':'+row.pageCacheEnabled+':'+row.reusePaperPages+':'+row.sparsePaperPages;
+    const key=row.scope+':'+row.cacheEnabled+':'+row.mathCacheEnabled+':'+row.paragraphCacheEnabled+':'+row.pageCacheEnabled+':'+row.reusePaperPages+':'+row.sparsePaperPages+':'+row.retainedPreview;
     if(!groups.has(key))groups.set(key,[]);
     groups.get(key).push(row);
   }
@@ -29,7 +29,7 @@ export function summarizePreviewPhases(rows){
       const values=group.map(row=>row[key]).sort((a,b)=>a-b),i=Math.floor(values.length/2);
       return values.length%2?values[i]:(values[i-1]+values[i])/2;
     };
-    return {scope:last.scope,cacheEnabled:last.cacheEnabled,mathCacheEnabled:last.mathCacheEnabled,paragraphCacheEnabled:last.paragraphCacheEnabled,pageCacheEnabled:last.pageCacheEnabled,reusePaperPages:last.reusePaperPages,sparsePaperPages:last.sparsePaperPages,count:group.length,
+    return {scope:last.scope,cacheEnabled:last.cacheEnabled,mathCacheEnabled:last.mathCacheEnabled,paragraphCacheEnabled:last.paragraphCacheEnabled,pageCacheEnabled:last.pageCacheEnabled,reusePaperPages:last.reusePaperPages,sparsePaperPages:last.sparsePaperPages,retainedPreview:last.retainedPreview,count:group.length,
       latest:Object.fromEntries(phaseKeys.map(k=>[k,last[k]])),
       median:Object.fromEntries(phaseKeys.map(k=>[k,median(k)]))};
   });
