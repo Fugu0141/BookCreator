@@ -915,3 +915,27 @@ test('component display formulas retain scanner fences, slot-local mapping and e
     assert.throws(()=>previewSampleInline(fence,true,engine.parsePreviewMath),RangeError);
   }
 });
+
+
+test('extended mathematical grammar integrates with manuscript, GUI patches and Lab samples',()=>{
+  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds,validateDisplayMath:engine.parsePreviewMath,validateInlineMath:engine.parsePreviewMath};
+  const formula='\\lim_{x\\to0}\\left(\\frac{\\sin x}{x}\\right)';
+  const source=['本文 $\\vec{a}\\cdot\\vec{b}$ です。','','$$',formula,'$$',''].join('\n');
+  const doc={documentId:'extended',revision:'1',source,startOn:'page'},size={width:100000,height:100000};
+  const prepared=prepareBrowserPreview(doc,'1','extended',size,deps);
+  assert.deepEqual(prepared.diagnostics,[]);
+  assert.equal(prepared.options.blocks[0].request.inlineMath[0].formula,'\\vec{a}\\cdot\\vec{b}');
+  assert.equal(prepared.options.blocks[1].request.text,formula);
+  const start=source.indexOf(formula),replacement='\\sqrt[3]{x}+\\log_2 x';
+  const plan=planDisplayMath(source,start,start+formula.length,replacement,bcm.scanDocument,engine.parsePreviewMath);
+  const next=bcm.applyPatches(source,[plan.patch]);
+  assert.equal(next,source.replace(formula,()=>replacement));
+  assert.ok(prepareBrowserPreview({...doc,source:next},'1','extended',size,deps).options);
+  for(const expression of ['\\begin{pmatrix}a&b\\\\c&d\\end{pmatrix}','\\begin{cases}x&x\\geq0\\\\-x&x<0\\end{cases}','\\begin{aligned}x&=1\\\\&=2-1\\end{aligned}']){
+    const edited=planDisplayMath(source,start,start+formula.length,expression,bcm.scanDocument,engine.parsePreviewMath);
+    const raw=bcm.applyPatches(source,[edited.patch]),result=prepareBrowserPreview({...doc,source:raw},'1','table',size,deps);
+    assert.equal(raw,source.replace(formula,()=>expression));assert.deepEqual(result.diagnostics,[]);assert.equal(result.options.blocks[1].request.text,expression);
+  }
+  assert.equal(previewSampleInline('式 $\\sin x$ です。',true,engine.parsePreviewMath).inlineMath[0].formula,'\\sin x');
+  assert.throws(()=>planDisplayMath(source,start,start+formula.length,'\\input{secret}',bcm.scanDocument,engine.parsePreviewMath),RangeError);
+});
