@@ -111,7 +111,20 @@ export async function runBookBenchmark(win,app,root,fixture){
   async function repeat(label){
     await raw("document.querySelector('#preview > div').dataset.paperProbe='old'");
     await measure(label,'book',()=>click('#preview-book'),"document.querySelector('#preview > div').dataset.paperProbe!=='old'");
-    if(await paperSignature()!==cachedPaper)throw Error('Cache comparison page DOM differs: '+label);
+    const actual=await paperSignature();
+    if(actual!==cachedPaper){
+      // This runner uses only the deterministic synthetic book, never user text.
+      const expectedPages=JSON.parse(cachedPaper),actualPages=JSON.parse(actual);
+      const index=expectedPages.findIndex((page,i)=>page!==actualPages[i]);
+      const expected=expectedPages[index]??'',received=actualPages[index]??'';
+      let offset=0;while(offset<Math.min(expected.length,received.length)&&expected[offset]===received[offset])offset++;
+      const details=await raw("(()=>{const p=document.querySelector('#preview > div')?.shadowRoot?.querySelectorAll('[data-page]')["+index+"];return {page:p?.dataset.page,blocks:p?.querySelectorAll('[data-block]').length,math:p?.querySelectorAll('math').length,guide:p?.querySelector('[data-content-guide]')?.getAttribute('style')};})()");
+      await click('#performance-toggle');
+      const counters={page:await pageStats(),paragraph:await paragraphStats(),cache:await cacheStats(),math:await mathStats()};
+      await click('#performance-close');
+      console.error('BENCH paper mismatch '+JSON.stringify({label,index,offset,expectedCount:expectedPages.length,actualCount:actualPages.length,expectedLength:expected.length,actualLength:received.length,expectedContext:expected.slice(Math.max(0,offset-120),offset+240),actualContext:received.slice(Math.max(0,offset-120),offset+240),details,counters}));
+      throw Error('Cache comparison page DOM differs: '+label);
+    }
   }
   async function readComparisonStats(enabled,mathEnabled=false){
     await click('#performance-toggle');
