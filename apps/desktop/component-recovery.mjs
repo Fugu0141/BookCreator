@@ -2,12 +2,16 @@
 import {createHash} from 'node:crypto';
 import {recoveryStore,recoveryKey} from './manuscript-recovery.mjs';
 const fail=(code,message)=>{throw Object.assign(Error(message),{code});};
+// Canonical field order is part of the persisted identity contract.
+export function componentRecoveryKey(manifestPath,themePath,{usage,level,entryId}){
+  const identity=createHash('sha256').update(JSON.stringify({usage,level,entryId})).digest('hex');
+  return recoveryKey(manifestPath,'component-'+identity,themePath);
+}
 export function componentRecovery(userData){
   const store=recoveryStore(userData,'components');
   async function context(workspace,target){
     const base=await workspace.componentRecoveryContext(target);
-    const identity=createHash('sha256').update(JSON.stringify(base.target)).digest('hex');
-    const key=recoveryKey(workspace.manifestPath,'component-'+identity,base.identity);
+    const key=componentRecoveryKey(workspace.manifestPath,base.identity,base.target);
     return {base,key};
   }
   function candidate(record,value,status){return {version:record.version,baseRevision:record.baseRevision,updatedAt:record.updatedAt,value,status};}
