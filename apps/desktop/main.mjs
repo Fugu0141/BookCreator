@@ -542,6 +542,27 @@ async function packageSmoke(){
   await exec("document.querySelector('#structured-undo').click()");
   await until("document.querySelector('#source').value==="+JSON.stringify(richFixture));
   await exec("document.querySelector('#editor-view-source').click()");
+  // UX-08f-6a: text replacement and deletion across multiple style runs.
+  const crossStyleFixture='# 章\n\n**重要**な*文章*です。\n';
+  await setStructuredSource(crossStyleFixture);
+  await exec("document.querySelector('#editor-view-structured').click()");
+  await until("!!document.querySelector('[data-structured-kind=paragraph] [data-rich-edit]')");
+  await exec("document.querySelector('[data-structured-kind=paragraph] [data-rich-edit]').click()");
+  await until("document.querySelector('#structured-rich-value')?.value==='重要な文章です。'");
+  await setRichValue('重新章です。');
+  await until("!document.querySelector('#structured-apply').disabled&&Array.from(document.querySelectorAll('.rich-text-preview span')).some(s=>s.textContent==='重'&&s.style.fontWeight==='700')&&Array.from(document.querySelectorAll('.rich-text-preview span')).some(s=>s.textContent==='章'&&s.style.fontStyle==='italic')");
+  await exec("document.querySelector('#structured-apply').click()");
+  const crossStyleExpected=crossStyleFixture.replace('**重要**な*文章*','**重**新*章*');
+  await until("document.querySelector('#source').value==="+JSON.stringify(crossStyleExpected));
+  await exec("document.querySelector('#structured-undo').click()");
+  await until("document.querySelector('#source').value==="+JSON.stringify(crossStyleFixture));
+  await exec("document.querySelector('[data-structured-kind=paragraph] [data-rich-edit]').click()");
+  await until("document.querySelector('#structured-rich-value')?.value==='重要な文章です。'");
+  await setRichValue('重章です。');
+  await until("!document.querySelector('#structured-apply').disabled&&Array.from(document.querySelectorAll('.rich-text-preview span')).some(s=>s.textContent==='重'&&s.style.fontWeight==='700')&&Array.from(document.querySelectorAll('.rich-text-preview span')).some(s=>s.textContent==='章'&&s.style.fontStyle==='italic')");
+  await exec("document.querySelector('#structured-cancel').click()");
+  await until("!document.querySelector('#structured-rich-value')&&document.querySelector('#source').value==="+JSON.stringify(crossStyleFixture));
+  await exec("document.querySelector('#editor-view-source').click()");
   // UX-08f-4b: caret split, join, list conversion, item edits and safe indentation.
   const paragraphFixture='# 章\n\n最初の文章。次の文章。\n';
   await setStructuredSource(paragraphFixture);
