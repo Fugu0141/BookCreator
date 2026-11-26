@@ -166,7 +166,7 @@ function workspaceSmokeExec(){
 async function packageSmoke(){
   const exec=workspaceSmokeExec();
   const until=async js=>{for(let i=0;i<150;i++){if(await exec(js))return;await new Promise(r=>setTimeout(r,100));}throw Error('Package smoke timeout: '+js+'; '+await exec("document.querySelector('#status')?.textContent"));};
-  await until("!!document.querySelector('#open')?.getClientRects().length");
+  await until("!!document.querySelector('#open')?.getClientRects().length&&!document.querySelector('#open').disabled");
   if(!await exec("document.querySelector('.workspace-shell').dataset.workspaceMode==='home'&&!document.querySelector('#source').getClientRects().length&&!document.querySelector('#body-font').getClientRects().length"))throw Error('Initial home exposes unrelated controls');
   if(!await exec("typeof require==='undefined'&&typeof process==='undefined'&&!!window.bookcreator"))throw Error('Renderer isolation failed');
   await exec("document.querySelector('#open').click()");
@@ -212,6 +212,21 @@ async function packageSmoke(){
   await exec("(()=>{const e=document.querySelector('#source');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(e,"+JSON.stringify(sample+'\n追記。\n')+");e.dispatchEvent(new Event('input',{bubbles:true}));})()");
   await until("document.querySelector('#workspace-save-state').textContent==='未保存：原稿'&&document.querySelector('#workspace-layout-state').dataset.phase==='stale'&&!document.querySelector('#preview > div')");
   if(await readFile(join(smokeRoot,'manuscript','chapter.md'),'utf8')!==sample)throw Error('Unsaved edit changed disk');
+  await exec("document.querySelector('#save').click()");
+  await until("document.querySelector('#workspace-save-state').textContent==='保存済み'");
+  await exec("document.querySelector('#mode-home').click()");
+  await until("document.querySelector('.workspace-shell').dataset.workspaceMode==='home'&&document.querySelectorAll('.hub-project-row').length===1");
+  if(!await exec("!document.querySelector('#mode-writing').getClientRects().length&&!document.querySelector('#source').getClientRects().length"))throw Error('Home exposes editing controls');
+  await exec("document.querySelector('.hub-row-actions button').click()");
+  await until("document.querySelector('.hub-row-actions button').getAttribute('aria-pressed')==='true'&&!document.querySelector('#open').disabled");
+  const catalog=JSON.parse(await readFile(join(smokeRoot,'project-catalog.json'),'utf8'));
+  if(catalog.entries.length!==1||!catalog.entries[0].favorite||catalog.entries[0].title!=='Desktop smoke')throw Error('Catalog persistence mismatch');
+  await exec("document.querySelector('#project-favorites-only').click()");
+  await until("document.querySelectorAll('.hub-project-row').length===1");
+  await exec("document.querySelector('.hub-project-open').click()");
+  await until("document.querySelector('.workspace-shell').dataset.workspaceMode==='writing'&&!document.querySelector('#open').disabled");
+  await exec("document.querySelector('[data-section=chapter]').click()");
+  await until("document.querySelector('#source').value==="+JSON.stringify(sample+'\n追記。\n'));
   const report='PASS portable Windows package: isolated renderer, workspace, math, bundled fonts, numbering, save';
   if(process.env.BC_PACKAGE_SMOKE_REPORT)await writeFile(process.env.BC_PACKAGE_SMOKE_REPORT,report+'\n',{flag:'wx'});
   console.log(report);
@@ -222,7 +237,7 @@ async function packageSmoke(){
 async function smoke(){
   const exec=workspaceSmokeExec();
   const until=async js=>{for(let i=0;i<100;i++){if(await exec(js))return;await new Promise(r=>setTimeout(r,100));}throw Error('Timed out: '+js+'; renderer status: '+await exec("document.querySelector('#status')?.textContent")+'; inline nodes: '+await exec("JSON.stringify([...document.querySelector('#preview > div')?.shadowRoot?.querySelectorAll('[data-named-slot=extra] [data-inline-style]')??[]].map(s=>({text:s.textContent,style:s.getAttribute('style')})))"));};
-  await until("!!document.querySelector('#open')");
+  await until("!!document.querySelector('#open')&&!document.querySelector('#open').disabled");
   if(!await exec("typeof require==='undefined' && typeof process==='undefined' && !!window.bookcreator"))throw Error('Renderer isolation failed');
   await exec("document.querySelector('#open').click()");
   await until("!!document.querySelector('[data-section=chapter]')");
