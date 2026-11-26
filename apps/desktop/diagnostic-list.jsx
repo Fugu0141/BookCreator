@@ -2,7 +2,7 @@ import React from 'react';
 
 // A range is actionable only if it is verified against the actual source used in the job.
 export function diagnosticRecords(diagnostics,documents,error){
-  if(!diagnostics.length)return [{code:'PREVIEW_FAILED',message:String(error.message??error)}];
+  if(!diagnostics.length)return [{code:error?.code==='PREVIEW_BLOCK_LIMIT'?'PREVIEW_BLOCK_LIMIT':'PREVIEW_FAILED',message:String(error.message??error)}];
   const sources=new Map(documents.map(d=>[d.documentId,d.source]));
   return diagnostics.map(d=>{
     const source=sources.get(d.documentId),range=d.range;
