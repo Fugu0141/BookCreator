@@ -1,6 +1,8 @@
+import {installPaperNavigation} from './paper-navigation.mjs';
 // DOM adapter: measured paper metadata and source navigation bindings.
 // Does not own editor state or perform a file operation.
 export function describeMeasuredPaper(result,options,{previewSourceRange,paperThumbnail,onNavigate}){
+  const bindings=new WeakMap();
   const pageNodes=[...result.element.shadowRoot.querySelectorAll('[data-page]')];
   const sourceIds=new Map(pageNodes.map(node=>[node,new Set()]));
   const sourceBlocks=new Map(options.sections.flatMap(s=>s.blocks.filter(b=>!('kind' in b)).map(b=>[JSON.stringify([b.origin.documentId,b.origin.blockKey]),b])));
@@ -8,8 +10,7 @@ export function describeMeasuredPaper(result,options,{previewSourceRange,paperTh
     const slice=result.slices[i];if(!slice)return;
     sourceIds.get(el.closest('[data-page]'))?.add(slice.origin.documentId);
     const bind=(node,range)=>{if(!range)return;node.tabIndex=0;node.style.cursor='pointer';
-      const focus=()=>onNavigate(slice.origin.documentId,range);
-      node.addEventListener('click',e=>{e.stopPropagation();focus();});node.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();e.stopPropagation();focus();}});
+      bindings.set(node,{documentId:slice.origin.documentId,range});
     };
     const block=sourceBlocks.get(JSON.stringify([slice.origin.documentId,slice.origin.blockKey]));
     bind(el,previewSourceRange(block,slice));
@@ -24,5 +25,6 @@ export function describeMeasuredPaper(result,options,{previewSourceRange,paperTh
       if(named)bind(node,previewSourceRange(block,named,named.name));
     }
   });
+  installPaperNavigation(result.element.shadowRoot,bindings,onNavigate);
   return pageNodes.map((node,index)=>({number:index+1,documents:[...sourceIds.get(node)],blocks:node.querySelectorAll('[data-block]').length,thumbnail:paperThumbnail(node)}));
 }
