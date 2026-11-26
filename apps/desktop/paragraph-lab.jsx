@@ -25,7 +25,7 @@ export function ParagraphLab({design,bodyFont,mathFontFamily,fontOptions,width,h
   const inputKey=measurementKey();
   const ready=previewPhase==='ready'&&measurement.current.isReady(inputKey);
   useEffect(()=>{
-    if((previewPhase==='ready'||previewPhase==='measuring')&&!measurement.current.matches(inputKey))invalidate();
+    if(previewPhase!=='pending'&&!measurement.current.matches(inputKey))invalidate();
   },[inputKey,previewPhase]);
   const view=useLabViewport(target),[sampleOpen,setSampleOpen]=useState(false);
   useEffect(()=>()=>{measurement.current.invalidate();clearTimeout(refreshTimer.current);},[]);
@@ -44,7 +44,7 @@ export function ParagraphLab({design,bodyFont,mathFontFamily,fontOptions,width,h
     if(busy||previewPhase!=='pending')return;
     refreshTimer.current=setTimeout(()=>void measure(true),180);
     return ()=>clearTimeout(refreshTimer.current);
-  },[draft,sample,sampleBcm,width,height,busy,previewPhase]);
+  },[draft,sample,sampleBcm,width,height,busy,previewPhase,inputKey]);
   function load(){if(!entry||busy)return;invalidate();setDraft(structuredClone(entry.design));setMessage('部品を作業案へコピーしました。再計測してください。');}
   function action(type){if(busy||!libraryEditable)return;if(type==='add'){if(ready&&measurement.current.isReady(inputKey)&&libraryName.trim())onLibraryAction({type,usage:'paragraph',name:libraryName.trim(),design:draft});}else if(entry){if(type==='rename'&&libraryName.trim())onLibraryAction({type,id:entry.id,name:libraryName.trim()});else if(type==='replace'&&ready&&measurement.current.isReady(inputKey)&&window.confirm(used?'共有本文全体のデザインを更新しますか？':'登録部品を上書きしますか？'))onLibraryAction({type,id:entry.id,design:draft});else if(type==='delete'&&!used&&window.confirm('登録部品を削除しますか？')){onLibraryAction({type,id:entry.id});setLibraryId('');}}}
   const weights=fontOptions.find(o=>o.id===draft.font?.id)?.weights??[];
