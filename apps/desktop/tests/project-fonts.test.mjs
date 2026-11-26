@@ -33,3 +33,36 @@ test('symlink font directory rejected',{skip:process.platform==='win32'},async t
   await mkdir(join(root,'outside'));await symlink(join(root,'outside'),join(root,'fonts'));
   await assert.rejects(projectFonts(root).list(),{code:'FONT'});
 });
+
+
+const mathFont=process.env.BC_TEST_MATH_FONT;
+test('regular MATH font preflight, independent role roundtrip and legacy compatibility',{skip:!mathFont||!font},async t=>{
+  const root=await mkdtemp(join(tmpdir(),'bc-math-font-'));t.after(()=>rm(root,{recursive:true,force:true}));
+  const bytes=await readFile(mathFont),meta=inspectStaticFont(bytes);
+  assert.equal(meta.hasMathTable,true);assert.equal(meta.weight,400);
+  assert.equal(inspectStaticFont(await readFile(font)).hasMathTable,false);
+  const corrupt=Buffer.from(bytes);
+  const count=corrupt.readUInt16BE(4);
+  let found=false;
+  for(let i=0;i<count;i++){const p=12+i*16;if(corrupt.toString('ascii',p,p+4)==='MATH'){corrupt.writeUInt16BE(1,corrupt.readUInt32BE(p+8)+4);found=true;break;}}
+  assert.equal(found,true);assert.throws(()=>inspectStaticFont(corrupt),{code:'FONT'});
+  const w=await createProject(root,{title:'Math font',folder:'book',size:'A5'});
+  const math=await w.importFont(mathFont,{...rights,license:'TeX Gyre Math fixture'}),text=await w.importFont(font,rights);
+  const faces=await w.fonts();
+  assert.equal(faces.find(f=>f.id===math.id).hasMathTable,true);
+  assert.equal(faces.find(f=>f.id===text.id).hasMathTable,false);
+  const normal=faces.find(f=>f.id===text.id),oldMeta=join(root,'book','fonts','imported',normal.sha256,'face.json');
+  const old=JSON.parse(await readFile(oldMeta,'utf8'));delete old.hasMathTable;await writeFile(oldMeta,JSON.stringify(old));
+  assert.equal((await w.fonts()).find(f=>f.id===text.id).hasMathTable,false);
+  const before=await w.typography();
+  assert.equal(before.roles.math,undefined);
+  for(const invalid of [{font:text.id,weight:400},{font:math.id,weight:700},{font:'font-'+'0'.repeat(64),weight:400}]){
+    await assert.rejects(w.saveTypography(before.revision,{...before.roles,math:invalid}),{code:'THEME'});
+  }
+  const selected={...before.roles,math:{font:math.id,weight:400}};
+  const saved=await w.saveTypography(before.revision,selected);
+  const reopened=await openWorkspace(join(root,'book','book.yaml'));
+  assert.deepEqual((await reopened.typography()).roles,selected);
+  await reopened.saveTypography(saved.revision,{...selected,math:{font:'auto',weight:400}});
+  assert.deepEqual((await reopened.typography()).roles,before.roles);
+});
