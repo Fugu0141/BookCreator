@@ -110,23 +110,35 @@ function App(){
   function openMath(kind='display'){
     const node=textarea.current;
     if(busy||working.current||!file?.editable||!node||composing.current)return;
-    try{
-      if(node.value!==text)throw Error('原稿の編集状態が変わりました。');
-      const start=node.selectionStart,end=node.selectionEnd,target=kind==='inline'?inspectInlineMath(text,start,end,deps):(inspectComponentDisplayMath(text,start,end,deps)??inspectDisplayMath(text,start,end,scanDocument));
+    const start=node.selectionStart,end=node.selectionEnd,job=generation.current;
+    const open=context=>{
+      if(generation.current!==job||node.value!==text||composing.current||node.selectionStart!==start||node.selectionEnd!==end)throw Error('原稿の編集状態が変わりました。');
+      const target=kind==='inline'?inspectInlineMath(text,start,end,deps):(inspectComponentDisplayMath(text,start,end,deps,context)??inspectDisplayMath(text,start,end,scanDocument));
       mathComposing.current=false;
       setMathDraft({kind,start,end,component:target.component===true,formula:target.formula,mode:target.mode,numbered:kind==='display'&&!!target.numbered,equationId:kind==='display'?target.equationId:undefined,source:text,fileId:file.id,revision:file.revision,job:generation.current});
+    };
+    try{
+      if(node.value!==text)throw Error('原稿の編集状態が変わりました。');
+      const nested=kind==='display'&&scanDocument(text).blocks.some(b=>b.kind==='directive'&&b.header.name!=='layout'&&start>=b.range.start&&start<b.range.end&&end<=b.range.end);
+      if(nested)void io(async()=>{try{open({documents:await referenceDocuments(text),documentId:file.id});}catch(e){setStatus('数式編集不可：'+String(e.message??e));}});
+      else open();
     }catch(e){setStatus('数式編集不可：'+String(e.message??e));}
   }
   function applyMath(){
     const node=textarea.current;
     if(!mathDraft||busy||working.current||!file?.editable||!node||composing.current||mathComposing.current)return;
-    try{
-      if(mathStale||node.value!==mathDraft.source)throw Error('原稿が変更されました。数式エディタを開き直してください。');
-      const plan=mathDraft.kind==='inline'?planInlineMath(text,mathDraft.start,mathDraft.end,mathDraft.formula,deps):mathDraft.component?planComponentDisplayMath(text,mathDraft.start,mathDraft.end,mathDraft.formula,deps):planDisplayMath(text,mathDraft.start,mathDraft.end,mathDraft.formula,scanDocument,parseDisplayMath,mathDraft.mode==='insert'&&mathDraft.numbered?mathDraft.equationId:undefined);
+    const apply=context=>{
+      if(mathStale||generation.current!==mathDraft.job||node.value!==mathDraft.source||composing.current||mathComposing.current)throw Error('原稿が変更されました。数式エディタを開き直してください。');
+      const plan=mathDraft.kind==='inline'?planInlineMath(text,mathDraft.start,mathDraft.end,mathDraft.formula,deps):mathDraft.component?planComponentDisplayMath(text,mathDraft.start,mathDraft.end,mathDraft.formula,deps,context):planDisplayMath(text,mathDraft.start,mathDraft.end,mathDraft.formula,scanDocument,parseDisplayMath,mathDraft.mode==='insert'&&mathDraft.numbered?mathDraft.equationId:undefined);
       const next=applyPatches(text,[plan.patch]);
       setMathDraft(null);edit(next);setStatus((mathDraft.kind==='inline'?'本文内数式':'独立数式')+'を'+(plan.action==='apply'?'挿入':'更新')+'しました（未保存）。');
       const job=generation.current;
       requestAnimationFrame(()=>{if(textarea.current===node&&generation.current===job&&node.value===next){node.focus();node.setSelectionRange(plan.selection.start,plan.selection.end);}});
+    };
+    try{
+      if(mathStale||node.value!==mathDraft.source)throw Error('原稿が変更されました。数式エディタを開き直してください。');
+      if(mathDraft.component)void io(async()=>{try{apply({documents:await referenceDocuments(text),documentId:file.id});}catch(e){setStatus('数式編集不可：'+String(e.message??e));}});
+      else apply();
     }catch(e){setStatus('数式編集不可：'+String(e.message??e));}
   }
   const [referenceDraft,setReferenceDraft]=useState(null);
