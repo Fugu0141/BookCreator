@@ -547,3 +547,11 @@ body{font-family:BCFont_NotoSansJP,system-ui,sans-serif}.font-control,.typograph
 .lab-recovery-notice p{margin:4px 0;font-size:12px;overflow-wrap:anywhere}
 .lab-recovery-notice .lab-row{flex-wrap:wrap;gap:6px}
 .lab-three-pane header:has(.lab-recovery-notice){flex-wrap:wrap}
+
+/* Retain the last measured frame while a new draft is being composed,
+   but never expose stale interactive geometry as the current draft. */
+.lab-grid-three [data-preview-phase]:not([data-preview-phase=ready])>div{opacity:.48;pointer-events:none}
+.lab-preview-hint{color:#475569;font-size:12px}
+#lab-status,#paragraph-status{overflow-wrap:anywhere}
+.lab-recovery-status{color:#e2e8f0}
+.lab-recovery-status[data-phase=error]{color:#ffd1ca}
