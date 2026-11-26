@@ -1000,3 +1000,34 @@ test('multiline display formulas retain exact LF/CRLF and numbered or component 
   assert.throws(()=>planInlineMath('本文。',1,1,draft,deps),RangeError);
   assert.throws(()=>planDisplayMath('',0,0,'x\n$$\ny',bcm.scanDocument,engine.parseDisplayMath),RangeError);
 });
+
+
+test('numbered component equations share chapter order, source envelopes and reference targets',()=>{
+  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds,validateDisplayMath:engine.parseDisplayMath,validateInlineMath:engine.parsePreviewMath,parseReference:bcm.parseReferenceToken};
+  const id='component-00000000-0000-4000-8000-000000000001';
+  const library={schemaVersion:3,entries:[{id,name:'数式部品',usage:'study',design:{...defaultHeadingDesign(),direction:'column',children:[{id:'content',type:'content'},{id:'hint',type:'slot',name:'hint',width:'fill',fontSize:3500,lineHeight:1.5,color:'#123456'}]}}]};
+  for(const nl of ['\n','\r\n']){
+    const wrap=(id,formula,depth=3,numbered=true)=>[':'.repeat(depth)+'layout{#'+id+' numbered="'+numbered+'"}','$$',formula,'$$',':'.repeat(depth)].join(nl);
+    const first=wrap('eq-first','x^2'),hint=wrap('eq-hint','y^2'),body=wrap('eq-body','z^2'),off=wrap('eq-off','a',3,false),last=wrap('eq-last','b');
+    // Source order, not component visual slot order.
+    const source=['# 第一章','',first,'',':::::component{name="'+id+'"}','::::slot{name="hint"}',hint,'::::','','::::slot{name="content"}','本文。','',body,'',off,'::::',':::::','',last,'','式 :ref{target="eq-hint" format="label-number"}。',''].join(nl);
+    const doc={documentId:'a',revision:'1',source,startOn:'page'},other={documentId:'b',revision:'1',source:'参照 :ref{target="eq-body" format="number"}。',startOn:'page'};
+    const run=(docs)=>prepareBookBrowserPreview(docs,'1','numbered-slot',{width:100000,height:100000},deps,undefined,undefined,undefined,undefined,undefined,library);
+    const p=run([doc,other]);assert.deepEqual(p.diagnostics,[]);
+    const blocks=p.options.sections[0].blocks,study=blocks.find(b=>b.component);
+    assert.equal(blocks.filter(b=>b.displayMath)[0].equationNumber,'1.1');
+    assert.equal(blocks.filter(b=>b.displayMath)[1].equationNumber,'1.4');
+    assert.deepEqual(study.request.inlineMath.map(a=>a.equationNumber),['1.3',undefined]);
+    assert.deepEqual(study.namedSlots[0].request.inlineMath.map(a=>a.equationNumber),['1.2']);
+    for(const [req,name,raw] of [[study.request,undefined,body],[study.namedSlots[0].request,'hint',hint]]){
+      const a=req.inlineMath[0],range=previewSourceRange(study,{textStart:a.start,textEnd:a.start+1},name);
+      assert.equal(source.slice(range.start,range.end),raw);
+    }
+    assert.equal(blocks.at(-1).request.text,'式 式 (1.2)。');
+    assert.equal(p.options.sections[1].blocks[0].request.text,'参照 1.3。');
+    assert.deepEqual(equationReferenceTargets([doc,other],deps).map(t=>[t.id,t.number]),[['eq-first','1.1'],['eq-hint','1.2'],['eq-body','1.3'],['eq-last','1.4']]);
+    for(const bad of [source.replace('#eq-body','#eq-hint'),source.replace('target="eq-hint"','target="eq-off"'),source.replace('y^2','\\input{secret}'),source.replace('numbered="true"','numbered="maybe"')]){
+      assert.equal(run([{...doc,source:bad},other]).options,undefined);
+    }
+  }
+});
