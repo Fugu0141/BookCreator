@@ -9,7 +9,9 @@ import {projectCatalog} from './project-catalog.mjs';
 import {STIX_FONT,verifyPinnedFontBlob} from './bundled-math-font.mjs';
 import {createHash,randomUUID} from 'node:crypto';
 import {recoveryKey,recoveryStore,recoveryStatus} from './manuscript-recovery.mjs';
-const PACKAGE_RESTART_SMOKE=process.argv.includes('--package-restart-smoke');
+const PACKAGE_CRASH_PREPARE=process.argv.includes('--package-crash-prepare');
+const PACKAGE_CRASH_VERIFY=process.argv.includes('--package-crash-verify');
+const PACKAGE_RESTART_SMOKE=PACKAGE_CRASH_PREPARE||PACKAGE_CRASH_VERIFY||process.argv.includes('--package-restart-smoke');
 const PACKAGE_SMOKE=PACKAGE_RESTART_SMOKE||process.argv.includes('--package-smoke');
 const SMOKE=PACKAGE_SMOKE||process.argv.includes('--smoke');
 const smokeParent=PACKAGE_SMOKE?process.env.BC_PACKAGE_SMOKE_TMP||tmpdir():tmpdir();
@@ -197,7 +199,8 @@ async function run(){
     await writeFile(join(smokeRoot,'manuscript','chapter.md'),'# 見出し\n\n'+('日本語と English text の実測組版です。 '.repeat(30)).trim()+'\n');
   }
   await win.loadURL(PAGE);
-  if(PACKAGE_RESTART_SMOKE)await packageRestartSmoke();
+  if(PACKAGE_CRASH_PREPARE||PACKAGE_CRASH_VERIFY)await crashRecoverySmoke(PACKAGE_CRASH_PREPARE);
+  else if(PACKAGE_RESTART_SMOKE)await packageRestartSmoke();
   else if(PACKAGE_SMOKE)await packageSmoke();
   else if(SMOKE)await smoke();
 }
@@ -1374,6 +1377,70 @@ async function packageRestartSmoke(){
 }
 // Exercise the real packaged recovery IPC and editor, using only the isolated
 // fixture. Renderer reload is not yet a forced process crash.
+// Run in a dedicated CI-owned profile only. The runner kills the first
+// process tree after the checkpoint marker, without invoking close/save.
+async function crashRecoverySmoke(prepare){
+  const root=join(smokeRoot,'writing-journey'),path=join(root,'manuscript','chapter-01.md');
+  const key=recoveryKey(await realpathSync(join(root,'book.yaml')),'chapter-01','manuscript/chapter-01.md');
+  const store=recoveryStore(smokeRoot),oraclePath=join(smokeRoot,'ux10-crash.json');
+  const digest=value=>createHash('sha256').update(value).digest('hex');
+  const raw=js=>win.webContents.executeJavaScript(js);
+  const until=async(label,js)=>{for(let i=0;i<150;i++){if(await raw(js))return;await new Promise(r=>setTimeout(r,100));}throw Error('Crash recovery: '+label+'; '+await raw("document.querySelector('#status')?.textContent"));};
+  const click=async selector=>{
+    await until('reachable '+selector,"(()=>{const e=document.querySelector("+JSON.stringify(selector)+");return !!e?.getClientRects().length&&!e.disabled;})()");
+    await raw("document.querySelector("+JSON.stringify(selector)+").click()");
+  };
+  async function openBook(){
+    await until('home catalog',"[...document.querySelectorAll('.hub-project-open')].some(e=>e.querySelector('strong')?.textContent==='執筆フロー検証書籍')");
+    await raw("(()=>{const e=[...document.querySelectorAll('.hub-project-open')].find(e=>e.querySelector('strong')?.textContent==='執筆フロー検証書籍');if(!e?.getClientRects().length||e.disabled)throw Error('Fixture unavailable');e.click();})()");
+    await click('[data-section=chapter-01]');
+  }
+  const saved=await readFile(path,'utf8'),draft=saved+'\n強制終了後に復旧する未保存原稿。\n';
+  if(prepare){
+    if(await store.get(key))throw Error('Unexpected preexisting crash recovery record');
+    await openBook();
+    await until('original source',"document.querySelector('#source').value==="+JSON.stringify(saved)+"&&document.querySelector('#workspace-save-state').textContent==='保存済み'");
+    await raw("(()=>{const e=document.querySelector('#source');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(e,"+JSON.stringify(draft)+");e.dispatchEvent(new Event('input',{bubbles:true}));})()");
+    await until('real checkpoint',"document.querySelector('#recovery-state')?.dataset.phase==='recorded'&&document.querySelector('#workspace-save-state').textContent==='未保存：原稿'");
+    const record=await store.get(key);
+    if(record?.text!==draft||await readFile(path,'utf8')!==saved)throw Error('Crash preparation changed original or lost recovery');
+    await writeFile(oraclePath,JSON.stringify({version:1,pid:process.pid,sourceHash:digest(saved),draftHash:digest(draft),recordVersion:record.version}),{flag:'wx'});
+    if(!process.env.BC_PACKAGE_SMOKE_REPORT)throw Error('Crash marker required');
+    await writeFile(process.env.BC_PACKAGE_SMOKE_REPORT,'READY UX-10f-3 '+process.pid+'\n',{flag:'wx'});
+    // Keep the process and unsaved renderer alive. Do not call close or exit.
+    return;
+  }
+  const oracle=JSON.parse(await readFile(oraclePath,'utf8')),record=await store.get(key);
+  if(oracle.version!==1||oracle.pid===process.pid||oracle.sourceHash!==digest(saved)||oracle.draftHash!==digest(draft)||record?.version!==oracle.recordVersion||record?.text!==draft)throw Error('Crash recovery oracle mismatch');
+  await openBook();
+  await until('recovery after forced exit',"document.querySelector('#recovery-dialog').open&&document.querySelector('#recovery-saved-text').value==="+JSON.stringify(saved)+"&&document.querySelector('#recovery-draft-text').value==="+JSON.stringify(draft)+"&&!!document.querySelector('#recovery-restore')");
+  await click('#recovery-later');
+  await until('deferred', "!document.querySelector('#recovery-dialog').open&&document.querySelector('#source').readOnly");
+  // Change the fixture externally, then reopen. The old candidate must be
+  // preserved and must not be offered as an automatic restore.
+  const external=saved+'\n外部変更の検証。\n';
+  await writeFile(path,external);
+  await win.loadURL(PAGE);await openBook();
+  await until('diverged review',"document.querySelector('#recovery-dialog').open&&document.querySelector('#recovery-saved-text').value==="+JSON.stringify(external)+"&&document.querySelector('#recovery-draft-text').value==="+JSON.stringify(draft)+"&&!document.querySelector('#recovery-restore')");
+  await click('#recovery-later');
+  await until('diverged deferred',"!document.querySelector('#recovery-dialog').open&&document.querySelector('#source').readOnly");
+  if((await store.get(key))?.version!==oracle.recordVersion||await readFile(path,'utf8')!==external)throw Error('Diverged recovery changed original or candidate');
+  // Restore only the test fixture to its exact prior bytes, then exercise
+  // explicit restoration and normal revision-checked save.
+  await writeFile(path,saved);
+  await win.loadURL(PAGE);await openBook();
+  await click('#recovery-restore');
+  await until('restored but unsaved',"!document.querySelector('#recovery-dialog').open&&document.querySelector('#source').value==="+JSON.stringify(draft)+"&&document.querySelector('#workspace-save-state').textContent==='未保存：原稿'");
+  if(await readFile(path,'utf8')!==saved)throw Error('Recovery overwrote original before save');
+  await click('#save');
+  await until('explicit save',"document.querySelector('#workspace-save-state').textContent==='保存済み'&&!document.querySelector('#recovery-state')");
+  if(await readFile(path,'utf8')!==draft||await store.get(key))throw Error('Recovered save or cleanup failed');
+  const report='PASS UX-10f-3 forced process recovery, external conflict protection and explicit save';
+  if(!process.env.BC_PACKAGE_SMOKE_REPORT)throw Error('Crash verification report required');
+  await writeFile(process.env.BC_PACKAGE_SMOKE_REPORT,report+'\n',{flag:'wx'});
+  console.log(report);
+  closing=true;win.destroy();app.exit(0);
+}
 async function recoveryJourneySmoke(){
   const raw=js=>win.webContents.executeJavaScript(js);
   const until=async(label,js)=>{for(let i=0;i<150;i++){if(await raw(js))return;await new Promise(r=>setTimeout(r,100));}throw Error('Recovery journey: '+label+'; '+await raw("document.querySelector('#status')?.textContent"));};
