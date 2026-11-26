@@ -11,7 +11,7 @@ import {PublicationPanel} from './publication-panel.jsx';
 import {DiagnosticList,diagnosticRecords} from './diagnostic-list.jsx';
 import {StructuredEditor} from './structured-editor.jsx';
 import {planStructuredEdit,projectBlocks} from './structured-blocks.mjs';
-import {planListValues,planListAction} from './structured-list.mjs';
+import {planListDraft,planListAction} from './structured-list.mjs';
 import {planStudyEdit} from './structured-study.mjs';
 import {inspectStudyLinks,planStudyLinks} from './structured-study-links.mjs';
 import {planStructuredEquation,structuredReferenceOffset} from './structured-equation.mjs';
@@ -509,7 +509,7 @@ function App(){
       commitStructured(next);setStructuredDraft(null);setStatus('段落を分割しました（未保存）。');
     }catch(e){setStatus(String(e.message??e));}
   }
-  function applyStructured(draft){if(busy||structuredComposing||!file?.editable||draft!==structuredDraft||draft.inlineEdit||draft.richError||draft.source!==text)return;try{const next=draft.list?planListValues(text,draft.row,draft.values,{scan:scanDocument,parseInline:parseStructuredInline,applyPatches,project:projectBlocks}):draft.equation?planStructuredEquation(text,draft.row,draft.value,{scan:scanDocument,applyPatches,validateMath:parseDisplayMath}):draft.study?planStudyEdit(text,draft.study,draft.values,{scan:scanDocument,applyPatches}):planStructuredEdit(text,draft.row,draft.value,{scan:scanDocument,applyPatches,validateMath:parseDisplayMath,parseInline:parseStructuredInline,level:draft.level});if(next===text)return;commitStructured(next);setStructuredDraft(null);setStatus('ブロックの変更を反映しました（未保存）。');}catch(e){setStatus(String(e.message??e));}}
+  function applyStructured(draft){if(busy||structuredComposing||!file?.editable||draft!==structuredDraft||draft.inlineEdit||draft.richError||draft.source!==text)return;try{const next=draft.list?planListDraft(text,draft,{scan:scanDocument,parseInline:parseStructuredInline,applyPatches,project:projectBlocks}):draft.equation?planStructuredEquation(text,draft.row,draft.value,{scan:scanDocument,applyPatches,validateMath:parseDisplayMath}):draft.study?planStudyEdit(text,draft.study,draft.values,{scan:scanDocument,applyPatches}):planStructuredEdit(text,draft.row,draft.value,{scan:scanDocument,applyPatches,validateMath:parseDisplayMath,parseInline:parseStructuredInline,level:draft.level});if(next===text)return;commitStructured(next);setStructuredDraft(null);setStatus('ブロックの変更を反映しました（未保存）。');}catch(e){setStatus(String(e.message??e));}}
   const componentBaseDisabled=routeBlocked||!validPaper(page)||themeDirty;
   const headingDisabled=componentBaseDisabled||!theme?.componentEditable;
   const paragraphDisabled=componentBaseDisabled||!theme?.paragraphEditable;
