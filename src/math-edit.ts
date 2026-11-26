@@ -3,7 +3,7 @@ import {parsePreviewInline} from './inline-preview.js';
 import type {InlineEditPlan} from './inline-edit.js';
 
 type Scanner=(source:string)=>Scan;
-type Target={mode:'edit';start:number;end:number;formula:string;blockStart:number;blockEnd:number}|{mode:'insert';start:number;end:number;formula:string};
+type Target={mode:'edit';start:number;end:number;formula:string;blockStart:number;blockEnd:number;numbered?:boolean;equationId?:string}|{mode:'insert';start:number;end:number;formula:string};
 const fail=(message:string):never=>{throw RangeError(message);};
 function scanned(source:string,scan:Scanner){
   if(typeof source!=='string'||source.length>1000000)return fail('Invalid manuscript');
@@ -25,21 +25,30 @@ export function inspectDisplayMath(source:string,start:number,end:number,scan:Sc
   if(!Number.isSafeInteger(start)||!Number.isSafeInteger(end)||start<0||end<start||end>source.length)return fail('Invalid math selection');
   const blocks=scanned(source,scan);
   const b=blocks.find(b=>start>=b.range.start&&start<b.range.end&&end<=b.range.end);
-  if(b?.kind==='math'){
-    const match=fence(source.slice(b.range.start,b.range.end));
+  const children=b?.kind==='directive'?b.children.filter(child=>child.kind!=='blank'):[];
+  const attrs=b?.kind==='directive'?Object.fromEntries(b.header.attributes.map(a=>[a.key,a.value])):{};
+  const wrapped=b?.kind==='directive'&&b.closed&&b.header.kind==='container'&&b.header.name==='layout'&&children.length===1&&children[0].kind==='math'&&Object.keys(attrs).every(k=>k==='numbered')&&(attrs.numbered===undefined||attrs.numbered==='true'||attrs.numbered==='false')&&(!!b.header.id||attrs.numbered!==undefined);
+  if(b&&(b.kind==='math'||wrapped)){
+    const math=wrapped?children[0]:b;
+    const match=fence(source.slice(math.range.start,math.range.end));
     if(!match)return fail('Only a single-line display formula can be edited');
-    const p=b.range.start+match[1].length;
-    return {mode:'edit',start:p,end:p+match[2].length,formula:match[2],blockStart:b.range.start,blockEnd:b.range.end};
+    const p=math.range.start+match[1].length;
+    return {mode:'edit',start:p,end:p+match[2].length,formula:match[2],blockStart:b.range.start,blockEnd:b.range.end,...(wrapped&&b.kind==='directive'?{numbered:attrs.numbered==='true',equationId:b.header.id}:{})};
   }
   if(start!==end||(start!==source.length&&b?.kind!=='blank'))return fail('Place the caret on a blank line or at the end, or select an existing display formula');
   const p=start===source.length?start:b!.range.start;
   return {mode:'insert',start:p,end:p,formula:'x^2'};
 }
 /** Exact BCM patch; never change fences when editing or reinterpret protected source. */
-export function planDisplayMath(source:string,start:number,end:number,formula:string,scan:Scanner,validate:(formula:string)=>unknown):InlineEditPlan{
+export function planDisplayMath(source:string,start:number,end:number,formula:string,scan:Scanner,validate:(formula:string)=>unknown,numberedId?:string):InlineEditPlan{
   if(typeof formula!=='string'||!formula.trim()||formula.length>2048||/[\r\n]/.test(formula)||typeof validate!=='function')return fail('Expected a single-line supported formula');
   validate(formula);
   const target=inspectDisplayMath(source,start,end,scan),before=scanned(source,scan);
+  if(numberedId!==undefined){
+    if(target.mode!=='insert'||typeof numberedId!=='string'||!/^[A-Za-z][A-Za-z0-9_.-]{0,127}$/.test(numberedId))return fail('Numbered insertion requires a valid new equation ID');
+    const hasId=(blocks:ReturnType<typeof scanned>):boolean=>blocks.some(b=>b.kind==='directive'&&(b.header.id===numberedId||hasId(b.children)));
+    if(hasId(before))return fail('Equation ID already exists in this manuscript');
+  }
   if(target.mode==='edit'){
     const patch={range:{start:target.start,end:target.end},expected:target.formula,replacement:formula};
     const next=source.slice(0,target.start)+formula+source.slice(target.end),delta=formula.length-target.formula.length;
@@ -48,17 +57,22 @@ export function planDisplayMath(source:string,start:number,end:number,formula:st
       const old=before[i],shift=old.range.start>=target.blockEnd?delta:0;
       return b.kind!==old.kind||b.range.start!==old.range.start+shift||b.range.end!==old.range.end+(old.range.start===target.blockStart?delta:shift);
     }))return fail('Math edit would change scanner structure');
+    const checked=inspectDisplayMath(next,target.start,target.start+formula.length,scan);
+    if(checked.mode!=='edit'||checked.start!==target.start||checked.formula!==formula||checked.numbered!==target.numbered||checked.equationId!==target.equationId)return fail('Math edit would change equation identity or structure');
     return {patch,selection:{start:target.start,end:target.start+formula.length},action:'replace'};
   }
   const endings=new Set(source.match(/\r\n|\r|\n/g)??[]);
   if(endings.has('\r')||endings.size>1)return fail('Mixed or unsupported line endings');
   const nl=endings.has('\r\n')?'\r\n':'\n',pos=target.start;
   const leading=pos===0?'':source.slice(0,pos).endsWith(nl)?nl:nl+nl;
-  const opening='$$'+nl,closing=nl+'$$'+nl+nl,replacement=leading+opening+formula+closing;
+  const opening=(numberedId===undefined?'':':::layout{#'+numberedId+' numbered="true"}'+nl)+'$$'+nl;
+  const closing=nl+'$$'+nl+(numberedId===undefined?'':':::'+nl)+nl,replacement=leading+opening+formula+closing;
   const next=source.slice(0,pos)+replacement+source.slice(pos),after=scanned(next,scan);
-  const mathStart=pos+leading.length,mathEnd=mathStart+opening.length+formula.length+nl.length+2+nl.length;
-  const inserted=after.find(b=>b.range.start===mathStart&&b.range.end===mathEnd&&b.kind==='math');
+  const mathStart=pos+leading.length,mathEnd=mathStart+opening.length+formula.length+closing.length-nl.length;
+  const inserted=after.find(b=>b.range.start===mathStart&&b.range.end===mathEnd&&b.kind===(numberedId===undefined?'math':'directive'));
   if(!inserted)return fail('Insertion is not an independent math block');
+  const checked=inspectDisplayMath(next,mathStart+opening.length,mathStart+opening.length+formula.length,scan);
+  if(checked.mode!=='edit'||checked.formula!==formula||checked.equationId!==numberedId||checked.numbered!==(numberedId===undefined?undefined:true))return fail('Inserted equation does not match requested identity');
   // Other nonblank blocks must retain exact raw text, including nested directives.
   // At EOF only, a previous unterminated last line may gain its original newline style.
   const old=before.filter(b=>b.kind!=='blank'),rest=after.filter(b=>b.kind!=='blank'&&b!==inserted);
