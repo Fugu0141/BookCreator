@@ -562,6 +562,21 @@ async function packageSmoke(){
   await until("!document.querySelector('#structured-apply').disabled&&Array.from(document.querySelectorAll('.rich-text-preview span')).some(s=>s.textContent==='重'&&s.style.fontWeight==='700')&&Array.from(document.querySelectorAll('.rich-text-preview span')).some(s=>s.textContent==='章'&&s.style.fontStyle==='italic')");
   await exec("document.querySelector('#structured-cancel').click()");
   await until("!document.querySelector('#structured-rich-value')&&document.querySelector('#source').value==="+JSON.stringify(crossStyleFixture));
+  // UX-08f-6b: mixed style selection toggles a single property without changing text.
+  await exec("document.querySelector('[data-structured-kind=paragraph] [data-rich-edit]').click()");
+  await until("document.querySelector('#structured-rich-value')?.value==='重要な文章です。'");
+  await exec("(()=>{const e=document.querySelector('#structured-rich-value');e.focus();e.setSelectionRange(1,4);e.dispatchEvent(new KeyboardEvent('keyup',{key:'Shift',bubbles:true}));})()");
+  await until("document.querySelector('[data-rich-format=underline]')?.getAttribute('aria-pressed')==='false'");
+  await exec("document.querySelector('[data-rich-format=underline]').click()");
+  await until("document.querySelector('[data-rich-format=underline]')?.getAttribute('aria-pressed')==='true'&&Array.from(document.querySelectorAll('.rich-text-preview span')).some(s=>s.textContent==='要'&&s.style.fontWeight==='700'&&s.style.textDecoration==='underline')&&Array.from(document.querySelectorAll('.rich-text-preview span')).some(s=>s.textContent==='文'&&s.style.fontStyle==='italic'&&s.style.textDecoration==='underline')");
+  await exec("document.querySelector('[data-rich-format=underline]').click()");
+  await until("document.querySelector('[data-rich-format=underline]')?.getAttribute('aria-pressed')==='false'&&!Array.from(document.querySelectorAll('.rich-text-preview span')).some(s=>s.style.textDecoration==='underline')");
+  await exec("document.querySelector('[data-rich-format=underline]').click()");
+  await until("document.querySelector('[data-rich-format=underline]')?.getAttribute('aria-pressed')==='true'&&!document.querySelector('#structured-apply').disabled");
+  await exec("document.querySelector('#structured-apply').click()");
+  await until("!document.querySelector('#structured-rich-value')&&document.querySelector('#source').value.includes('underline=\"true\"')");
+  await exec("document.querySelector('#structured-undo').click()");
+  await until("document.querySelector('#source').value==="+JSON.stringify(crossStyleFixture));
   await exec("document.querySelector('#editor-view-source').click()");
   // UX-08f-4b: caret split, join, list conversion, item edits and safe indentation.
   const paragraphFixture='# 章\n\n最初の文章。次の文章。\n';
