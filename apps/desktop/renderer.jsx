@@ -9,18 +9,18 @@ import {paperGeometry} from './book-settings.mjs';
 const deps={scan:scanDocument,validate:validateScannedBlocks,index:indexBlockIds,validateDisplayMath:parsePreviewMath,validateInlineMath:parsePreviewMath,parseReference:parseReferenceToken};
 const api=window.bookcreator;
 const studyNames={note:'補足',tip:'ポイント',warning:'注意',important:'重要',example:'例題',exercise:'練習問題',explanation:'解説'};
-const noto='BCFont_NotoSansJP';
+const noto='BCFont_NotoSansJP',stix='BCFont_STIXTwoMath';
 const choices=[{id:noto,label:'Noto Sans JP'},{id:'serif',label:'システム明朝・セリフ'},{id:'sans-serif',label:'システムゴシック'},{id:'monospace',label:'等幅'}];
 const idsByFamily={'BCFont_NotoSansJP':'noto-sans-jp','serif':'system-serif','sans-serif':'system-sans','monospace':'system-monospace'};
 const familiesById=Object.fromEntries(Object.entries(idsByFamily).map(([family,id])=>[id,family]));
 function fromRoles(roles){
   if(!roles)return initialTypography;
   const text=Object.fromEntries(['body','heading'].map(role=>{const v=roles[role];return [role,{fontFamily:familiesById[v.font]??('BCFont_'+v.font.slice(5)),fontWeight:v.weight}];}));
-  return {...text,...(roles.math&&roles.math.font!=='auto'?{mathFontFamily:'BCFont_'+roles.math.font.slice(5)}:{})};
+  return {...text,...(roles.math&&roles.math.font!=='auto'?{mathFontFamily:roles.math.font==='stix-two-math'?stix:'BCFont_'+roles.math.font.slice(5)}:{})};
 }
 function toRoles(typography){
   const text=Object.fromEntries(['body','heading'].map(role=>{const v=typography[role];return [role,{font:idsByFamily[v.fontFamily]??('font-'+v.fontFamily.slice(7)),weight:v.fontWeight}];}));
-  return {...text,...(typography.mathFontFamily&&typography.mathFontFamily!=='auto'?{math:{font:'font-'+typography.mathFontFamily.slice(7),weight:400}}:{})};
+  return {...text,...(typography.mathFontFamily&&typography.mathFontFamily!=='auto'?{math:{font:typography.mathFontFamily===stix?'stix-two-math':'font-'+typography.mathFontFamily.slice(7),weight:400}}:{})};
 }
 const initialTypography={body:{fontFamily:noto,fontWeight:400},heading:{fontFamily:noto,fontWeight:700}};
 function FontChoice({id,value,onChange,disabled,options=choices}){return <select id={id} value={value} onChange={e=>onChange(e.target.value)} disabled={disabled}>{options.map(c=><option key={c.id} value={c.id} disabled={c.disabled}>{c.label}</option>)}</select>;}
@@ -57,7 +57,7 @@ function App(){
   function discardSettings(){if(savedSettings){applySettings(savedSettings);invalidate();}}
   const [fonts,setFonts]=useState([]),[fontManager,setFontManager]=useState(false),[rights,setRights]=useState({license:'',licenseText:'',copyAllowed:false,embedAllowed:false});
   const fontChoices=[...choices,...fonts.map(f=>({id:f.alias,label:f.family+' '+f.style+' · '+f.sha256.slice(0,8)+(f.loaded?'':'（読込失敗）'),disabled:!f.loaded}))];
-  const mathFontChoices=[{id:'auto',label:'自動（システム数式フォント）'},...fontChoices.filter(c=>fonts.some(f=>f.alias===c.id&&f.hasMathTable&&f.weight===400))];
+  const mathFontChoices=[{id:'auto',label:'自動（システム数式フォント）'},{id:stix,label:'STIX Two Math（同梱）'},...fontChoices.filter(c=>fonts.some(f=>f.alias===c.id&&f.hasMathTable&&f.weight===400))];
   function setMathFont(value){
     if(!mathFontChoices.some(c=>c.id===value&&!c.disabled))return;
     setTypography(t=>{const {mathFontFamily:_,...text}=t;return value==='auto'?text:{...text,mathFontFamily:value};});
@@ -235,7 +235,7 @@ function App(){
       if(!page)throw Error(savedSettings?.message??'用紙設定が未対応です。');
       const geometry=paperGeometry(page);
       if([typography.body,typography.heading].some(v=>v.fontFamily.startsWith('BCFont_')&&v.fontFamily!==noto&&!fonts.some(f=>f.alias===v.fontFamily&&f.loaded)))throw Error('登録フォントを読み込めません。');
-      if(typography.mathFontFamily&&!fonts.some(f=>f.alias===typography.mathFontFamily&&f.loaded&&f.hasMathTable&&f.weight===400))throw Error('登録数式フォントを読み込めません。');
+      if(typography.mathFontFamily&&typography.mathFontFamily!==stix&&!fonts.some(f=>f.alias===typography.mathFontFamily&&f.loaded&&f.hasMathTable&&f.weight===400))throw Error('登録数式フォントを読み込めません。');
       const rev=String(job),fingerprint='desktop-poc-'+job+'-'+__BUNDLED_FONT_FINGERPRINT__+'-'+JSON.stringify(typography)+'-'+fonts.map(f=>f.sha256).join(',')+'-'+JSON.stringify({page,order,headingDesign:theme?.headingDesign,headingLevels:theme?.headingLevels,paragraphDesign:theme?.paragraphDesign,studyDesigns:theme?.studyDesigns,library:theme?.library});
       let documents;
       const needsContext=raw.includes(':ref{')||/:::layout\{/.test(raw)||raw.includes('answer-to')||hasDynamicLabels(theme?.headingDesign)||Object.values(theme?.headingLevels??{}).some(hasDynamicLabels)||Object.values(theme?.studyDesigns??{}).some(hasStudyNumbering)||(theme?.library?.entries??[]).some(e=>e.usage==='study'&&hasStudyNumbering(e.design));
