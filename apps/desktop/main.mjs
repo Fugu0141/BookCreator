@@ -1825,6 +1825,7 @@ async function smoke(){
   const beforeOptional=await exec("document.querySelector('#source').value.length");
   const beforeStructuredInsert=await exec("document.querySelector('#source').value");
   await exec("document.querySelector('#editor-view-structured').click()");
+  const openStructuredInsert=()=>exec("(()=>{const e=document.querySelector('#structured-insert-toggle');if(e.getAttribute('aria-expanded')==='false')e.click();})()");
   await openStructuredInsert();
   await until("!document.querySelector('#structured-insert-panel').hidden&&!!document.querySelector('#structured-insert-kind optgroup[label=登録教材部品]')&&[...document.querySelector('#structured-insert-kind').options].some(o=>o.value==="+JSON.stringify(optionalId)+")");
   await exec("(()=>{const e=document.querySelector('#structured-insert-kind');e.value="+JSON.stringify(multiId)+";e.dispatchEvent(new Event('change',{bubbles:true}));})()");
