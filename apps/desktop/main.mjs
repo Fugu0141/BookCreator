@@ -305,8 +305,13 @@ async function liveWritingSmoke(){
   const ready="document.querySelector('#workspace-layout-state').dataset.phase==='ready'&&document.querySelector('#preview > div')?.dataset.paperFreshness==='current'";
   const setSource=source=>raw("(()=>{const e=document.querySelector('#source');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(e,"+JSON.stringify(source)+");e.dispatchEvent(new Event('input',{bubbles:true}));})()");
   await until('default live preview',"document.querySelector('#live-preview')?.checked===true");
-  await click('#open');await click('[data-section=chapter]');
-  await until('initial paper',ready+"&&!!document.querySelector('#preview').getClientRects().length");
+  await click('#open');
+  await until('book opened',"document.querySelector('.workspace-shell').dataset.workspaceMode==='writing'&&!!document.querySelector('[data-section=chapter]')&&!document.querySelector('#open').disabled");
+  const scopeReady=scope=>ready+"&&document.querySelector('#workspace-layout-state').dataset.scope==="+JSON.stringify(scope);
+  await click('#mode-layout');
+  await until('whole book without selected manuscript',scopeReady('book')+"&&!document.querySelector('#source').value&&!!document.querySelector('#layout-pages')");
+  await click('#mode-writing');await click('[data-section=chapter]');
+  await until('initial paper',scopeReady('manuscript')+"&&!!document.querySelector('#preview').getClientRects().length");
   await raw("(()=>{const e=document.querySelector('#source');e.focus();e.setSelectionRange(0,0);e.dispatchEvent(new CompositionEvent('compositionstart',{bubbles:true,data:'あ'}));})()");
   const first=saved+'\nライブ組版途中。\n',latest=saved+'\nライブ組版最終確認。\n';
   await setSource(first);
@@ -316,13 +321,25 @@ async function liveWritingSmoke(){
   await raw("document.querySelector('#source').dispatchEvent(new CompositionEvent('compositionend',{bubbles:true,data:'あ'}))");
   await until('latest paper',ready+"&&document.querySelector('#preview > div').shadowRoot.textContent.includes('ライブ組版最終確認。')&&!document.querySelector('#preview > div').shadowRoot.textContent.includes('ライブ組版途中。')&&document.activeElement.id==='source'");
   if(await readFile(path,'utf8')!==saved)throw Error('Live writing changed saved manuscript');
+  await click('#mode-layout');
+  await until('whole book follows unsaved draft',scopeReady('book')+"&&document.querySelector('#preview > div').shadowRoot.textContent.includes('ライブ組版最終確認。')&&!!document.querySelector('#layout-pages')");
+  await click('#preview-button');
+  await until('explicit manuscript scope',scopeReady('manuscript'));
+  await new Promise(r=>setTimeout(r,350));
+  if(!await raw(scopeReady('manuscript')))throw Error('Automatic layout overrode explicit scope');
+  await click('#mode-writing');
   await setSource(saved);
-  await until('reverted source',ready+"&&document.querySelector('#workspace-save-state').textContent==='保存済み'");
+  await until('reverted source',scopeReady('manuscript')+"&&document.querySelector('#workspace-save-state').textContent==='保存済み'");
+  await click('#mode-layout');
+  await until('whole-book default on reentry',scopeReady('book')+"&&!document.querySelector('#preview > div').shadowRoot.textContent.includes('ライブ組版最終確認。')");
+  if(await readFile(path,'utf8')!==saved)throw Error('Live book layout changed saved manuscript');
+  await click('#mode-writing');
+  await until('writing scope restored',scopeReady('manuscript'));
   // Reopening through the normal discard path cleans any coalesced recovery draft.
   await click('#mode-home');await click('#open');
   await until('reopened book',"document.querySelector('.workspace-shell').dataset.workspaceMode==='writing'&&!document.querySelector('#open').disabled&&!document.querySelector('#source').value");
   await click('#mode-home');
-  console.log('PASS default live writing preview, IME, latest result, focus and disk safety');
+  console.log('PASS default live writing and whole-book preview, explicit scope, IME, latest result, focus and disk safety');
 }
 // Short distribution smoke test: no installed fonts, user projects or native dialogs required.
 // Existing regression scenarios still use the real controls, but reach them through
