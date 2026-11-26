@@ -60,6 +60,12 @@ After enabling Settings → Pages → Source: GitHub Actions, run **Web preview 
 
 Build BookCreator, BookCreator_Markdown and BookCreator_LayoutEngine in sibling directories (use the pinned commits in the integration workflow). Then run `npm run preview:demo` from BookCreator and open http://127.0.0.1:4173. Edit plain ATX headings and single-source-line paragraphs, change the content dimensions, and generate an experimental preview. Click a page fragment to select the corresponding source range. No file I/O, persistence, PDF, or full Markdown support. The local server serves only the listed build modules and demo files. `npm run preview:smoke` runs the headless Chrome integration check.
 
+## Windows desktop development package (experimental)
+
+For Windows 10/11 x64, open [Windows desktop development package](https://github.com/Fugu0141/BookCreator/actions/workflows/windows-preview.yml) in Actions. Choose a successful run and download the `BookCreator-Windows-x64-preview` artifact (GitHub login required; expires after 14 days). To create a fresh build after the workflow is on main, use Run workflow on main. Pull requests also build and validate an artifact.
+
+Extract the entire ZIP to a writable folder, e.g. Documents/BookCreator-preview, and double-click `BookCreator.exe`. Keep the resources and DLLs beside the executable. Node.js, Git and npm are not required to launch. Create a separate book folder using the new project button; back up important manuscripts. This is unsigned, portable development software, not an installer or a formal release. Windows may warn about unsigned apps; only run artifacts from your own trusted build, and do not disable system security. ARM64, Windows on ARM emulation, installer, signing, auto-update and formal publication are not verified or implemented. CI tests the relocated package with Japanese path characters, isolated renderer, local workspace, inline and numbered display math, bundled fonts and source save. It does not establish all Windows features work.
+
 ## Experimental desktop application
 
 See [desktop workspace PoC](docs/DESKTOP_WORKSPACE_POC.md) for build instructions and supported project features. The app is a development prototype, not a release.
