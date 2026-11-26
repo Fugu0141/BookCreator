@@ -17,7 +17,7 @@ export function projectBlocks(source,scan,parseInline){
     const body=raw.replace(eol,''),ending=raw.slice(body.length);
     if(kind==='heading'){
       const match=/^( {0,3}#{1,6}[ \t]+)(.+)$/.exec(body);
-      if(match&&(inline=supported(match[2],parseInline))){prefix=match[1];payload=match[2];suffix=ending;}
+      if(match&&(inline=supported(match[2],parseInline))&&!inline.inlineMath.length){prefix=match[1];payload=match[2];suffix=ending;}
       label='見出し H'+block.level;
     }else if(kind==='raw'&&(!blocks[index-1]||['blank','heading'].includes(blocks[index-1].kind))&&(!blocks[last+1]||blocks[last+1].kind==='blank')&&(inline=supported(normalize(body),parseInline))){
       kind='paragraph';label='本文';payload=normalize(body);suffix=ending;
@@ -36,7 +36,7 @@ export function planStructuredEdit(source,row,value,{scan,applyPatches,validateM
   if(current.kind==='math'){
     if(!value.trim()||value.length>2048||value.includes('\r')||value.split('\n').some(line=>/^\$\$[ \t]*$/.test(line)))throw Error('数式の内容のみ入力してください。');
     validateMath(value);
-  }else if(value.includes('\r')||!supported(value,parseInline)||(current.kind==='heading'&&value.includes('\n')))throw Error('対応する文章・文字書式を入力してください。空行や複雑な記法はソース編集で扱います。');
+  }else if(value.includes('\r')||!supported(value,parseInline)||(current.kind==='heading'&&(value.includes('\n')||parseInline(value).inlineMath.length)))throw Error('対応する文章・文字書式を入力してください。空行や複雑な記法はソース編集で扱います。');
   let prefix=current.prefix;
   if(current.kind==='heading'){
     if(!Number.isInteger(level)||level<1||level>6)throw Error('見出しレベルが不正です。');
