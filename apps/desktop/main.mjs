@@ -754,6 +754,17 @@ async function smoke(){
   await setLabSample('[data-lab-slot-sample=hint]','ヒント $x');
   await exec("document.querySelector('#lab-measure').click()");
   await until("document.querySelector('#lab-library-add').disabled && !document.querySelector('#lab-preview > div') && document.querySelector('#lab-status').textContent.includes('Invalid inline math')");
+  // Numbered sample wrappers share a disposable chapter, including cross-slot references.
+  await exec("document.querySelector('#lab-multiline-sample').click()");
+  await setLabSample('#lab-sample','問題。\n\n:::layout{#eq-lab-main numbered="true"}\n$$\nx\n$$\n:::');
+  await setLabSample('[data-lab-slot-sample=hint]','参照 :ref{target="eq-lab-main" format="label-number"}。\n\n:::layout{#eq-lab-hint numbered="true"}\n$$\ny\n$$\n:::');
+  await exec("document.querySelector('#lab-measure').click()");
+  await until("(()=>{const root=document.querySelector('#lab-preview > div')?.shadowRoot;const a=root?.querySelector('[data-content-slot] [data-equation-number]'),b=root?.querySelector('[data-named-slot=hint] [data-equation-number]');return !!a&&!!b&&a.textContent.includes('1.1')&&b.textContent.includes('1.2')&&root.textContent.includes('式 (1.1)');})()");
+  await until("!document.querySelector('#lab-library-add').disabled");
+  await setLabSample('[data-lab-slot-sample=hint]','参照 :ref{target="missing" format="number"}。');
+  await exec("document.querySelector('#lab-measure').click()");
+  await until("document.querySelector('#lab-library-add').disabled&&!document.querySelector('#lab-preview > div')&&document.querySelector('#lab-status').textContent.includes('Invalid numbered study sample')");
+  await exec("document.querySelector('#lab-multiline-sample').click()");
   await exec("document.querySelector('#lab-sample-bcm').click()");
   await setLabSample('#lab-sample',plainStudySample);
   await setLabSample('[data-lab-slot-sample=hint]','ヒントのサンプル。');
