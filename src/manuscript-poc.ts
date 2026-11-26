@@ -84,11 +84,11 @@ export function prepareManuscript<S extends Scan>(documents:readonly Manuscript[
         if(!match||!plainBody(match[2])){unsupported(b.range,'Only supported inline text in ATX headings');continue;}
         emit({kind:'heading',origin:origin(b.range),level:match[1].length,text:match[2]},content.width);
       }else if(b.kind==='math'){
-        // Only a scanner-owned, three-line display fence. Keep formula bytes/UTF-16 offsets,
+        // Only a scanner-owned, display fence. Keep formula bytes/UTF-16 offsets,
         // including ordinary spaces, and never reinterpret TeX as inline Markdown.
         const raw=doc.source.slice(b.range.start,b.range.end);
-        const match=/^(\$\$[ \t]*(?:\r\n|\n))([^\r\n]+)(?:\r\n|\n)\$\$[ \t]*(?:\r\n|\n)?$/.exec(raw);
-        if(!match||!match[2].trim()||match[2].length>2048||!deps.validateDisplayMath){unsupported(b.range,'Expected a supported single-line display math formula');continue;}
+        const match=/^(\$\$[ \t]*(?:\r\n|\n))([\s\S]+?)(?:\r\n|\n)\$\$[ \t]*(?:\r\n|\n)?$/.exec(raw);
+        if(!match||!match[2].trim()||match[2].length>2048||!deps.validateDisplayMath){unsupported(b.range,'Expected a supported display math formula');continue;}
         try{deps.validateDisplayMath(match[2]);}catch(e){unsupported(b.range,'Unsupported display math: '+String(e instanceof Error?e.message:e));continue;}
         emit({kind:'math',origin:origin(b.range),text:match[2],sourceTextStart:b.range.start+match[1].length},content.width);
       }else if(b.kind==='raw'&&listLine(b)){
@@ -145,8 +145,8 @@ export function prepareManuscript<S extends Scan>(documents:readonly Manuscript[
         if(h.name==='layout'){
           const child=children[0],numbered=attrs.numbered;
           if(children.length!==1||child?.kind!=='math'||Object.keys(attrs).some(k=>k!=='numbered')||(numbered!==undefined&&numbered!=='true'&&numbered!=='false')||(!h.id&&numbered===undefined)||!deps.validateDisplayMath){unsupported(b.range,'Only a single layout-wrapped display equation with ID or numbered flag is supported');continue;}
-          const raw=doc.source.slice(child.range.start,child.range.end),match=/^(\$\$[ \t]*(?:\r\n|\n))([^\r\n]+)(?:\r\n|\n)\$\$[ \t]*(?:\r\n|\n)?$/.exec(raw);
-          if(!match||!match[2].trim()||match[2].length>2048){unsupported(b.range,'Expected a supported single-line display math formula');continue;}
+          const raw=doc.source.slice(child.range.start,child.range.end),match=/^(\$\$[ \t]*(?:\r\n|\n))([\s\S]+?)(?:\r\n|\n)\$\$[ \t]*(?:\r\n|\n)?$/.exec(raw);
+          if(!match||!match[2].trim()||match[2].length>2048){unsupported(b.range,'Expected a supported display math formula');continue;}
           try{deps.validateDisplayMath(match[2]);}catch(e){unsupported(b.range,'Unsupported display math: '+String(e instanceof Error?e.message:e));continue;}
           emit({kind:'math',origin:origin(b.range,h.id),text:match[2],sourceTextStart:child.range.start+match[1].length,attributes:attrs},content.width);
           continue;
@@ -158,7 +158,7 @@ export function prepareManuscript<S extends Scan>(documents:readonly Manuscript[
           if(first.range.start<headerEnd||last.range.end>parent.end)return;
           const text=stripEnd(doc.source.slice(first.range.start,last.range.end));
           try{
-            const parsed=parsePreviewInline(text,first.range.start,deps.validateInlineMath,undefined,true);
+            const parsed=parsePreviewInline(text,first.range.start,deps.validateInlineMath,undefined,true,deps.validateDisplayMath);
             const math=visible.filter(c=>c.kind==='math'),atoms=parsed.inlineMath.filter(a=>a.display);
             if(math.length!==atoms.length||atoms.some((a,i)=>{
               const seg=parsed.sourceMap.segments.find(s=>s.start===a.start)!;
