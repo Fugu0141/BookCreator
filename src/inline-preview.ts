@@ -44,7 +44,7 @@ const whitespace=(c:string)=>!c||/\s/u.test(c);
 const punctuation=(c:string)=>/[\p{P}\p{S}]/u.test(c);
 const left=(a:string,b:string)=>!whitespace(b)&&(!punctuation(b)||whitespace(a)||punctuation(a));
 const right=(a:string,b:string)=>!whitespace(a)&&(!punctuation(a)||whitespace(b)||punctuation(b));
-export function parsePreviewInline(raw:string,offset=0,validateMath?:(formula:string)=>unknown,resolveReference?:(token:string,offset:number)=>string,allowDisplay=false){
+export function parsePreviewInline(raw:string,offset=0,validateMath?:(formula:string)=>unknown,resolveReference?:(token:string,offset:number)=>string,allowDisplay=false,validateDisplayMath=validateMath){
   if(typeof raw!=='string'||!raw.length||raw.length>10000||!Number.isSafeInteger(offset)||offset<0||!Number.isSafeInteger(offset+raw.length)||/\r(?!\n)/.test(raw)||(raw.match(/\n/g)?.length??0)>255)throw RangeError('Unsupported inline source');
   let text='',cursor=0;
   const inlineStyles:InlineRun[]=[],inlineMath:InlineMathAtom[]=[],segments:InlineSourceSegment[]=[];
@@ -58,9 +58,9 @@ export function parsePreviewInline(raw:string,offset=0,validateMath?:(formula:st
   for(const m of raw.matchAll(/[^\r\n]*(?:\r\n|\n|$)/g)){
     const row=m[0];if(!row||m.index!<cursor)continue;
     if(allowDisplay&&/^\$\$[ \t]*(?:\r\n|\n)$/.test(row)){
-      const match=/^(\$\$[ \t]*(?:\r\n|\n))([^\r\n]+)(?:\r\n|\n)\$\$[ \t]*(?=\r\n|\n|$)/.exec(raw.slice(cursor));
-      if(!match||!validateMath||!match[2].trim())throw RangeError('Invalid component display formula');
-      validateMath(match[2]);
+      const match=/^(\$\$[ \t]*(?:\r\n|\n))([\s\S]+?)(?:\r\n|\n)\$\$[ \t]*(?=\r\n|\n|$)/.exec(raw.slice(cursor));
+      if(!match||!validateDisplayMath||!match[2].trim()||match[2].length>2048)throw RangeError('Invalid component display formula');
+      validateDisplayMath(match[2]);
       const logical=text.length;text+='\uFFFC';
       inlineMath.push({start:logical,formula:match[2],display:true});
       segments.push({start:logical,end:logical+1,rawStart:offset+cursor+match[1].length,outerStart:offset+cursor,outerEnd:offset+cursor+match[0].length});
@@ -165,8 +165,8 @@ export function inlineSourceRange(map:InlineSourceMap,start:number,end:number){
 }
 
 /** Lab sample text is disposable and has no raw source mapping. Explicit opt-in preserves literal samples. */
-export function previewSampleInline(text:string,bcm:boolean,validateMath:(formula:string)=>unknown,allowDisplay=false){
+export function previewSampleInline(text:string,bcm:boolean,validateMath:(formula:string)=>unknown,allowDisplay=false,validateDisplayMath=validateMath){
   if(!bcm)return {text};
-  const parsed=parsePreviewInline(text,0,validateMath,undefined,allowDisplay);
+  const parsed=parsePreviewInline(text,0,validateMath,undefined,allowDisplay,validateDisplayMath);
   return {text:parsed.text,...(parsed.inlineStyles.length?{inlineStyles:parsed.inlineStyles}:{}),...(parsed.inlineMath.length?{inlineMath:parsed.inlineMath}:{})};
 }
