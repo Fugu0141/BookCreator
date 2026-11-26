@@ -164,11 +164,6 @@ function App(){
     }else if(next.recoveryError)setRecoveryState({phase:'error',message:next.recoveryError});
     setFile({...next,editable:next.editable&&!candidate});setText(next.text);
   }
-  // Only confirmed source changes are recorded; IME intermediate text and
-  // uncommitted structured/math/component drafts are excluded.
-  useEffect(()=>{
-    if(file?.editable&&!isComposing&&!structuredComposing&&recoveryRef.current&&!recoveryCandidate)recoveryRef.current.update(text);
-  },[file?.id,file?.revision,file?.editable,text,isComposing,structuredComposing,recoveryCandidate]);
   useEffect(()=>{
     const node=recoveryDialog.current;
     if(recoveryOpen&&node&&!node.open)node.showModal();
@@ -218,6 +213,12 @@ function App(){
   const canLink=studyChoice==='explanation'||isCustomComponentId(studyChoice);
   function edit(value,fromStructured=false){if(!fromStructured)setStructuredHistory(null);setText(value);invalidate();setStatus('未保存の変更があります。');}
   const composing=useRef(false),[isComposing,setIsComposing]=useState(false);
+  // Only confirmed source changes are recorded; IME intermediate text and
+  // uncommitted structured/math/component drafts are excluded.
+  useEffect(()=>{
+    if(file?.editable&&!isComposing&&!structuredComposing&&recoveryRef.current&&!recoveryCandidate)recoveryRef.current.update(text);
+  },[file?.id,file?.revision,file?.editable,text,isComposing,structuredComposing,recoveryCandidate]);
+
   const [mathDraft,setMathDraft]=useState(null),mathPreview=useRef(null),mathComposing=useRef(false);
   const MathField=mathDraft?.kind==='display'?'textarea':'input';
   const mathStale=!!mathDraft&&(mathDraft.fileId!==file?.id||mathDraft.revision!==file?.revision||mathDraft.job!==generation.current||mathDraft.source!==text);
@@ -497,7 +498,8 @@ function App(){
       return;
     }
     if(!closeBlocked&&!unsaved.length){
-      void (async()=>{await withDiscard(()=>api.completeClose(token,'exit'));})().catch(e=>{setCloseError(String(e.message??e));setCloseRequest({token,blocked:false});});
+      working.current=true;setBusy(true);
+      void withDiscard(()=>api.completeClose(token,'exit')).catch(e=>{setCloseError(String(e.message??e));setCloseRequest({token,blocked:false});}).finally(()=>{working.current=false;setBusy(false);});
       return;
     }
     setCloseError('');setCloseRequest({token,blocked:closeBlocked});
@@ -813,7 +815,7 @@ function App(){
     <label>保存済み原稿<textarea id="recovery-saved-text" readOnly rows={6} value={file?.text??''}/></label>
     <label>復旧候補<textarea id="recovery-draft-text" readOnly rows={8} value={recoveryCandidate?.record.text??''}/></label>
     {recoveryState.phase==='error'&&<p role="alert">{recoveryState.message}</p>}
-    <div className="close-actions"><button id="recovery-later" type="button" autoFocus disabled={recoveryResolving} onClick={()=>void resolveRecovery('later')}>保持して後で確認</button><button id="recovery-discard" type="button" disabled={recoveryResolving} onClick={()=>{if(window.confirm('復旧候補だけを削除しますか？ 保存済み原稿は変更しません。'))void resolveRecovery('discard');}}>復旧候補を破棄</button>{recoveryCandidate?.status==='recoverable'&&<button id="recovery-restore" type="button" disabled={recoveryResolving} onClick={()=>void resolveRecovery('restore')}>編集画面へ復旧</button>}</div>
+    <div className="close-actions"><button id="recovery-later" type="button" autoFocus disabled={recoveryResolving} onClick={()=>void resolveRecovery('later')}>保持して後で確認</button><button id="recovery-discard" type="button" disabled={recoveryResolving} onClick={()=>void resolveRecovery('discard')}>復旧候補を破棄</button>{recoveryCandidate?.status==='recoverable'&&<button id="recovery-restore" type="button" disabled={recoveryResolving} onClick={()=>void resolveRecovery('restore')}>編集画面へ復旧</button>}</div>
   </dialog></div>;
 }
 createRoot(document.getElementById('root')).render(<App/>);
