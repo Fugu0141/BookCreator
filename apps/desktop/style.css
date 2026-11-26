@@ -444,3 +444,36 @@ body{font-family:BCFont_NotoSansJP,system-ui,sans-serif}.font-control,.typograph
 .structured-mixed{line-height:1.7;white-space:pre-wrap;overflow-wrap:anywhere}
 .structured-mixed .mixed-protected{display:inline-block;border:1px solid var(--bc-border);border-radius:4px;padding:2px 5px;margin:2px;color:inherit;max-width:100%;overflow-wrap:anywhere}
 .mixed-text-field{display:block;margin:4px 0}.mixed-text-field textarea{box-sizing:border-box;width:100%;font:inherit;resize:vertical;line-height:1.6}
+
+/* Mixed range mode: one selectable rendered paragraph, no editable markup. */
+.mixed-range-preview{white-space:pre-wrap;overflow-wrap:anywhere;user-select:text;line-height:1.8;padding:12px;border:1px solid #888;border-radius:6px;min-height:3em;cursor:text}.mixed-range-preview .mixed-range-selected{outline:2px solid #3973b8;border-radius:4px}.mixed-range-preview ::selection{background:#b5d7ff;color:#182536}
+
+/* UX-09a: preserve reading context but expose controls for one task at a time. */
+.structured-writing-header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px}
+.structured-help{font-size:12px;color:var(--bc-muted);max-width:75%}
+.structured-help>summary,.structured-more-actions>summary{cursor:pointer;font-size:12px;padding:5px 8px;white-space:nowrap}
+.structured-more-actions{font-size:12px}
+.structured-more-actions[open]>.structured-actions{margin-top:5px;padding:6px;border:1px solid var(--bc-border);border-radius:5px;background:#f6f9fb}
+.structured-focus-hint{font-size:12px;margin:6px 0 10px;color:var(--bc-primary)}
+.structured-editor[data-editing=true]>.structured-operation-toolbar,.structured-editor[data-editing=true]>#structured-insertion-fields{display:none}
+.structured-editor[data-editing=true] .structured-block[data-active=false] .structured-actions,.structured-editor[data-editing=true] .structured-block[data-active=false] .structured-block-menu,.structured-editor[data-editing=true] .structured-block[data-active=false] .structured-list-item-menu,.structured-editor[data-editing=true] .structured-block[data-active=false] .structured-more-actions{display:none}
+.structured-editor[data-editing=true] .structured-block[data-active=true]{border-color:var(--bc-primary);box-shadow:0 0 0 1px var(--bc-primary)}
+.mixed-field-tools{display:flex;gap:5px;flex-wrap:wrap;margin-top:4px}
+.mixed-text-field:not(:focus-within)>.mixed-field-tools,.structured-mixed[data-inline-active=true] .mixed-field-tools{display:none}
+
+/* UX-09b: a single insertion surface with explicit position and category. */
+.structured-more-actions:not([open])>.structured-actions{display:none}
+.structured-insert-panel[hidden]{display:none!important}
+.structured-operation-toolbar{justify-content:space-between}
+.structured-insert-panel{margin:6px 0 12px;padding:12px;border:1px solid var(--bc-border);border-radius:6px;background:#f6f9fb}
+.structured-insert-categories,.structured-insert-fields{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px}
+.structured-insert-categories button{font-size:12px;padding:6px 12px}
+.structured-insert-categories button[aria-pressed=true]{border-color:var(--bc-primary);color:var(--bc-primary);font-weight:600;background:white}
+.structured-insert-fields label{display:flex;flex:1 1 180px;flex-direction:column;gap:4px;font-size:12px;min-width:0}
+.structured-insert-fields select{width:100%;min-width:0}
+.structured-insert-confirm{justify-content:flex-end}
+
+/* UX-09c: retain the active location without jumping to the top. */
+.structured-block[data-focused=true]:focus-within{border-color:var(--bc-primary);box-shadow:0 0 0 1px var(--bc-primary)}
+.structured-block:focus-visible,.structured-editor button:focus-visible,.structured-editor select:focus-visible,.structured-editor summary:focus-visible{outline:2px solid var(--bc-primary);outline-offset:2px}
+.structured-block{scroll-margin-block:12px}
