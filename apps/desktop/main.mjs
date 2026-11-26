@@ -408,7 +408,7 @@ async function packageSmoke(){
   await setStudyValue('content','問題 $x^3$ を解く。');
   await until("!document.querySelector('#structured-study-apply').disabled&&!!document.querySelector('[data-study-field=hint] mfrac')");
   await exec("document.querySelector('#structured-study-apply').click()");
-  const editedStudy=studyFixture.replace('問題 $x^2$ を解く。','問題 $x^3$ を解く。').replace('ヒントです。\n\n$$\nx^2\n$$','新しいヒントです。\n\n$$\n\\frac{1}{2}\n$$');
+  const editedStudy=studyFixture.replace('問題 $x^2$ を解く。','問題 $x^3$ を解く。').replace('ヒントです。\n\n$$\nx^2\n$$',()=> '新しいヒントです。\n\n$$\n\\frac{1}{2}\n$$');
   await until("!document.querySelector('#structured-study-apply')&&document.querySelector('#source').value==="+JSON.stringify(editedStudy));
   await exec("document.querySelector('[data-study-kind=explanation] [data-study-edit]').click()");
   await setStudyValue('content','解説を変更しました。');
@@ -1211,6 +1211,8 @@ async function smoke(){
   await exec("(()=>{const e=document.querySelector('#study-kind');e.value="+JSON.stringify(customId)+";e.dispatchEvent(new Event('change',{bubbles:true}));})()");
   await exec("document.querySelector('#study-append').click()");
   await until("document.querySelector('#source').value.includes("+JSON.stringify('name="'+customId+'"')+")");
+  const setStructuredSource=value=>exec("(()=>{const e=document.querySelector('#source');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(e,"+JSON.stringify(value)+");e.dispatchEvent(new Event('input',{bubbles:true}));})()");
+  const setStudyValue=(name,value)=>exec("(()=>{const e=[...document.querySelectorAll('[data-study-value]')].find(e=>e.dataset.studyValue==="+JSON.stringify(name)+");Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(e,"+JSON.stringify(value)+");e.dispatchEvent(new Event('input',{bubbles:true}));})()");
   const customBefore=await exec("document.querySelector('#source').value");
   await exec("document.querySelector('#editor-view-structured').click()");
   await until("document.querySelector('[data-study-kind=custom]')?.textContent.includes('用語解説')&&!document.querySelector('[data-study-kind=custom] [data-study-edit]').disabled");
@@ -1218,6 +1220,7 @@ async function smoke(){
   await setStudyValue('content','登録部品の内容を変更しました。');
   await until("!document.querySelector('#structured-study-apply').disabled");
   await exec("document.querySelector('#structured-study-apply').click()");
+  await until("!document.querySelector('#structured-study-apply')&&document.querySelector('#source').value.includes('登録部品の内容を変更しました。')");
   const customAfter=await exec("document.querySelector('#source').value");
   if(customBefore===customAfter||!customAfter.includes('name="'+customId+'"')||!customAfter.includes('登録部品の内容を変更しました。'))throw Error('Custom component content edit failed');
   await exec("document.querySelector('#editor-view-source').click()");
