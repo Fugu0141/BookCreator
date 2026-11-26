@@ -608,7 +608,7 @@ function App(){
       setLayoutPages(pages);setActivePage(pageNumber);setPageJump(String(pageNumber));
       setLayoutState({phase:'ready',scope,pages:result.plan.pages.length});
       outcome='success';
-      previewPhaseMetrics.record(scope,!!measurementCache,{...result.timings,presentationMs:performance.now()-presentationStarted},mathCacheEnabled,!!paragraphCache,!!pageCache);
+      previewPhaseMetrics.record(scope,!!measurementCache,{...result.timings,presentationMs:performance.now()-presentationStarted},mathCacheEnabled,!!paragraphCache,!!pageCache,reusePaperPages);
       if(!automatic)setStatus(result.plan.pages.length+' ページ · '+(whole?'書籍全体':'選択原稿')+' · 実測プレビュー（出版不可）');
     }catch(e){if(layoutScheduler.current.isCurrent(job)){outcome='failed';setLayoutState({phase:'failed',scope,pages:0});setLayoutDiagnostics(diagnosticRecords(diagnostics,documents,e));if(!automatic)setStatus(String(e.message??e));}}
     finally{performanceMetrics.record({stage:'layout',category:scope,outcome,waitMs:startedAt-requestedAt,runMs:performance.now()-startedAt});if(layoutScheduler.current.isCurrent(job))setMeasuring(false);}
