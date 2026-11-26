@@ -59,3 +59,45 @@ test('session bounds and non-cloneable scan extensions bypass retention',()=>{
   session.read('x','abc',extended,validate);
   assert.equal(session.stats().misses,2);
 });
+
+test('opaque checkpoints stay per document and are discarded on clear or service change',()=>{
+  const handles=new WeakSet(),calls=[];
+  const scan=rawScan,validate=p=>({diagnostics:p.diagnostics});
+  const scanIncremental=(source,previous)=>{
+    if(previous)assert.ok(handles.has(previous));
+    calls.push({source,previous});
+    const snapshot=Object.freeze({});handles.add(snapshot);
+    return {result:scan(source),snapshot};
+  };
+  const session=createManuscriptScanSession({scan,scanIncremental});
+  session.read('a','a',scan,validate);
+  session.read('b','b',scan,validate);
+  session.read('a','a',scan,validate);
+  session.read('a','aa',scan,validate);
+  assert.equal(calls.length,3);
+  assert.equal(calls[0].previous,undefined);
+  assert.equal(calls[1].previous,undefined);
+  assert.ok(calls[2].previous);
+  session.read('a','aaa',scan,p=>validate(p));
+  assert.equal(calls.at(-1).previous,undefined);
+  session.clear();
+  session.read('a','aaaa',scan,validate);
+  assert.equal(calls.at(-1).previous,undefined);
+  session.read('a','other',s=>scan(s),validate);
+  assert.equal(calls.at(-1).source,'aaaa');
+});
+test('failed or mismatched incremental results use full scanner and discard old checkpoint',()=>{
+  let mode='normal',last,full=0;
+  const scan=s=>{full++;return rawScan(s);},validate=p=>({diagnostics:p.diagnostics});
+  const session=createManuscriptScanSession({scan,scanIncremental:(s,prev)=>{
+    last=prev;
+    if(mode==='throw')throw Error('accelerator failed');
+    if(mode==='wrong')return {result:rawScan('other'),snapshot:{}};
+    return {result:rawScan(s),snapshot:{}};
+  }});
+  session.read('a','a',scan,validate);
+  mode='throw';assert.equal(session.read('a','ab',scan,validate).parsed.source,'ab');assert.ok(last);
+  mode='wrong';assert.equal(session.read('a','abc',scan,validate).parsed.source,'abc');assert.equal(last,undefined);
+  mode='normal';session.read('a','abcd',scan,validate);assert.equal(last,undefined);
+  assert.equal(full,2);
+});
