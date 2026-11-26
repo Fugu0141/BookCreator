@@ -577,7 +577,7 @@ body{font-family:BCFont_NotoSansJP,system-ui,sans-serif}.font-control,.typograph
 .performance-panel header div{display:flex;gap:6px;flex-wrap:wrap}
 .performance-panel p{margin:6px 0}
 .performance-table-wrap{overflow-x:auto}
-#performance-summary{width:100%;border-collapse:collapse;white-space:nowrap;font-variant-numeric:tabular-nums}
-#performance-summary th,#performance-summary td{padding:4px 8px;border-bottom:1px solid var(--bc-border,#d7e0e7);text-align:right}
-#performance-summary th:first-child{text-align:left}
+#performance-summary,#performance-phase-summary{width:100%;border-collapse:collapse;white-space:nowrap;font-variant-numeric:tabular-nums}
+#performance-summary th,#performance-summary td,#performance-phase-summary th,#performance-phase-summary td{padding:4px 8px;border-bottom:1px solid var(--bc-border,#d7e0e7);text-align:right}
+#performance-summary th:first-child,#performance-phase-summary th:first-child{text-align:left}
 #performance-memory{margin:8px 0 4px}
