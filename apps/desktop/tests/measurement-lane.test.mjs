@@ -32,7 +32,7 @@ test('records queue waiting and execution time separately including cancelled wo
   const lane=createMeasurementLane({now:()=>time,report:row=>rows.push(row)});
   const a=lane.run(async()=>{await hold.promise;return 'a';},{category:'book'});
   time=10;
-  const b=lane.run(()=>{time=80;return 'b';},{category:'catalog'});
+  const b=lane.run(()=>{time=80;return 'b';},{category:'catalog',priority:'catalog'});
   time=20;let current=true;
   const c=lane.run(()=>assert.fail('obsolete work must not run'),{category:'component',current:()=>current});
   time=50;current=false;hold.resolve();
