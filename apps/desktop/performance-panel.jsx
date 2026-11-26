@@ -6,7 +6,7 @@ const stageNames={measurement:'実測レーン',layout:'組版要求',read:'読�
 const categoryNames={manuscript:'選択原稿',book:'全冊',component:'部品',paragraph:'段落',catalog:'カタログ',source:'原稿',image:'画像',other:'その他'};
 const ms=v=>v===null?'—':v.toFixed(1);
 const mib=v=>(v/1024).toFixed(1)+' MiB';
-export function PerformancePanel({readMemory,readCache,cacheEnabled,onCacheEnabled,readMathCaches,mathCacheEnabled,onMathCacheEnabled,readParagraphCache,paragraphCacheEnabled,onParagraphCacheEnabled,readPageCache,pageCacheEnabled,onPageCacheEnabled,cacheBlocked,onClose}){
+export function PerformancePanel({reusePaperPages,onReusePaperPages,readMemory,readCache,cacheEnabled,onCacheEnabled,readMathCaches,mathCacheEnabled,onMathCacheEnabled,readParagraphCache,paragraphCacheEnabled,onParagraphCacheEnabled,readPageCache,pageCacheEnabled,onPageCacheEnabled,cacheBlocked,onClose}){
   const [rows,setRows]=useState(()=>performanceMetrics.snapshot());
   const [phaseRows,setPhaseRows]=useState(()=>previewPhaseMetrics.snapshot());
   const [cache,setCache]=useState(()=>readCache());
@@ -32,6 +32,7 @@ export function PerformancePanel({readMemory,readCache,cacheEnabled,onCacheEnabl
   const phaseSummary=summarizePreviewPhases(phaseRows);
   return <section id="performance-panel" className="performance-panel" aria-label="性能計測">
     <header><strong>性能計測（端末内のみ）</strong><div><button id="performance-refresh" type="button" onClick={()=>void refresh()}>更新</button><button id="performance-clear" type="button" onClick={()=>{performanceMetrics.clear();previewPhaseMetrics.clear();setRows([]);setPhaseRows([]);}}>記録を消去</button><button id="performance-close" type="button" onClick={onClose}>閉じる</button></div></header>
+    <label><input id="performance-reuse-paper-pages" type="checkbox" checked={reusePaperPages} disabled={cacheBlocked} onChange={e=>onReusePaperPages(e.target.checked)}/>表示中の未変更ページを維持（試験機能）</label>
     <p className="muted">直近 {rows.length} / 200 件。成功時の中央値・最大値（ms）。組版要求には入力合流時間を含みません。実測・読取は組版要求の内訳と重なるため合算しないでください。</p>
     <div className="performance-table-wrap"><table id="performance-summary"><thead><tr><th>処理</th><th>成功</th><th>失敗</th><th>取消</th><th>待機 中央値</th><th>処理 中央値</th><th>処理 最大</th><th>再試行</th></tr></thead><tbody>{summary.map(g=><tr key={g.stage+':'+g.category} data-stage={g.stage} data-category={g.category} data-success={g.success}><th>{stageNames[g.stage]} / {categoryNames[g.category]}</th><td>{g.success}</td><td>{g.failed}</td><td>{g.cancelled}</td><td>{ms(g.medianWaitMs)}</td><td>{ms(g.medianRunMs)}</td><td>{ms(g.maxRunMs)}</td><td>{g.retries}</td></tr>)}</tbody></table></div>
     {!rows.length&&<p className="muted">組版操作後に更新すると計測結果を確認できます。</p>}
