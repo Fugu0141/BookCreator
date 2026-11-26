@@ -9,7 +9,8 @@ import {STIX_FONT,verifyPinnedFontBlob} from './bundled-math-font.mjs';
 import {createHash} from 'node:crypto';
 const PACKAGE_SMOKE=process.argv.includes('--package-smoke');
 const SMOKE=PACKAGE_SMOKE||process.argv.includes('--smoke');
-const smokeRoot=SMOKE?mkdtempSync(join(tmpdir(),'bc-electron-')):undefined;
+const smokeParent=PACKAGE_SMOKE?process.env.BC_PACKAGE_SMOKE_TMP||tmpdir():tmpdir();
+const smokeRoot=SMOKE?mkdtempSync(join(smokeParent,'bc-electron-')):undefined;
 if(smokeRoot)app.setPath('userData',smokeRoot);
 protocol.registerSchemesAsPrivileged([{scheme:'bookcreator',privileges:{standard:true,secure:true,supportFetchAPI:true}}]);
 const PAGE='bookcreator://app/index.html';
@@ -146,7 +147,9 @@ async function packageSmoke(){
   const report='PASS portable Windows package: isolated renderer, workspace, math, bundled fonts, numbering, save';
   if(process.env.BC_PACKAGE_SMOKE_REPORT)await writeFile(process.env.BC_PACKAGE_SMOKE_REPORT,report+'\n',{flag:'wx'});
   console.log(report);
-  closing=true;win.destroy();await rm(smokeRoot,{recursive:true,force:true,maxRetries:10,retryDelay:100});app.exit(0);
+  // Chromium still holds profile databases until the process exits on Windows.
+  // The package test runner owns and removes the isolated parent after exit.
+  closing=true;win.destroy();app.exit(0);
 }
 async function smoke(){
   const exec=js=>win.webContents.executeJavaScript(js);
@@ -1234,4 +1237,4 @@ async function smoke(){
 }
 app.on('window-all-closed',()=>{if(!SMOKE)app.quit();});
 if(!SMOKE&&!app.requestSingleInstanceLock())app.quit();
-else run().catch(async e=>{console.error(e);if(SMOKE&&smokeRoot)await rm(smokeRoot,{recursive:true,force:true,maxRetries:10,retryDelay:100}).catch(()=>{});app.exit(1);});
+else run().catch(async e=>{console.error(e);if(SMOKE&&!PACKAGE_SMOKE&&smokeRoot)await rm(smokeRoot,{recursive:true,force:true,maxRetries:10,retryDelay:100}).catch(()=>{});app.exit(1);});
