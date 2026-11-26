@@ -1091,12 +1091,13 @@ async function packageSmoke(){
   await exec("document.querySelector('[data-section=chapter]').click()");
   await until("document.querySelector('#source').value==="+JSON.stringify(sample+'\n追記。\n'));
   await writingJourneySmoke();
+  await nativeCloseSmoke('discard');
   const report='PASS portable Windows package: isolated renderer, workspace, math, bundled fonts, numbering, save, new-book writing journey and renderer reload';
   if(process.env.BC_PACKAGE_SMOKE_REPORT)await writeFile(process.env.BC_PACKAGE_SMOKE_REPORT,report+'\n',{flag:'wx'});
   console.log(report);
   // Chromium still holds profile databases until the process exits on Windows.
   // The package test runner owns and removes the isolated parent after exit.
-  closing=true;win.destroy();app.exit(0);
+  app.exit(0);
 }
 // UX-10a: a continuous journey using only visible, enabled UI controls.
 // Unlike the legacy smoke helper, do not automatically navigate or open panels.
@@ -1323,11 +1324,89 @@ async function packageRestartSmoke(){
   await click('#preview-book');
   await until('recomposed paper',"document.querySelector('#workspace-layout-state').dataset.phase==='ready'&&document.querySelector('#workspace-layout-state').dataset.scope==='book'&&(()=>{const r=document.querySelector('#preview > div')?.shadowRoot;return !!r?.querySelector('[data-display-math] math')&&r.querySelectorAll('[data-named-slot=strategy]').length===2&&r.querySelectorAll('[data-named-slot=extension]').length===1&&[...r.querySelectorAll('[data-fixed-label]')].some(e=>e.textContent==="+JSON.stringify(oracle.customName)+");})()");
   await checkDisk();
+  await nativeCloseSmoke('save');
+  await checkDisk();
   const report='PASS UX-10d portable Windows process restart: catalog, favorite, exact saved files, custom slots and recomposition';
   if(!process.env.BC_PACKAGE_SMOKE_REPORT)throw Error('Restart report path required');
   await writeFile(process.env.BC_PACKAGE_SMOKE_REPORT,report+'\n',{flag:'wx'});
   console.log(report);
-  closing=true;win.destroy();app.exit(0);
+  app.exit(0);
+}
+async function nativeCloseSmoke(decision){
+  const raw=js=>win.webContents.executeJavaScript(js);
+  const until=async(label,js)=>{for(let i=0;i<150;i++){if(await raw(js))return;await new Promise(r=>setTimeout(r,100));}throw Error('Native close smoke: '+label);};
+  const click=async selector=>{
+    await until('reachable '+selector,"(()=>{const e=document.querySelector("+JSON.stringify(selector)+");return !!e?.getClientRects().length&&!e.disabled;})()");
+    await raw("document.querySelector("+JSON.stringify(selector)+").click()");
+  };
+  const inputSource=value=>raw("(()=>{const e=document.querySelector('#source');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(e,"+JSON.stringify(value)+");e.dispatchEvent(new Event('input',{bubbles:true}));})()");
+  const changeSelect=(selector,value)=>raw("(()=>{const e=document.querySelector("+JSON.stringify(selector)+");if(!e?.getClientRects().length||e.disabled)throw Error('Select unavailable');e.value="+JSON.stringify(value)+";e.dispatchEvent(new Event('change',{bubbles:true}));})()");
+  const openClose=async()=>{win.close();await until('native close dialog',"document.querySelector('#close-dialog').open");};
+  const cancelClose=async()=>{await click('#close-cancel');await until('cancelled close',"!document.querySelector('#close-dialog').open");};
+  const exit=async selector=>{
+    await until('exit available',"!document.querySelector("+JSON.stringify(selector)+").disabled");
+    let timer;
+    const closed=new Promise((resolve,reject)=>{win.once('closed',resolve);timer=setTimeout(()=>reject(Error('Native close did not exit')),15000);});
+    try{
+      await raw("document.querySelector("+JSON.stringify(selector)+").click()").catch(e=>{if(!win.isDestroyed())throw e;});
+      await closed;
+    }finally{clearTimeout(timer);}
+  };
+  if(decision==='discard'){
+    const path=join(smokeRoot,'writing-journey','manuscript','chapter-01.md'),saved=await readFile(path,'utf8');
+    await click('#mode-writing');await click('#editor-view-source');
+    await inputSource(saved+'\n保存せず終了する検査。\n');
+    await until('dirty draft',"document.querySelector('#workspace-save-state').textContent==='未保存：原稿'");
+    await openClose();
+    await until('dirty target and safe default',"document.querySelector('#close-unsaved').textContent==='原稿'&&document.activeElement.id==='close-cancel'");
+    await cancelClose();
+    await until('cancel preserves draft',"document.querySelector('#source').value==="+JSON.stringify(saved+'\n保存せず終了する検査。\n'));
+    await openClose();await exit('#close-discard');
+    if(await readFile(path,'utf8')!==saved)throw Error('Discard changed saved manuscript');
+    console.log('PASS UX-10e native close cancel and discard preserve saved book');
+    return;
+  }
+  // First test unfinished structured edits on the saved journey book.
+  await click('#mode-writing');
+  await click('[data-structured-kind=heading] [data-rich-edit]');
+  await until('active structured draft',"!!document.querySelector('#structured-rich-value')");
+  await openClose();
+  await until('blocked close',"!document.querySelector('#close-save')&&!document.querySelector('#close-discard')&&document.querySelector('#close-description').textContent.includes('現在の操作')");
+  await cancelClose();
+  await until('draft preserved',"!!document.querySelector('#structured-rich-value')");
+  await click('#structured-cancel');
+  // Test actual saves on the other disposable fixture, leaving the restart oracle intact.
+  await click('#mode-home');
+  await until('other book visible',"[...document.querySelectorAll('.hub-project-open')].some(e=>e.querySelector('strong')?.textContent==='Desktop smoke')");
+  await raw("(()=>{const e=[...document.querySelectorAll('.hub-project-open')].find(e=>e.querySelector('strong')?.textContent==='Desktop smoke');if(!e?.getClientRects().length||e.disabled)throw Error('Fixture unavailable');e.click();})()");
+  await until('fixture reopened',"document.querySelector('.workspace-shell').dataset.workspaceMode==='writing'&&!!document.querySelector('[data-section=chapter]')&&!document.querySelector('[data-section=chapter]').disabled");
+  await click('[data-section=chapter]');
+  const path=join(smokeRoot,'manuscript','chapter.md'),themePath=join(smokeRoot,'themes','default','theme.yaml'),manifestPath=join(smokeRoot,'book.yaml');
+  const saved=await readFile(path,'utf8'),oldTheme=await readFile(themePath,'utf8'),oldManifest=await readFile(manifestPath,'utf8');
+  await until('fixture loaded',"document.querySelector('#source').value==="+JSON.stringify(saved));
+  const draft=saved+'\n終了時の保存を検証します。\n';
+  await inputSource(draft);
+  await click('#mode-design');await click('#design-tab-styles');
+  const family=await raw("document.querySelector('#body-font').value==='serif'?'sans-serif':'serif'");
+  await changeSelect('#body-font',family);
+  await click('#book-settings');
+  const size=await raw("document.querySelector('#page-size').value==='A4'?'A5':'A4'");
+  await changeSelect('#page-size',size);
+  await until('all dirty',"document.querySelector('#workspace-save-state').textContent==='未保存：原稿・テーマ・書籍設定'");
+  // Simulate a real external modification and require the existing revision guard.
+  const external=saved+'\n外部で更新した原稿。\n';
+  await writeFile(path,external);
+  await openClose();
+  await click('#close-save');
+  await until('conflict blocks exit',"document.querySelector('#close-dialog').open&&document.querySelector('#close-error')?.textContent.includes('CONFLICT')&&!document.querySelector('#close-cancel').disabled");
+  if(await readFile(path,'utf8')!==external||await readFile(themePath,'utf8')!==oldTheme||await readFile(manifestPath,'utf8')!==oldManifest)throw Error('Failed close save changed saved files');
+  await cancelClose();
+  await until('conflict preserves in-memory draft',"document.querySelector('#source').value==="+JSON.stringify(draft)+"&&document.querySelector('#workspace-save-state').textContent==='未保存：原稿・テーマ・書籍設定'");
+  // Restore the original fixture bytes so the original revision can be saved.
+  await writeFile(path,saved);
+  await openClose();await exit('#close-save');
+  if(await readFile(path,'utf8')!==draft||await readFile(themePath,'utf8')===oldTheme||!(await readFile(manifestPath,'utf8')).includes('size: '+size))throw Error('Save and exit failed to persist every target');
+  console.log('PASS UX-10e native close blocks drafts and conflicts, then saves all targets and exits');
 }
 async function smoke(){
   const exec=workspaceSmokeExec();
