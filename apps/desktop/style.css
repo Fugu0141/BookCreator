@@ -275,3 +275,80 @@ body{font-family:BCFont_NotoSansJP,system-ui,sans-serif}.font-control,.typograph
  .workspace-panel-actions{margin-left:0}
  .workspace-shortcuts dl{grid-template-columns:minmax(0,1fr) minmax(0,1.3fr)}
 }
+
+/* UX-07b: compact widths and short viewports (including high display scaling).
+   Preserve physical paper dimensions; only the surrounding UI reflows. */
+.workspace-header,.workspace-nav,.workspace-tools,.workspace-statusbar{min-width:0}
+.workspace-actions{min-width:0;flex-wrap:wrap;justify-content:flex-end}
+.workspace-nav{overflow-x:auto;overscroll-behavior-x:contain}
+.workspace-nav button{flex:0 0 auto;white-space:nowrap}
+.workspace-tools .controls,.workspace-panel-actions{min-width:0}
+.workspace-main>section,.workspace-main>aside{min-width:0;min-height:0}
+.workspace-shell button{max-width:100%;overflow-wrap:anywhere}
+.workspace-design select,.workspace-settings select,.workspace-settings input:not([type=checkbox]),.hub-content input,.hub-content select,.writing-tool-panel select{max-width:100%;min-width:0}
+.lab-three-pane header>strong{min-width:0;overflow-wrap:anywhere}
+.lab-three-pane header>button{flex-shrink:0}
+.lab-grid-three>section{min-height:0}
+@media(max-width:1000px){
+ .workspace-header>div:first-child{flex:1 1 180px}
+ .workspace-actions{flex:0 1 auto}
+ .save-indicator{display:block;max-width:210px;overflow-wrap:anywhere}
+ .workspace-header button{padding:7px 9px;font-size:12px}
+}
+@media(max-width:750px){
+ .workspace-header{flex-wrap:wrap;gap:5px}
+ .workspace-header>div:first-child{flex-basis:100%;font-size:12px}
+ .workspace-header strong{font-size:17px}
+ .workspace-actions{width:100%;justify-content:flex-start;gap:6px}
+ .save-indicator{max-width:100%;font-size:11px}
+ .workspace-tools{gap:5px;align-items:center}
+ .workspace-tools .controls{gap:5px}
+ .workspace-tools button{padding:6px 8px;font-size:12px}
+ .workspace-main.mode-writing.with-paper{grid-template-rows:minmax(0,1fr) minmax(0,1fr)}
+ .workspace-main.mode-writing.with-paper.outline-collapsed{grid-template-rows:minmax(0,1fr) minmax(0,1fr)}
+ .workspace-main>.editor{padding:8px}
+ .workspace-main>.paper{padding:8px}
+ .workspace-main.mode-layout>.layout-page-info{max-height:min(108px,23vh);padding:8px}
+ .layout-page-toolbar{gap:4px;margin-bottom:4px}
+ .layout-page-toolbar button{padding:5px 7px;font-size:12px}
+ .layout-view-tools{gap:5px;padding:4px 0;margin-bottom:4px}
+ .workspace-main.mode-layout .paper>h2{margin-bottom:6px}
+ .hub-toolbar label{max-width:100%;flex-wrap:wrap}
+ .hub-toolbar input[type=search]{min-width:0;width:min(180px,100%)}
+ .hub-list-header,.hub-project-row{gap:6px;padding:6px 8px}
+ .workspace-design,.workspace-settings,.workspace-publication{padding:12px}
+ .lab-overlay{padding:8px}
+ .lab-three-pane header{padding:8px;gap:5px}
+ .lab-three-pane header strong{font-size:15px}
+ .lab-three-pane header button,.lab-three-pane footer button{padding:6px 8px;font-size:12px}
+ .lab-three-pane footer{padding:6px 8px;gap:6px;max-height:25vh;overflow:auto}
+}
+@media(max-width:520px){
+ .project-hub{grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr)}
+ .hub-sidebar{flex-direction:row;flex-wrap:wrap;padding:6px;gap:4px;border-right:0;border-bottom:1px solid #d6dfe8;max-height:25vh}
+ .hub-sidebar strong,.hub-sidebar small{display:none}
+ .hub-sidebar button{font-size:12px;padding:6px}
+ .hub-list-header,.hub-project-row{grid-template-columns:minmax(0,1fr) 105px}
+ .hub-row-actions{gap:3px}
+ .hub-row-actions button{padding:5px;font-size:11px}
+ .workspace-main.mode-writing:not(.outline-collapsed){grid-template-columns:96px minmax(0,1fr)}
+ .workspace-main.mode-writing.with-paper:not(.outline-collapsed){grid-template-columns:96px minmax(0,1fr)}
+ .workspace-outline,.layout-page-list{padding:6px}
+ .workspace-main.mode-layout:not(.page-list-collapsed){grid-template-columns:82px minmax(0,1fr)}
+ .layout-thumbnail{width:30px;height:42px}
+}
+@media(max-height:500px){
+ .workspace-header{padding:4px 8px}
+ .workspace-nav{padding:2px 8px}
+ .workspace-nav button{padding:5px 9px;font-size:12px}
+ .workspace-tools{max-height:25vh;overflow:auto;overscroll-behavior:contain}
+ .workspace-statusbar{min-height:24px;max-height:13vh;overflow:auto;padding:2px 8px;gap:3px}
+ .workspace-statusbar>footer{max-height:8vh}
+ .workspace-shortcuts{max-height:25vh}
+ .workspace-main>.editor>textarea#source{min-height:100px;flex-basis:100px}
+ .workspace-main>.paper>#preview{min-height:36px}
+ .workspace-main.mode-layout>.paper{overflow:auto}
+ .lab-three-pane header{flex-shrink:0}
+ .lab-three-pane .lab-grid-three>.lab-canvas{min-height:230px}
+}
+@media(max-height:500px) and (min-width:651px){.lab-three-pane .lab-grid-three>.lab-canvas{min-height:0}.lab-grid-three .lab-canvas-toolbar{max-height:40%}.lab-grid-three #lab-preview,.lab-grid-three #paragraph-preview{min-height:50px}}

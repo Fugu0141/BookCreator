@@ -241,6 +241,22 @@ async function packageSmoke(){
   await until("!!document.querySelector('#open')?.getClientRects().length&&!document.querySelector('#open').disabled");
   if(!await exec("document.querySelector('.workspace-shell').dataset.workspaceMode==='home'&&!document.querySelector('#source').getClientRects().length&&!document.querySelector('#body-font').getClientRects().length"))throw Error('Initial home exposes unrelated controls');
   if(!await exec("typeof require==='undefined'&&typeof process==='undefined'&&!!window.bookcreator"))throw Error('Renderer isolation failed');
+  // Chromium UI zoom exercises reduced CSS viewports; it is not a native OS DPI change.
+  const originalZoom=win.webContents.getZoomFactor();
+  const baselineWidth=await exec("innerWidth");
+  const atUiZoom=async(factor,check)=>{
+    win.webContents.setZoomFactor(originalZoom*factor);
+    try{
+      await until("Math.abs(innerWidth-"+baselineWidth+"/"+factor+")<8");
+      await until(check);
+    }finally{
+      win.webContents.setZoomFactor(originalZoom);
+      await until("Math.abs(innerWidth-"+baselineWidth+")<8");
+    }
+  };
+  const visibleWithinWindow=selectors=>"(()=>{const nodes="+JSON.stringify(selectors)+".map(s=>document.querySelector(s));return nodes.every(e=>{if(!e||!e.getClientRects().length)return false;const r=e.getBoundingClientRect();return r.width>0&&r.height>0&&r.left>=-1&&r.right<=innerWidth+1&&r.top>=-1&&r.bottom<=innerHeight+1;});})()";
+  for(const factor of [1.25,1.5,2])await atUiZoom(factor,visibleWithinWindow(['#open','#new-project','#shortcut-help-toggle','.hub-content']));
+
   await exec("document.querySelector('#open').click()");
   await until("!!document.querySelector('[data-section=chapter]')");
   await exec("document.querySelector('[data-section=chapter]').click()");
@@ -294,6 +310,10 @@ async function packageSmoke(){
   await exec("document.querySelector('.workspace-shell').dispatchEvent(new KeyboardEvent('keydown',{key:'1',ctrlKey:true,bubbles:true,cancelable:true}))");
   await until("document.querySelector('.workspace-shell').dataset.workspaceMode==='writing'");
   if(!await exec("document.querySelector('#source').value==="+JSON.stringify(sample)+"&&document.querySelector('#workspace-save-state').textContent==='未保存：原稿・テーマ'"))throw Error('Workspace view controls changed draft');
+  for(const factor of [1.25,1.5,2]){
+    await atUiZoom(factor,visibleWithinWindow(['#save','#book-settings','#shortcut-help-toggle','#workspace-save-state','.workspace-main','.editor'])+"&&document.querySelector('.editor').clientHeight>40");
+  }
+  if(!await exec("document.querySelector('#source').value==="+JSON.stringify(sample)))throw Error('UI zoom altered manuscript');
   if(!await exec("document.querySelector('.writing-toolbar button').getClientRects().length>0&&[...document.querySelectorAll('.writing-tool-panel')].every(e=>e.hidden)"))throw Error('Writing default exposes detailed commands');
   await exec("(()=>{const e=document.querySelector('#source');e.focus();e.setSelectionRange(0,0);})()");
   await until("['bold','italic','underline'].every(id=>document.querySelector('#source-'+id).disabled)");
@@ -367,6 +387,18 @@ async function packageSmoke(){
   await until("Number(document.querySelector('#preview').dataset.paperZoom)>0&&Number(document.querySelector('#preview').dataset.paperZoom)<=1");
   await changePaperZoom('100');
   await until("Number(document.querySelector('#preview').dataset.paperZoom)===1");
+  // Collapse auxiliary panels to reserve the paper area on short, high-zoom windows.
+  await exec("document.querySelector('#toggle-page-list').click()");
+  await exec("document.querySelector('#toggle-page-info').click()");
+  await changePaperZoom('page');
+  for(const factor of [1.25,1.5,2]){
+    await atUiZoom(factor,visibleWithinWindow(['#save','#toggle-page-list','#toggle-page-info','.paper'])+"&&document.querySelector('#preview').clientHeight>0&&document.querySelector('#workspace-layout-state').dataset.phase==='ready'");
+  }
+  await changePaperZoom('100');
+  await exec("document.querySelector('#toggle-page-list').click()");
+  await exec("document.querySelector('#toggle-page-info').click()");
+  await until("!document.querySelector('#layout-page-list').hidden&&!document.querySelector('#layout-page-info').hidden&&Number(document.querySelector('#preview').dataset.paperZoom)===1");
+  if(!await exec("document.querySelector('#preview > div').dataset.paperProbe==='same'&&document.querySelector('#preview > div').shadowRoot.querySelector('[data-page]').style.width==="+JSON.stringify(paperWidth)))throw Error('UI zoom changed physical paper');
 
   await exec("document.querySelector('[data-layout-page=\"1\"]').click()");
   await until("document.querySelector('[data-layout-page=\"1\"]').getAttribute('aria-current')==='page'&&document.querySelector('#preview').scrollTop<20");
@@ -564,6 +596,29 @@ async function smoke(){
     await until("!document.querySelector('[data-property-tab="+category+"]').hidden&&[...document.querySelectorAll('.lab-inspector [data-property-tab]')].filter(p=>!p.hidden).length===1");
   }
   if(!await exec("document.querySelector('#lab-padding').closest('[data-property-tab]').dataset.propertyTab==='layout'&&document.querySelector('#lab-font-size').closest('[data-property-tab]').dataset.propertyTab==='appearance'"))throw Error('Inspector categories incorrect');
+  // At compact UI sizes the same editor becomes a scrollable vertical workspace.
+  const labOriginalZoom=win.webContents.getZoomFactor(),labBaseWidth=await exec("innerWidth");
+  win.webContents.setZoomFactor(labOriginalZoom*2);
+  try{
+    await until("Math.abs(innerWidth-"+labBaseWidth+"/2)<8");
+    await until("(()=>{const d=document.querySelector('.lab-three-pane'),r=d.getBoundingClientRect(),c=document.querySelector('#lab-cancel').getBoundingClientRect(),g=document.querySelector('.lab-grid-three');return r.left>=0&&r.right<=innerWidth+1&&r.top>=0&&r.bottom<=innerHeight+1&&c.left>=r.left&&c.right<=r.right&&g.clientHeight>0;})()");
+    if(await exec("innerWidth<=650")){
+      await until("(()=>{const a=document.querySelector('.lab-layers').getBoundingClientRect(),b=document.querySelector('.lab-canvas').getBoundingClientRect(),c=document.querySelector('.lab-inspector').getBoundingClientRect();return a.bottom<=b.top+1&&b.bottom<=c.top+1;})()");
+    }
+    await exec("document.querySelector('#lab-measure').scrollIntoView({block:'center',inline:'nearest'})");
+    await until("(()=>{const r=document.querySelector('#lab-measure').getBoundingClientRect(),g=document.querySelector('.lab-grid-three').getBoundingClientRect();return r.top>=g.top-1&&r.bottom<=g.bottom+1;})()");
+    await exec("document.querySelector('#lab-measure').click()");
+    await until("!document.querySelector('#lab-apply').disabled");
+    await exec("document.querySelector('[data-property-choice=layout]').scrollIntoView({block:'center',inline:'nearest'})");
+    await until("(()=>{const r=document.querySelector('[data-property-choice=layout]').getBoundingClientRect(),g=document.querySelector('.lab-grid-three').getBoundingClientRect();return r.top>=g.top-1&&r.bottom<=g.bottom+1;})()");
+    await exec("document.querySelector('[data-property-choice=layout]').click()");
+    await until("!document.querySelector('#lab-property-layout').hidden");
+  }finally{
+    win.webContents.setZoomFactor(labOriginalZoom);
+    await until("Math.abs(innerWidth-"+labBaseWidth+")<8");
+  }
+  await exec("document.querySelector('[data-property-choice=appearance]').click()");
+
   await exec("document.querySelector('#lab-measure').click()");
   await until("!document.querySelector('#lab-apply').disabled");
   await exec("document.querySelector('#lab-cancel').click()");
