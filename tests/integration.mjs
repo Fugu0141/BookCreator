@@ -939,3 +939,23 @@ test('extended mathematical grammar integrates with manuscript, GUI patches and 
   assert.equal(previewSampleInline('式 $\\sin x$ です。',true,engine.parsePreviewMath).inlineMath[0].formula,'\\sin x');
   assert.throws(()=>planDisplayMath(source,start,start+formula.length,'\\input{secret}',bcm.scanDocument,engine.parsePreviewMath),RangeError);
 });
+
+
+test('math font role propagates independently through single/book preview and named slots',()=>{
+  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds,validateDisplayMath:engine.parsePreviewMath,validateInlineMath:engine.parsePreviewMath};
+  const id='component-00000000-0000-4000-8000-000000000001',alias='BCFont_'+ 'a'.repeat(64);
+  const library={schemaVersion:3,entries:[{id,name:'数式部品',usage:'study',design:{...defaultHeadingDesign(),direction:'column',children:[{id:'content',type:'content'},{id:'hint',type:'slot',name:'hint',width:'fill',fontSize:3500,lineHeight:1.5,color:'#123456',font:{id:'system-monospace',weight:400}}]}}]};
+  const source=['# 見出し','','本文 $x^2$ です。','','$$','\\frac{a}{b}','$$','','::::component{name="'+id+'"}',':::slot{name="content"}','問題 $x$ です。',':::','',':::slot{name="hint"}','ヒント $\\sqrt{x}$ です。',':::','::::',''].join('\n');
+  const doc={documentId:'font',revision:'1',source,startOn:'page'},size={width:100000,height:100000};
+  const typography={body:{fontFamily:'serif',fontWeight:400},heading:{fontFamily:'sans-serif',fontWeight:700},mathFontFamily:alias};
+  for(const p of [prepareBrowserPreview(doc,'1','font',size,deps,typography,library),prepareBookBrowserPreview([doc],'1','font',size,deps,typography,undefined,undefined,undefined,undefined,library)]){
+    assert.deepEqual(p.diagnostics,[]);const blocks=p.options.blocks??p.options.sections[0].blocks;
+    assert.equal(blocks[0].request.mathFontFamily,undefined);
+    assert.equal(blocks[0].request.fontFamily,'sans-serif');
+    for(const b of blocks.slice(1))assert.equal(b.request.mathFontFamily,alias);
+    assert.equal(blocks[1].request.fontFamily,'serif');
+    assert.equal(blocks[3].namedSlots[0].request.mathFontFamily,alias);
+    assert.equal(blocks[3].namedSlots[0].request.fontFamily,'monospace');
+  }
+  assert.throws(()=>prepareBrowserPreview(doc,'1','font',size,deps,{...typography,mathFontFamily:'serif'},library),RangeError);
+});
