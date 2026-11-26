@@ -1014,14 +1014,15 @@ async function smoke(){
   if(await exec("document.querySelector('#source').value")!==insertedMath)throw Error('Cancel changed source');
   await exec("document.querySelector('#source-math').click()");
   await until("!!document.querySelector('#math-editor')");
-  const changedFormula='\\sqrt{x^2+1}';
+  const changedFormula=['\\begin{aligned}','  x&=\\sqrt{x^2+1} \\\\','  &=y','\\end{aligned}'].join('\n');
+  if(!await exec("document.querySelector('#math-formula').tagName==='TEXTAREA'"))throw Error('Display formula editor must accept multiple lines');
   await setMathInput(changedFormula);
-  await until("!!document.querySelector('#math-draft-preview math msqrt')");
+  await until("!!document.querySelector('#math-draft-preview math msqrt') && document.querySelectorAll('#math-draft-preview math mtable mtr').length===2");
   await exec("document.querySelector('#math-apply').click()");
   await until("document.querySelector('#source').value==="+JSON.stringify(insertedMath.replace(mathFormula,changedFormula)));
   if(await exec("document.querySelector('#preview').children.length"))throw Error('Old formula preview was not invalidated');
   await exec("document.querySelector('#preview-book').click()");
-  await until("!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-display-math] math msqrt')");
+  await until("!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-display-math] math msqrt') && document.querySelector('#preview > div').shadowRoot.querySelectorAll('[data-display-math] math mtable mtr').length===2");
   await exec("document.querySelector('#preview > div').shadowRoot.querySelector('[data-display-math]').click()");
   await exec("document.querySelector('#source-math').click()");
   await until("document.querySelector('#math-formula')?.value==="+JSON.stringify(changedFormula));
