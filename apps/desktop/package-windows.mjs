@@ -24,7 +24,7 @@ try{
   await mkdir(desktop,{recursive:true});
   const pkg=JSON.parse(await readFile(join(here,'package.json'),'utf8'));
   await writeFile(join(appDir,'package.json'),JSON.stringify({name:'bookcreator-desktop',productName:'BookCreator',version:pkg.version,private:true,type:'module',main:'apps/desktop/main.mjs'},null,2));
-  for(const file of ['main.mjs','workspace.mjs','project-catalog.mjs','manuscript-recovery.mjs','settings-recovery.mjs','component-recovery.mjs','recovery-hub.mjs','book-settings.mjs','project-fonts.mjs','project-images.mjs','bundled-math-font.mjs','preload.cjs','index.html','style.css']){
+  for(const file of ['main.mjs','workspace.mjs','project-catalog.mjs','manuscript-recovery.mjs','settings-recovery.mjs','component-recovery.mjs','preview-read-lane.mjs','recovery-hub.mjs','book-settings.mjs','project-fonts.mjs','project-images.mjs','bundled-math-font.mjs','preload.cjs','index.html','style.css']){
     await cp(join(here,file),join(desktop,file));
   }
   await mkdir(join(desktop,'tests'));
