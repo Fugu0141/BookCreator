@@ -272,3 +272,8 @@ Selecting all bodies in an isolated run of 2–128 adjacent top-level raw lines 
 ### M04 — 独立数式の章別採番・参照（実験的）
 
 BCM `:::layout{#eq-id numbered="true"}` の単一独立数式のみを対象に、章番号.式番号を書籍順で派生する。H1または章未開始時の見出し・参考書部品・最初の番号付き式を章開始とし、ファイル境界で章状態をリセットする。既存の裸の数式、numbered=false、省略は採番しない（書籍の既定採番設定は未実装）。数式の右端に `(2.1)` を実測配置、原稿本文に番号を書き込まない。通常本文の `:ref{target="eq-id" format="number"}` は `2.1`、label-number（既定）は `式 (2.1)` に解決し、前方・ファイル間参照にも対応。BCMの実参照token parserと既存のID重複検査を利用し、未解決・無番号・異種ターゲット、title/page、未知属性を拒否する。派生ラベルの一部を含む断片は元token全体を選択する。単独原稿のdesktop previewでも参照・layoutを含む場合は全冊コンテキストを使用。番号付き数式のGUI生成/編集、参照GUI、章設定・正式出版は後続。Engine #21 merged pin。CI未確認。
+
+
+### M04 — GUI番号付き独立数式（実験的）
+
+BookCreator #45の全3CI成功・mainマージ済み（7cbe62094e96b7f5b21a15831a4242df3d66ad8a）。独立数式の新規挿入で「章別の数式番号を付ける」を選択すると、GUIが eq-UUID を生成し、既存BCM layout wrapperとnumbered="true"により一つのexact patchで挿入する。既定は無番号。生成IDは適用前に表示し、同一原稿内の重複を拒否する。書籍全体の重複は既存の組版検証で拒否する。既存の単一独立数式を含む対応layout wrapperは紙面から選択して再編集できる。数式本文のみ置換し、ID、採番属性、フェンス、他ブロック、LF/CRLFを保全する。既存数式の採番設定とIDは読み取り専用（参照を破壊しないよう、既存式の採番変更・ID変更・参照挿入GUIは別途実装）。番号付き数式の挿入・再編集、参照解決・不正wrapper拒否の統合回帰試験と実Electron操作試験を追加。CI未確認、出版準備完了ではない。
