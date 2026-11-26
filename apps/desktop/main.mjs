@@ -1303,11 +1303,13 @@ async function writingJourneySmoke(){
   await until('optional group consumes no height',"(()=>{const r=document.querySelector('#lab-preview > div')?.shadowRoot;return !!r?.querySelector('[data-named-slot=strategy]')&&!r.querySelector('[data-named-slot=extension]')&&!r.querySelector('[data-component-group]')&&parseFloat(r.querySelector('[data-block]').style.height)<"+fullHeight+";})()");
   await until('custom measured',"!document.querySelector('#lab-library-add').disabled&&[...document.querySelector('#lab-preview > div')?.shadowRoot?.querySelectorAll('[data-fixed-label]')??[]].some(e=>e.textContent==="+JSON.stringify(customName+'：サンプル')+")");
   if(await readFile(themePath,'utf8')!==themeBefore||await readFile(manuscript,'utf8')!==expected)throw Error('Writing journey: unregistered component changed disk');
+  await until('custom draft recorded',"document.querySelector('#component-recovery-state')?.dataset.phase==='recorded'");
   await click('#lab-library-add');
   await until('custom registered',"[...document.querySelector('#lab-library-select')?.options??[]].some(e=>e.textContent==="+JSON.stringify(customName)+")&&!document.querySelector('#lab-cancel').disabled");
   const customId=await raw("[...document.querySelector('#lab-library-select').options].find(e=>e.textContent==="+JSON.stringify(customName)+").value");
   if(!/^component-[a-f0-9-]+$/.test(customId))throw Error('Writing journey: invalid registered component ID');
   const themeRegistered=await readFile(themePath,'utf8');
+  if((await recoveryStore(smokeRoot,'components').list()).records.length)throw Error('Writing journey: successful registration did not clear recovery draft');
   if(themeRegistered===themeBefore||!themeRegistered.includes(customId)||await readFile(manuscript,'utf8')!==expected)throw Error('Writing journey: component registration did not preserve manuscript');
   await click('#lab-cancel');
   await until('catalog after registration',"!document.querySelector('#lab-measure')&&!!document.querySelector("+JSON.stringify('[data-catalog-edit=registered-'+customId+']')+")");
