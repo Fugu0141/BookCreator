@@ -1526,6 +1526,13 @@ async function productionDataCrashSmoke(mode){
     await until('both saved',"document.querySelector('#workspace-save-state').textContent==='保存済み'");
     const after=await hashes();
     if(after.theme===saved.theme||after.manifest===saved.manifest||after.source!==saved.source||(await records()).length)throw Error('Explicit settings save or cleanup failed');
+    // Read through a fresh renderer and actual workspace activation, not
+    // merely an in-memory state update or a changed YAML hash.
+    await win.loadURL(PAGE);await openBook();
+    await click('#mode-design');await click('#design-tab-styles');
+    await until('saved font reloaded',"document.querySelector('#body-font').value==="+JSON.stringify(oracle.values.font)+"&&!document.querySelector('#settings-recovery-review-typography')");
+    await click('#book-settings');
+    await until('saved paper reloaded',"document.querySelector('#page-size').value==="+JSON.stringify(oracle.values.size)+"&&!document.querySelector('#settings-recovery-review-book-settings')&&document.querySelector('#workspace-save-state').textContent==='保存済み'");
   }else{
     await hub(1);
     await click('[data-recovery-entry='+oracle.values.id+'] .hub-recovery-open');
