@@ -26,3 +26,15 @@ test('blocked, disabled, running and failed same scope never loop',()=>{
   assert.equal(choose({phase:'failed',scope:'manuscript'}),'book');
   assert.equal(choose({phase:'stale',scope:'book'}),'book');
 });
+
+test('styles show selected manuscript or book fallback only when paper is visible',()=>{
+  assert.equal(choose({mode:'design',paperVisible:true,hasFile:true}),'manuscript');
+  assert.equal(choose({mode:'design',paperVisible:true,hasFile:false}),'book');
+  assert.equal(choose({mode:'design',paperVisible:false,hasFile:true}),null);
+});
+test('settings always measure the full book, including unsaved section order',()=>{
+  assert.equal(choose({mode:'settings',paperVisible:true,hasFile:true,phase:'ready',scope:'manuscript'}),'book');
+  assert.equal(choose({mode:'settings',paperVisible:true,phase:'stale',scope:'book'}),'book');
+  assert.equal(choose({mode:'settings',paperVisible:true,phase:'ready',scope:'book'}),null);
+  assert.equal(choose({mode:'settings',paperVisible:false}),null);
+});

@@ -335,11 +335,36 @@ async function liveWritingSmoke(){
   if(await readFile(path,'utf8')!==saved)throw Error('Live book layout changed saved manuscript');
   await click('#mode-writing');
   await until('writing scope restored',scopeReady('manuscript'));
+  const themePath=join(smokeRoot,'themes','default','theme.yaml'),manifestPath=join(smokeRoot,'book.yaml');
+  const [savedTheme,savedManifest]=await Promise.all([readFile(themePath,'utf8'),readFile(manifestPath,'utf8')]);
+  const change=async(selector,value)=>raw("(()=>{const e=document.querySelector("+JSON.stringify(selector)+");const proto=e.tagName==='SELECT'?HTMLSelectElement.prototype:HTMLInputElement.prototype;Object.getOwnPropertyDescriptor(proto,'value').set.call(e,"+JSON.stringify(value)+");e.dispatchEvent(new Event(e.tagName==='SELECT'?'change':'input',{bubbles:true}));})()");
+  const visiblePaper="!!document.querySelector('#preview').getClientRects().length";
+  await click('#mode-design');
+  await until('style paper visible',scopeReady('manuscript')+"&&"+visiblePaper+"&&document.querySelector('#style-live-preview').checked");
+  await change('#body-font','serif');
+  await until('unsaved actual font',scopeReady('manuscript')+"&&Array.from(document.querySelector('#preview > div').shadowRoot.querySelectorAll('[data-start]')).some(e=>e.style.fontFamily==='serif')&&document.querySelector('#workspace-save-state').textContent.includes('テーマ')");
+  if(await readFile(themePath,'utf8')!==savedTheme)throw Error('Live style wrote the theme');
+  await click('#discard-theme-roles');
+  await until('discarded style',scopeReady('manuscript')+"&&document.querySelector('#workspace-save-state').textContent==='保存済み'");
+  await click('#book-settings');
+  await until('settings paper visible',scopeReady('book')+"&&"+visiblePaper+"&&document.querySelector('#book-settings-live-preview').checked");
+  await change('#page-size','A5');
+  await until('unsaved A5 geometry',scopeReady('book')+"&&Math.abs(parseFloat(document.querySelector('#preview > div').shadowRoot.querySelector('[data-page]').style.width)-148*96/25.4)<.1&&document.querySelector('#workspace-save-state').textContent.includes('書籍設定')");
+  const oldTop=await raw("Number(document.querySelector('#page-margin-top').value)");
+  const oldPaper=await raw("document.querySelector('#preview > div').shadowRoot.querySelector('[data-content-guide]').getAttribute('style')");
+  await change('#page-margin-top',String(oldTop+5));
+  await until('unsaved margin geometry',scopeReady('book')+"&&document.querySelector('#preview > div').shadowRoot.querySelector('[data-content-guide]').getAttribute('style')!=="+JSON.stringify(oldPaper));
+  if(await readFile(manifestPath,'utf8')!==savedManifest)throw Error('Live page settings wrote book.yaml');
+  await click('#discard-book-settings');
+  await until('discarded page settings',scopeReady('book')+"&&Math.abs(parseFloat(document.querySelector('#preview > div').shadowRoot.querySelector('[data-page]').style.width)-210*96/25.4)<.1&&document.querySelector('#workspace-save-state').textContent==='保存済み'");
+  await click('#mode-writing');
+  await until('return to manuscript',scopeReady('manuscript'));
+  if(await readFile(path,'utf8')!==saved)throw Error('Settings preview wrote manuscript');
   // Reopening through the normal discard path cleans any coalesced recovery draft.
   await click('#mode-home');await click('#open');
   await until('reopened book',"document.querySelector('.workspace-shell').dataset.workspaceMode==='writing'&&!document.querySelector('#open').disabled&&!document.querySelector('#source').value");
   await click('#mode-home');
-  console.log('PASS default live writing and whole-book preview, explicit scope, IME, latest result, focus and disk safety');
+  console.log('PASS default live writing, whole-book and settings preview, explicit scope, IME, latest result, focus and disk safety');
 }
 // Short distribution smoke test: no installed fonts, user projects or native dialogs required.
 // Existing regression scenarios still use the real controls, but reach them through
