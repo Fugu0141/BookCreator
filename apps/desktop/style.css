@@ -527,3 +527,16 @@ body{font-family:BCFont_NotoSansJP,system-ui,sans-serif}.font-control,.typograph
 #hub-recovery-summary{margin:12px 0}
 @media(max-width:1000px){.hub-recovery-row{grid-template-columns:minmax(0,1fr) 125px 120px}}
 @media(max-width:720px){.hub-recovery-row{grid-template-columns:minmax(0,1fr) 105px;gap:6px;padding:8px}.hub-recovery-row time{display:none}}
+
+#settings-recovery-dialog{box-sizing:border-box;width:min(48rem,calc(100vw - 24px));max-height:calc(100vh - 24px);overflow:auto;padding:20px;border:1px solid #aebdcb;border-radius:8px;background:#fff;color:#24384b;box-shadow:0 8px 30px #0003}
+#settings-recovery-dialog::backdrop{background:#15253680}
+#settings-recovery-dialog h2{margin:0 0 12px;font-size:1.2rem}
+.settings-recovery-compare{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:12px 0}
+.settings-recovery-compare section{min-width:0;border:1px solid #d6e0e9;border-radius:6px;padding:12px}
+.settings-recovery-compare h3{margin:0 0 12px;font-size:1rem}
+.settings-recovery-compare dl{margin:0}
+.settings-recovery-compare dt{font-size:12px;color:#64748b}
+.settings-recovery-compare dd{margin:3px 0 10px;overflow-wrap:anywhere}
+#settings-recovery-dialog .close-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px}
+[id^="settings-recovery-state-"][data-phase=error]{color:#9a251c}
+@media(max-width:600px){.settings-recovery-compare{grid-template-columns:1fr}}
