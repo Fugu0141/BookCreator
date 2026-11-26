@@ -23,7 +23,38 @@ export function logicalFormatRange(parsed,start,end){
   if(start===end)throw Error('文字を選択してください。');
   return {start:boundary(parsed,start,'start'),end:boundary(parsed,end,'end')};
 }
-export function replaceLogicalText(raw,value,parseInline){
+// For a range crossing style boundaries, surviving text keeps its old style.
+// Newly inserted text in a mixed selection is unstyled. Only cut runs are
+// reserialized; untouched source outside the selected envelope stays exact.
+function replaceAcrossStyles(raw,before,value,start,end,tail,parseInline){
+  const old=before.text,inserted=value.slice(start,tail),delta=inserted.length-(end-start);
+  const expected=before.inlineStyles.flatMap(run=>{
+    if(run.end<=start)return [run];
+    if(run.start>=end)return [{...run,start:run.start+delta,end:run.end+delta}];
+    const fragments=[];
+    if(run.start<start)fragments.push({...run,end:start});
+    if(run.end>end)fragments.push({...run,start:tail,end:run.end+delta});
+    return fragments;
+  });
+  function cut(pos,side,preferSpan){
+    const inside=before.sourceMap.segments.find(s=>s.start<pos&&pos<s.end);
+    const run=inside&&before.inlineStyles.find(r=>r.start===inside.start&&r.end===inside.end);
+    if(!run){const offset=boundary(before,pos,side==='left'?'start':'end');return side==='left'?raw.slice(0,offset):raw.slice(offset);}
+    const text=side==='left'?old.slice(run.start,pos):old.slice(pos,run.end);
+    const fragment=serializeInlineStyle(text,styleOf(run),preferSpan||raw.startsWith(':style{',inside.outerStart)).raw;
+    return side==='left'?raw.slice(0,inside.outerStart)+fragment:fragment+raw.slice(inside.outerEnd);
+  }
+  // Adjacent emphasis delimiters can collide after a deletion. Try explicit
+  // style markup for cut fragments only; reject rather than alter other runs.
+  for(const [leftSpan,rightSpan] of [[false,false],[true,false],[false,true],[true,true]]){
+    try{
+      const next=cut(start,'left',leftSpan)+inserted+cut(end,'right',rightSpan),after=richProjection(next,parseInline);
+      if(after&&after.text===value&&JSON.stringify(after.inlineStyles)===JSON.stringify(expected))return next;
+    }catch{/* Try the next safe serialization. */}
+  }
+  throw Error('書式を保持できない結合です。範囲を調整してください。');
+}
+export function replaceLogicalText(raw,value,parseInline,selection){
   const before=richProjection(raw,parseInline);
   if(!before)throw Error('この文章は記法編集で扱ってください。');
   const old=before.text;
@@ -33,6 +64,12 @@ export function replaceLogicalText(raw,value,parseInline){
   while(end>start&&tail>start&&old[end-1]===value[tail-1]){end--;tail--;}
   const graphemes=s=>new Set([s.length,...Array.from(new Intl.Segmenter(undefined,{granularity:'grapheme'}).segment(s),g=>g.index)]);
   const a=graphemes(old),b=graphemes(value);
+  // A verified selection disambiguates repeated characters across style
+  // boundaries. Input events without a usable snapshot retain the diff path.
+  if(selection&&Number.isSafeInteger(selection.start)&&Number.isSafeInteger(selection.end)&&selection.start>=0&&selection.end>selection.start&&selection.end<=old.length){
+    const s=selection.start,e=selection.end,t=value.length-(old.length-e);
+    if(t>=s&&a.has(s)&&a.has(e)&&b.has(s)&&b.has(t)&&old.slice(0,s)===value.slice(0,s)&&old.slice(e)===value.slice(t)){start=s;end=e;tail=t;}
+  }
   while(start>0&&(!a.has(start)||!b.has(start)))start--;
   while(end<old.length&&(!a.has(end)||!b.has(tail))){end++;tail++;}
   const inserted=value.slice(start,tail),delta=inserted.length-(end-start);
@@ -40,7 +77,7 @@ export function replaceLogicalText(raw,value,parseInline){
   let next,expected;
   if(hits.length){
     const run=hits[0];
-    if(hits.length!==1||start<run.start||end>run.end)throw Error('複数の書式範囲をまたぐ編集は記法編集で行ってください。');
+    if(hits.length!==1||start<run.start||end>run.end)return replaceAcrossStyles(raw,before,value,start,end,tail,parseInline);
     const segment=before.sourceMap.segments.find(s=>s.start===run.start&&s.end===run.end);
     if(!segment)throw Error('書式範囲を確認できません。');
     const text=old.slice(run.start,start)+inserted+old.slice(end,run.end);
