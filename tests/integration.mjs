@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
-import {editDocument,compileMeasuredManuscript,canReviewLayout,prepareBrowserPreview,prepareBookBrowserPreview,defaultHeadingDesign,defaultParagraphDesign,previewSourceRange,planInlineFormat,planListFormat,planListIndent,planListBatch,inspectDisplayMath,planDisplayMath,inspectInlineMath,planInlineMath,inspectComponentDisplayMath,planComponentDisplayMath,previewSampleInline,equationReferenceTargets,planEquationReference,planEquationNumbering,planNumberedComponentDisplayMath} from '../dist/index.js';
+import {editDocument,compileMeasuredManuscript,canReviewLayout,prepareBrowserPreview,prepareBookBrowserPreview,defaultHeadingDesign,defaultParagraphDesign,previewSourceRange,planInlineFormat,planListFormat,planListIndent,planListBatch,inspectDisplayMath,planDisplayMath,inspectInlineMath,planInlineMath,inspectComponentDisplayMath,planComponentDisplayMath,previewSampleInline,equationReferenceTargets,planEquationReference,planEquationNumbering,planNumberedComponentDisplayMath,previewStudySamples} from '../dist/index.js';
 const load = (variable, fallback) => import(pathToFileURL(resolve(process.env[variable] ?? fallback)).href);
 const bcm = await load('BCM_DIST', '../BookCreator_Markdown/dist/index.js');
 const engine = await load('ENGINE_DIST', '../BookCreator_LayoutEngine/dist/index.js');
@@ -1185,4 +1185,30 @@ test('whole-book inline math and style edits preserve cross-document references 
     assert.throws(()=>planInlineMath(source,at,at+5,'x',deps,invalid),RangeError);
     assert.throws(()=>planInlineFormat(source,source.indexOf('本文'),source.indexOf('本文')+2,'bold',bcm.scanDocument,{...invalid,deps}),RangeError);
   }
+});
+
+
+test('Component Lab numbered samples share an isolated chapter and local references',()=>{
+  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds,validateDisplayMath:engine.parseDisplayMath,validateInlineMath:engine.parsePreviewMath,parseReference:bcm.parseReferenceToken};
+  for(const nl of ['\n','\r\n']){
+    const wrap=(id,formula,numbered=true)=>[':::layout{#'+id+' numbered="'+numbered+'"}','$$',formula,'$$',':::'].join(nl);
+    const token=':ref{target="eq-sample-hint" format="label-number"}';
+    const primary=['本文 '+token+'。','',wrap('eq-sample-main','x^2'),''].join(nl);
+    const hint=['ヒント。','',wrap('eq-sample-hint','y^2'),'','参照 :ref{target="eq-sample-main" format="number"}。'].join(nl);
+    const off=wrap('eq-sample-off','a',false);
+    const samples=[{name:'hint',text:hint},{name:'extra',text:off}];
+    const result=previewStudySamples(primary,samples,true,deps);
+    assert.deepEqual(result.map(s=>s.name),['content','hint','extra']);
+    assert.deepEqual(result.map(s=>s.request.inlineMath.map(a=>a.equationNumber)),[['1.1'],['1.2'],[undefined]]);
+    assert.ok(result[0].request.text.includes('本文 式 (1.2)。'));
+    assert.ok(result[1].request.text.includes('参照 1.1。'));
+    assert.ok(result.every(s=>!('sourceMap' in s.request)));
+    assert.deepEqual(previewStudySamples(primary,samples,false,deps),[{name:'content',request:{text:primary}},...samples.map(s=>({name:s.name,request:{text:s.text}}))]);
+    assert.throws(()=>previewStudySamples(primary,[],true,deps),RangeError);
+    assert.throws(()=>previewStudySamples(primary,[{name:'hint',text:hint.replace('#eq-sample-hint','#eq-sample-main')}],true,deps),RangeError);
+    assert.throws(()=>previewStudySamples(primary,[{name:'hint',text:hint.replace('y^2','\\input{secret}')}],true,deps),RangeError);
+    assert.throws(()=>previewStudySamples(primary,[{name:'hint',text:hint+nl+'::::'+nl+'::::slot{name="unexpected"}'+nl+'Injected'}],true,deps),RangeError);
+  }
+  const plain=previewStudySamples('本文 $x$。',[{name:'hint',text:'ヒント。'}],true,deps);
+  assert.equal(plain[0].request.inlineMath[0].formula,'x');
 });

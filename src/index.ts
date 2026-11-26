@@ -43,3 +43,4 @@ export {inspectDisplayMath,planDisplayMath,inspectInlineMath,planInlineMath,insp
 export {equationReferenceTargets,planEquationReference} from './equation-reference-edit.js';
 
 export {planEquationNumbering,planNumberedComponentDisplayMath} from './equation-numbering-edit.js';
+export {previewStudySamples} from './study-sample.js';
