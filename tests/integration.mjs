@@ -931,6 +931,11 @@ test('extended mathematical grammar integrates with manuscript, GUI patches and 
   const next=bcm.applyPatches(source,[plan.patch]);
   assert.equal(next,source.replace(formula,()=>replacement));
   assert.ok(prepareBrowserPreview({...doc,source:next},'1','extended',size,deps).options);
+  for(const expression of ['\\begin{pmatrix}a&b\\\\c&d\\end{pmatrix}','\\begin{cases}x&x\\geq0\\\\-x&x<0\\end{cases}','\\begin{aligned}x&=1\\\\&=2-1\\end{aligned}']){
+    const edited=planDisplayMath(source,start,start+formula.length,expression,bcm.scanDocument,engine.parsePreviewMath);
+    const raw=bcm.applyPatches(source,[edited.patch]),result=prepareBrowserPreview({...doc,source:raw},'1','table',size,deps);
+    assert.equal(raw,source.replace(formula,()=>expression));assert.deepEqual(result.diagnostics,[]);assert.equal(result.options.blocks[1].request.text,expression);
+  }
   assert.equal(previewSampleInline('式 $\\sin x$ です。',true,engine.parsePreviewMath).inlineMath[0].formula,'\\sin x');
   assert.throws(()=>planDisplayMath(source,start,start+formula.length,'\\input{secret}',bcm.scanDocument,engine.parsePreviewMath),RangeError);
 });
