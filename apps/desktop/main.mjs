@@ -130,12 +130,16 @@ async function packageSmoke(){
   await until("!!document.querySelector('[data-section=chapter]')");
   await exec("document.querySelector('[data-section=chapter]').click()");
   await until("document.querySelector('#source')?.value.includes('見出し')");
+  // The legacy smoke theme intentionally has no math role (auto). Select STIX explicitly.
+  await exec("(()=>{const e=document.querySelector('#math-font');e.value='BCFont_STIXTwoMath';e.dispatchEvent(new Event('change',{bubbles:true}));})()");
+  await until("document.querySelector('#math-font').value==='BCFont_STIXTwoMath'");
   const sample='# 二次方程式\n\n本文 $x^2$ です。\n\n:::layout{#eq-test numbered="true"}\n$$\n\\frac{1}{2}\n$$\n:::\n';
   await exec("(()=>{const el=document.querySelector('#source');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(el,"+JSON.stringify(sample)+");el.dispatchEvent(new Event('input',{bubbles:true}));})()");
   await until("document.querySelector('#source').value==="+JSON.stringify(sample));
   await exec("document.querySelector('#preview-button').click()");
   await until("!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-inline-math] math msup')&&!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-display-math] math mfrac')&&document.querySelector('#preview > div').shadowRoot.querySelector('[data-equation-number]')?.textContent==='(1.1)'");
-  if(!await exec("Array.from(document.fonts).some(f=>f.family.includes('BCFont_NotoSansJP')&&f.status==='loaded')&&Array.from(document.fonts).some(f=>f.family.includes('BCFont_STIXTwoMath')&&f.status==='loaded')"))throw Error('Bundled fonts not loaded');
+  await exec("document.fonts.ready.then(()=>true)");
+  await until("(()=>{const root=document.querySelector('#preview > div')?.shadowRoot,math=[...root?.querySelectorAll('math')??[]],faces=[...document.fonts];return math.length===2&&math.every(m=>m.style.fontFamily.includes('BCFont_STIXTwoMath'))&&faces.some(f=>f.family.includes('BCFont_NotoSansJP')&&f.status==='loaded')&&faces.some(f=>f.family.includes('BCFont_STIXTwoMath')&&f.status==='loaded');})()");
   await exec("document.querySelector('#save').click()");
   await until("document.querySelector('#status').textContent.includes('保存しました')");
   if(await readFile(join(smokeRoot,'manuscript','chapter.md'),'utf8')!==sample)throw Error('Packaged app source save mismatch');
