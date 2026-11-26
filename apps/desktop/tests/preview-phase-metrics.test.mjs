@@ -14,7 +14,7 @@ test('only valid numeric phase records are copied and bounded',()=>{
   assert.equal(m.record('book',1,timing(2)),false);
   m.record('book',false,timing(2));m.record('manuscript',true,timing(3));
   const rows=m.snapshot();assert.deepEqual(rows.map(r=>r.measurementMs),[2,3]);
-  assert.deepEqual(Object.keys(rows[0]),['scope','cacheEnabled','mathCacheEnabled','paragraphCacheEnabled','pageCacheEnabled','reusePaperPages','sparsePaperPages',...phaseKeys]);
+  assert.deepEqual(Object.keys(rows[0]),['scope','cacheEnabled','mathCacheEnabled','paragraphCacheEnabled','pageCacheEnabled','reusePaperPages','sparsePaperPages','retainedPreview',...phaseKeys]);
   rows[0].imagesMs=999;assert.equal(m.snapshot()[0].imagesMs,2);
   m.clear();assert.deepEqual(m.snapshot(),[]);
 });
@@ -45,4 +45,14 @@ test('phase summary separates scope and cache mode; latest differs from median',
   assert.equal(sparse.sparsePaperPages,true);assert.equal(sparse.count,1);assert.deepEqual(sparse.latest,timing(14));
   assert.equal(partial.sparsePaperPages,false);
   assert.deepEqual(summarizePreviewPhases([]),[]);
+});
+
+test('retained preview has a separate sample group from sparse DOM only',()=>{
+  const m=createPreviewPhaseMetrics();
+  assert.equal(m.record('book',false,timing(1),false,true,false,false,true),true);
+  assert.equal(m.record('book',false,timing(2),false,true,false,false,true,true),true);
+  assert.equal(m.record('book',false,timing(3),false,true,false,false,false,true),false);
+  const [sparse,retained]=summarizePreviewPhases(m.snapshot());
+  assert.equal(sparse.retainedPreview,false);assert.equal(retained.retainedPreview,true);
+  assert.deepEqual(retained.latest,timing(2));assert.equal(retained.count,1);
 });
