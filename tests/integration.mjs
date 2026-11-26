@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
-import {editDocument,compileMeasuredManuscript,canReviewLayout,prepareBrowserPreview,prepareBookBrowserPreview,defaultHeadingDesign,defaultParagraphDesign,previewSourceRange,planInlineFormat,planListFormat,planListIndent,planListBatch,inspectDisplayMath,planDisplayMath,inspectInlineMath,planInlineMath,equationReferenceTargets,planEquationReference,planEquationNumbering} from '../dist/index.js';
+import {editDocument,compileMeasuredManuscript,canReviewLayout,prepareBrowserPreview,prepareBookBrowserPreview,defaultHeadingDesign,defaultParagraphDesign,previewSourceRange,planInlineFormat,planListFormat,planListIndent,planListBatch,inspectDisplayMath,planDisplayMath,inspectInlineMath,planInlineMath,previewSampleInline,equationReferenceTargets,planEquationReference,planEquationNumbering} from '../dist/index.js';
 const load = (variable, fallback) => import(pathToFileURL(resolve(process.env[variable] ?? fallback)).href);
 const bcm = await load('BCM_DIST', '../BookCreator_Markdown/dist/index.js');
 const engine = await load('ENGINE_DIST', '../BookCreator_LayoutEngine/dist/index.js');
@@ -865,4 +865,13 @@ test('component inline math keeps independent source envelopes in primary and na
     assert.throws(()=>planInlineMath(source,source.indexOf('name="hint"'),source.indexOf('name="hint"'),'x',deps));
     assert.throws(()=>planInlineMath(source,source.indexOf('**係数**')+3,source.indexOf('**係数**')+3,'x',deps));
   }
+});
+
+
+test('Lab BCM sample conversion is opt-in, bounded, and excludes source mappings',()=>{
+  const sample='**係数** $\\frac{1}{2}$ です。';
+  assert.deepEqual(previewSampleInline(sample,false,engine.parsePreviewMath),{text:sample});
+  assert.deepEqual(previewSampleInline(sample,true,engine.parsePreviewMath),{text:'係数 \uFFFC です。',inlineStyles:[{start:0,end:2,fontWeight:700}],inlineMath:[{start:3,formula:'\\frac{1}{2}'}]});
+  assert.throws(()=>previewSampleInline('式 $\\input{secret}$',true,engine.parsePreviewMath),RangeError);
+  assert.throws(()=>previewSampleInline('式 $x',true,engine.parsePreviewMath),RangeError);
 });
