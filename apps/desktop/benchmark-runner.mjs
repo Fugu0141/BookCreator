@@ -19,7 +19,7 @@ export async function runBookBenchmark(win,app,root,fixture){
       if(await raw("document.querySelector('#workspace-layout-state')?.dataset.phase==='failed'"))throw Error('Benchmark failed: '+label+'; '+await raw("document.querySelector('#workspace-diagnostic-list')?.textContent||document.querySelector('#status')?.textContent"));
       await sleep(25);
     }
-    throw Error('Benchmark timeout: '+label);
+    throw Error('Benchmark timeout: '+label+'; '+await raw("JSON.stringify({phase:document.querySelector('#workspace-layout-state')?.dataset.phase,scope:document.querySelector('#workspace-layout-state')?.dataset.scope,sourceLength:document.querySelector('#source')?.value.length,freshness:document.querySelector('#preview > div')?.dataset.paperFreshness,diagnostics:document.querySelector('#workspace-diagnostic-list')?.textContent,status:document.querySelector('#status')?.textContent})"));
   }
   const click=async selector=>{
     const q=JSON.stringify(selector);
@@ -57,6 +57,7 @@ export async function runBookBenchmark(win,app,root,fixture){
   await measure('large-revert','manuscript',()=>setSource(large.source),"!"+paperText('連続編集確認 5')+"&&document.querySelector('#workspace-save-state').textContent==='保存済み'");
   // Exercise the existing hard boundary separately from the successful workloads.
   await setSource(fixture.oversizedSource);
+  await until('oversized input committed',"document.querySelector('#source').value==="+JSON.stringify(fixture.oversizedSource));
   await until('oversized blocks rejected',"document.querySelector('#workspace-layout-state')?.dataset.phase==='failed'&&document.querySelector('#workspace-diagnostic-list')?.textContent.includes('128')&&document.querySelector('#preview > div')?.dataset.paperFreshness==='previous'&&document.querySelector('#preview > div').inert");
   await measure('large-limit-recovery','manuscript',()=>setSource(large.source),"document.querySelector('#workspace-save-state').textContent==='保存済み'");
   await measure('whole-book-open','book',()=>click('#mode-layout'));
