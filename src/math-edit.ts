@@ -1,4 +1,4 @@
-import {prepareManuscript,type Scan,type PreparationDependencies,type Manuscript} from './manuscript-poc.js';
+import {prepareManuscript,createEquationResolver,type Scan,type PreparationDependencies,type Manuscript} from './manuscript-poc.js';
 import {parsePreviewInline} from './inline-preview.js';
 import type {InlineEditPlan} from './inline-edit.js';
 
@@ -111,7 +111,7 @@ function inlineContext<S extends Scan>(source:string,start:number,end:number,dep
   });
   const p=candidates.find(s=>start>=s.start&&end<=s.end);
   if(!p)return fail('Place the caret in ordinary body text or a study text slot, or select one inline formula');
-  const parsed=parsePreviewInline(p.text,p.start,deps.validateInlineMath,undefined,true,deps.validateDisplayMath,p.componentEquations);
+  const parsed=parsePreviewInline(p.text,p.start,deps.validateInlineMath,createEquationResolver(result.items,deps,'math-edit'),true,deps.validateDisplayMath,p.componentEquations);
   const rows:Scan['blocks'][number][]=[];
   function collect(children:Scan['blocks']){for(const b of children){if(b.kind==='raw')rows.push(b);else if(b.kind==='directive')collect(b.children);}}
   collect(blocks);
@@ -191,7 +191,7 @@ export function inspectComponentDisplayMath<S extends Scan>(source:string,start:
   if(!slot||slot.sourceTextStart===undefined)return fail('Place the caret within a component text slot');
   const slotStart=slot.sourceTextStart;
   if(source.slice(slotStart,slotStart+slot.text.length)!==slot.text)return fail('Cannot establish exact component slot source');
-  const parsed=parsePreviewInline(slot.text,slot.sourceTextStart,deps.validateInlineMath,undefined,true,deps.validateDisplayMath,item.componentEquations);
+  const parsed=parsePreviewInline(slot.text,slot.sourceTextStart,deps.validateInlineMath,createEquationResolver(result.items,deps,context?.documentId??'math-edit'),true,deps.validateDisplayMath,item.componentEquations);
   const base={component:true as const,slot:slot.name,ownerStart:owner.range.start,ownerEnd:owner.range.end};
   for(const atom of parsed.inlineMath.filter(a=>a.display)){
     const seg=parsed.sourceMap.segments.find(s=>s.start===atom.start)!;
