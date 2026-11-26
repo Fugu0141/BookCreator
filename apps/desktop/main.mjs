@@ -1348,7 +1348,9 @@ async function nativeCloseSmoke(decision){
     let timer;
     const closed=new Promise((resolve,reject)=>{win.once('closed',resolve);timer=setTimeout(()=>reject(Error('Native close did not exit')),15000);});
     try{
-      await raw("document.querySelector("+JSON.stringify(selector)+").click()").catch(e=>{if(!win.isDestroyed())throw e;});
+      // A successful exit can dispose the frame before executeJavaScript replies.
+      // Only accept that specific error if the actual closed event also arrives.
+      await raw("document.querySelector("+JSON.stringify(selector)+").click()").catch(e=>{if(!win.isDestroyed()&&!/Render frame was disposed|Object has been destroyed/i.test(String(e.message??e)))throw e;});
       await closed;
     }finally{clearTimeout(timer);}
   };
