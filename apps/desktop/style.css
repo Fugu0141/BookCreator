@@ -570,3 +570,14 @@ body{font-family:BCFont_NotoSansJP,system-ui,sans-serif}.font-control,.typograph
  .workspace-main.mode-design.with-paper,.workspace-main.mode-settings.with-paper{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(150px,.9fr) minmax(100px,1.1fr)}
  .workspace-main.mode-design.with-paper>.paper,.workspace-main.mode-settings.with-paper>.paper{grid-column:1;grid-row:2}
 }
+
+/* Optional diagnostics: never reserve space when closed. */
+.performance-panel{flex:none;max-height:35vh;overflow:auto;background:var(--bc-surface,#fff);padding:10px 16px;border-top:1px solid var(--bc-border,#c7d6e2);font-size:12px}
+.performance-panel header{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+.performance-panel header div{display:flex;gap:6px;flex-wrap:wrap}
+.performance-panel p{margin:6px 0}
+.performance-table-wrap{overflow-x:auto}
+#performance-summary{width:100%;border-collapse:collapse;white-space:nowrap;font-variant-numeric:tabular-nums}
+#performance-summary th,#performance-summary td{padding:4px 8px;border-bottom:1px solid var(--bc-border,#d7e0e7);text-align:right}
+#performance-summary th:first-child{text-align:left}
+#performance-memory{margin:8px 0 4px}
