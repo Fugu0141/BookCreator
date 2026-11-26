@@ -20,7 +20,7 @@ export function projectBlocks(source,scan,parseInline){
       const match=/^( {0,3}#{1,6}[ \t]+)(.+)$/.exec(body);
       if(match&&(inline=supported(match[2],parseInline))&&!inline.inlineMath.length){prefix=match[1];payload=match[2];suffix=ending;}
       label='見出し H'+block.level;
-    }else if(kind==='raw'&&isolatedListContext(source,blocks,index,last)&&(list=projectList(raw,scan,parseInline))){
+    }else if(kind==='raw'&&/^(?: {0,3})(?:[-+*]|[1-9][0-9]{0,2}\.) /.test(raw)&&isolatedListContext(source,blocks,index,last)&&(list=projectList(raw,scan,parseInline))){
       kind='list';label='リスト';
     }else if(kind==='raw'&&(!blocks[index-1]||['blank','heading'].includes(blocks[index-1].kind))&&(!blocks[last+1]||blocks[last+1].kind==='blank')&&(inline=supported(normalize(body),parseInline))){
       kind='paragraph';label='本文';payload=normalize(body);suffix=ending;
