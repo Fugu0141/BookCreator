@@ -182,6 +182,10 @@ function workspaceSmokeExec(){
         }
         if(!visible)throw Error('Cannot open writing panel '+panel);
       }
+      if(selectors.some(s=>/^#study-(?:instance-id|generate-id|answer-to|include-optional)$/.test(s))&&!await raw("document.querySelector('#study-insertion-details')?.open")){
+        await raw("document.querySelector('#study-insertion-details summary').click()");
+        if(!await raw("document.querySelector('#study-insertion-details').open"))throw Error('Cannot open study insertion details');
+      }
     }
     return raw(js);
   };
@@ -221,6 +225,16 @@ async function packageSmoke(){
   if(!await exec("document.querySelector('#source').value==="+JSON.stringify(sample)))throw Error('Toolbar panel switch changed manuscript');
   await exec("document.querySelector('#writing-panel-format').click()");
   await until("[...document.querySelectorAll('.writing-tool-panel')].every(e=>e.hidden)");
+  await exec("document.querySelector('#writing-panel-study').click()");
+  await until("!document.querySelector('#writing-tools-study').hidden");
+  if(!await exec("!document.querySelector('#study-insertion-details').open&&!document.querySelector('#study-instance-id').getClientRects().length&&!!document.querySelector('#study-append').getClientRects().length"))throw Error('Study insertion exposes metadata by default');
+  await exec("document.querySelector('#study-insertion-details summary').click()");
+  await until("document.querySelector('#study-insertion-details').open&&!!document.querySelector('#study-instance-id').getClientRects().length");
+  await exec("document.querySelector('#study-insertion-details summary').click()");
+  await until("!document.querySelector('#study-insertion-details').open");
+  await exec("document.querySelector('#writing-panel-study').click()");
+  await until("[...document.querySelectorAll('.writing-tool-panel')].every(e=>e.hidden)");
+  if(!await exec("document.querySelector('#source').value==="+JSON.stringify(sample)))throw Error('Insertion details changed manuscript');
   await exec("document.querySelector('#preview-button').click()");
   await until("!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-inline-math] math msup')&&!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-display-math] math mfrac')&&document.querySelector('#preview > div').shadowRoot.querySelector('[data-equation-number]')?.textContent==='(1.1)'");
   await exec("document.fonts.ready.then(()=>true)");
