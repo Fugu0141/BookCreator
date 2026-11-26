@@ -106,7 +106,7 @@ try{
 }finally{
   if(socket)socket.close();
   for(const p of pending.values()){clearTimeout(p.timer);p.reject(Error('CDP closed'));}
-  if(chrome&&chrome.exitCode===null){chrome.kill('SIGKILL');await new Promise(resolve=>{if(chrome.exitCode!==null)resolve();else chrome.once('close',resolve);});}
+  if(chrome&&chrome.pid&&chrome.exitCode===null&&chrome.signalCode===null){await new Promise(resolve=>{chrome.once('close',resolve);chrome.kill('SIGKILL');});}
   if(server)await new Promise(resolve=>server.close(resolve));
   await rm(dir,{recursive:true,force:true,maxRetries:3,retryDelay:100});
 }
