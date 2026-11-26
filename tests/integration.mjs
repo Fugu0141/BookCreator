@@ -708,3 +708,49 @@ test('GUI inline math refuses protected ranges, text replacement, unsafe boundar
   ])assert.throws(()=>planInlineMath(source,start,end,'x^2',deps),RangeError,source);
   for(const formula of ['',' x','x ','x\ny','x$y','\\input{secret}','x^2^3'])assert.throws(()=>planInlineMath('本文。',1,1,formula,deps),RangeError);
 });
+
+
+test('numbered equations resolve stable IDs and forward/cross-file references in chapter order',()=>{
+  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds,validateDisplayMath:engine.parsePreviewMath,validateInlineMath:engine.parsePreviewMath,parseReference:bcm.parseReferenceToken};
+  const size={width:100000,height:70000};
+  const eq=(id,formula,flag='true')=>':::layout{#'+id+' numbered="'+flag+'"}\n$$\n'+formula+'\n$$\n:::\n';
+  const ref=':ref{target="eq-b" format="label-number"}',bare=':ref{target="eq-a" format="number"}';
+  const a='# 第一章\n\n後の '+ref+' を参照。\n\n'+eq('eq-a','x^2')+'\n'+eq('eq-skip','y','false')+'\n$$\nz\n$$\n';
+  const b='前の '+bare+' を参照。\n\n'+eq('eq-b','\\frac{a}{b}')+'\n'+eq('eq-c','x+1');
+  const docs=[{documentId:'a',revision:'1',source:a,startOn:'page'},{documentId:'b',revision:'1',source:b,startOn:'continuous'}];
+  const run=(d=docs)=>prepareBookBrowserPreview(d,'1','equations',size,deps);
+  const prepared=run();
+  assert.deepEqual(prepared.diagnostics,[]);
+  const blocks=prepared.options.sections.flatMap(s=>s.blocks).filter(b=>!('kind' in b));
+  assert.deepEqual(blocks.filter(b=>b.displayMath).map(b=>b.equationNumber),['1.1',undefined,undefined,'2.1','2.2']);
+  assert.equal(blocks.find(b=>b.origin.persistentId==='eq-a').request.text,'x^2');
+  const target=blocks.find(b=>b.origin.persistentId==='eq-b');
+  assert.equal(b.slice(target.sourceTextStart,target.sourceTextStart+target.request.text.length),'\\frac{a}{b}');
+  const paragraph=blocks.find(b=>b.request.text.includes('式 (2.1)'));
+  assert.ok(paragraph);assert.equal(paragraph.sourceTextStart,undefined);
+  const logical=paragraph.request.text.indexOf('2.1'),range=previewSourceRange(paragraph,{textStart:logical+1,textEnd:logical+2});
+  assert.equal(a.slice(range.start,range.end),ref);
+  assert.ok(blocks.some(b=>b.request.text==='前の 1.1 を参照。'));
+  const moved=run([{...docs[0]},{...docs[1],source:b.replace(eq('eq-b','\\frac{a}{b}')+'\n'+eq('eq-c','x+1'),()=>eq('eq-c','x+1')+'\n'+eq('eq-b','\\frac{a}{b}'))}]);
+  assert.deepEqual(moved.diagnostics,[]);
+  assert.ok(moved.options.sections[0].blocks.some(b=>b.request?.text.includes('式 (2.2)')));
+  assert.equal(prepareBrowserPreview(docs[0],'1','single',size,deps).options,undefined,'cross-file references require book context');
+});
+test('equation references and wrapper attributes fail closed',()=>{
+  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds,validateDisplayMath:engine.parsePreviewMath,validateInlineMath:engine.parsePreviewMath,parseReference:bcm.parseReferenceToken};
+  const size={width:100000,height:70000};
+  const eq=':::layout{#eq numbered="true"}\n$$\nx^2\n$$\n:::\n';
+  const run=source=>prepareBrowserPreview({documentId:'eq',revision:'1',source,startOn:'page'},'1','eq',size,deps);
+  for(const source of [
+    eq+'\n参照 :ref{target="missing"}。',
+    eq.replace('true','false')+'\n参照 :ref{target="eq"}。',
+    eq+'\n参照 :ref{target="eq" format="page"}。',
+    eq+'\n参照 :ref{target="eq" format="title"}。',
+    eq+'\n'+eq,
+    eq.replace('numbered="true"','numbered="maybe"'),
+    eq.replace('numbered="true"','numbered="true" width="90%"'),
+    eq.replace('$$\n:::', '$$\n本文。\n:::'),
+    '# 見出し :ref{target="eq"}\n\n'+eq
+  ])assert.equal(run(source).options,undefined,source);
+  assert.ok(run(eq+'\n参照 :ref{target="eq"}。').options);
+});

@@ -9,7 +9,7 @@ export interface Scan {source:string;blocks:readonly ScanBlock[];diagnostics:rea
 export interface Manuscript {documentId:string;revision:string;source:string;startOn:'page'|'continuous'}
 export interface Origin {documentId:string;revision:string;blockKey:string;range:Range;persistentId?:string}
 export type SemanticListItem=({kind:'bullet'}|{kind:'ordered';number:number})&{depth:number};
-export interface SemanticItem {kind:'heading'|'paragraph'|'figure'|'study'|'list'|'math';listItem?:SemanticListItem;studyKind?:StudyKind;componentId?:string;sourceTextStart?:number;namedSlots?:NamedSlotSource[];origin:Origin;text:string;level?:number;attributes?:Readonly<Record<string,string>>}
+export interface SemanticItem {equationNumber?:string;kind:'heading'|'paragraph'|'figure'|'study'|'list'|'math';listItem?:SemanticListItem;studyKind?:StudyKind;componentId?:string;sourceTextStart?:number;namedSlots?:NamedSlotSource[];origin:Origin;text:string;level?:number;attributes?:Readonly<Record<string,string>>}
 type MeasuredBlock={kind:'block';origin:Origin;width:number;unitHeights:readonly number[];splitPolicy:'allow'|'strict';startPosition?:'page-top';startPositionSource?:'component'};
 type Break={kind:'pagebreak';origin:Origin};
 interface Input {schemaVersion:1;revision:string;fingerprint:string;content:{width:number;height:number};sections:{id:string;startOn:'page'|'continuous';blocks:(MeasuredBlock|Break)[]}[]}
@@ -20,6 +20,7 @@ export interface PreparationDependencies<S extends Scan> {
   validateDisplayMath?:(formula:string)=>unknown;
   /** Explicit opt-in for top-level ordinary paragraph inline math. */
   validateInlineMath?:(formula:string)=>unknown;
+  parseReference?:(token:string,documentId:string,offset:number)=>{reference?:{target:string;format:string};diagnostics:readonly unknown[]};
   validate:(parsed:S)=>{diagnostics:readonly {code:string;range:Range;message:string}[]};
   index:(docs:readonly {documentId:string;revision:string;parsed:S}[])=>{diagnostics:readonly {code:string;occurrence:{documentId:string;range:Range}}[]};
 }
@@ -34,7 +35,7 @@ const stripEnd=(s:string)=>s.replace(/(?:\r\n|\r|\n)$/,'');
 // Keep raw UTF-16 offsets and reject unsupported line content, not just its normalized copy.
 const plainBody=(s:string)=>{try{parsePreviewInline(s);return true;}catch{return false;}};
 export function prepareManuscript<S extends Scan>(documents:readonly Manuscript[],revision:string,fingerprint:string,content:Input['content'],deps:PreparationDependencies<S>):{input?:PreparedInput;items:SemanticItem[];diagnostics:Issue[];publicationReady:false} {
-  const diagnostics:Issue[]=[],items:SemanticItem[]=[];
+  const diagnostics:Issue[]=[],items:SemanticItem[]=[],references:{target:string;documentId:string;range:Range}[]=[];
   const failed=()=>({items:[],diagnostics,publicationReady:false as const});
   const seen=new Set<string>();
   for(const doc of documents){
@@ -131,11 +132,25 @@ export function prepareManuscript<S extends Scan>(documents:readonly Manuscript[
           n=j;end=scan.blocks[n].range.end;
         }
         const body=stripEnd(doc.source.slice(start,end));
-        try{parsePreviewInline(body,0,deps.validateInlineMath);}catch(e){unsupported({start,end},'Unsupported paragraph: '+String(e instanceof Error?e.message:e));continue;}
+        try{parsePreviewInline(body,start,deps.validateInlineMath,deps.parseReference?(token,offset)=>{
+          const p=deps.parseReference!(token,doc.documentId,offset);
+          if(p.diagnostics.length||!p.reference||!['number','label-number'].includes(p.reference.format))throw RangeError('Expected a supported equation number reference');
+          references.push({target:p.reference.target,documentId:doc.documentId,range:{start:offset,end:offset+token.length}});
+          return '1.1';
+        }:undefined);}catch(e){unsupported({start,end},'Unsupported paragraph: '+String(e instanceof Error?e.message:e));continue;}
         emit({kind:'paragraph',origin:origin({start,end}),text:body},content.width);
       }else if(b.kind==='directive'&&b.closed&&b.header.kind==='container'){
         const h=b.header,attrs=Object.fromEntries(h.attributes.map(a=>[a.key,a.value])),kind=studyKind(h.name,attrs),componentId=customStudyId(h.name,attrs);
         const children=b.children.filter(child=>child.kind!=='blank');
+        if(h.name==='layout'){
+          const child=children[0],numbered=attrs.numbered;
+          if(children.length!==1||child?.kind!=='math'||Object.keys(attrs).some(k=>k!=='numbered')||(numbered!==undefined&&numbered!=='true'&&numbered!=='false')||(!h.id&&numbered===undefined)||!deps.validateDisplayMath){unsupported(b.range,'Only a single layout-wrapped display equation with ID or numbered flag is supported');continue;}
+          const raw=doc.source.slice(child.range.start,child.range.end),match=/^(\$\$[ \t]*(?:\r\n|\n))([^\r\n]+)(?:\r\n|\n)\$\$[ \t]*(?:\r\n|\n)?$/.exec(raw);
+          if(!match||!match[2].trim()||match[2].length>2048){unsupported(b.range,'Expected a supported single-line display math formula');continue;}
+          try{deps.validateDisplayMath(match[2]);}catch(e){unsupported(b.range,'Unsupported display math: '+String(e instanceof Error?e.message:e));continue;}
+          emit({kind:'math',origin:origin(b.range,h.id),text:match[2],sourceTextStart:child.range.start+match[1].length,attributes:attrs},content.width);
+          continue;
+        }
         const readBody=(blocks:readonly ScanBlock[],parent:Range,headerEnd:number)=>{
           const visible=blocks.filter(c=>c.kind!=='blank');
           if(!visible.length||visible.some(c=>c.kind!=='raw'))return;
@@ -176,8 +191,26 @@ export function prepareManuscript<S extends Scan>(documents:readonly Manuscript[
     }
     input.sections.push(section);
   }
+  // Equation counters follow book order. Explicitly numbered equations only until theme-level defaults exist.
+  let equationChapter=0,equationIndex=0,chapterActive=false;
+  const beginEquationChapter=()=>{equationChapter++;equationIndex=0;chapterActive=true;};
+  for(const section of input.sections){
+    chapterActive=false;
+    for(const block of section.blocks){
+      if(block.kind==='pagebreak')continue;
+      const item=block.item;
+      if(item.kind==='heading'&&(item.level===1||!chapterActive))beginEquationChapter();
+      if(item.kind==='study'&&!chapterActive)beginEquationChapter();
+      if(item.kind==='math'&&item.attributes?.numbered==='true'){
+        if(!chapterActive)beginEquationChapter();
+        item.equationNumber=equationChapter+'.'+(++equationIndex);
+      }
+    }
+    if(!chapterActive&&section.blocks.some(b=>b.kind==='block'))beginEquationChapter();
+  }
   // Links refer to persistent instance IDs, never positions or displayed numbers.
   const byId=new Map(items.filter(i=>i.origin.persistentId).map(i=>[i.origin.persistentId!,i]));
+  for(const ref of references){const target=byId.get(ref.target);if(target?.kind!=='math'||!target.equationNumber)diagnostics.push({code:'BC_EQUATION_REFERENCE',message:'Reference target must be a numbered equation: '+ref.target,documentId:ref.documentId,range:ref.range});}
   for(const item of items){
     if(item.kind!=='study'||!item.attributes?.['answer-to'])continue;
     const id=item.attributes['answer-to'],target=byId.get(id);

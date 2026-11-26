@@ -1,12 +1,12 @@
 import React,{useState,useRef,useEffect} from 'react';
 import {createRoot} from 'react-dom/client';
 import {prepareBrowserPreview,prepareBookBrowserPreview,previewSourceRange,planInlineFormat,planListFormat,planListIndent,planListBatch,inspectDisplayMath,planDisplayMath,inspectInlineMath,planInlineMath,hasDynamicLabels,hasStudyNumbering,studyTemplate,studyKinds,defaultStudyDesign,customStudyTemplate,isCustomComponentId,linkedStudyTemplate,slottedStudyTemplate,namedSlotDefinitions} from '../../dist/index.js';
-import {scanDocument,validateScannedBlocks,indexBlockIds,applyPatches} from '../../../BookCreator_Markdown/dist/index.js';
+import {scanDocument,validateScannedBlocks,indexBlockIds,applyPatches,parseReferenceToken} from '../../../BookCreator_Markdown/dist/index.js';
 import {createPlainTextPagePreview,parsePreviewMath,createPreviewMath} from '../../../BookCreator_LayoutEngine/dist/index.js';
 import {ParagraphLab} from './paragraph-lab.jsx';
 import {ComponentLab} from './component-lab.jsx';
 import {paperGeometry} from './book-settings.mjs';
-const deps={scan:scanDocument,validate:validateScannedBlocks,index:indexBlockIds,validateDisplayMath:parsePreviewMath,validateInlineMath:parsePreviewMath};
+const deps={scan:scanDocument,validate:validateScannedBlocks,index:indexBlockIds,validateDisplayMath:parsePreviewMath,validateInlineMath:parsePreviewMath,parseReference:parseReferenceToken};
 const api=window.bookcreator;
 const studyNames={note:'補足',tip:'ポイント',warning:'注意',important:'重要',example:'例題',exercise:'練習問題',explanation:'解説'};
 const noto='BCFont_NotoSansJP';
@@ -171,7 +171,7 @@ function App(){
       if(Object.values(typography).some(v=>v.fontFamily.startsWith('BCFont_')&&v.fontFamily!==noto&&!fonts.some(f=>f.alias===v.fontFamily&&f.loaded)))throw Error('登録フォントを読み込めません。');
       const rev=String(job),fingerprint='desktop-poc-'+job+'-'+__BUNDLED_FONT_FINGERPRINT__+'-'+JSON.stringify(typography)+'-'+fonts.map(f=>f.sha256).join(',')+'-'+JSON.stringify({page,order,headingDesign:theme?.headingDesign,headingLevels:theme?.headingLevels,paragraphDesign:theme?.paragraphDesign,studyDesigns:theme?.studyDesigns,library:theme?.library});
       let documents;
-      const needsContext=raw.includes('answer-to')||hasDynamicLabels(theme?.headingDesign)||Object.values(theme?.headingLevels??{}).some(hasDynamicLabels)||Object.values(theme?.studyDesigns??{}).some(hasStudyNumbering)||(theme?.library?.entries??[]).some(e=>e.usage==='study'&&hasStudyNumbering(e.design));
+      const needsContext=raw.includes(':ref{')||/:::layout\{/.test(raw)||raw.includes('answer-to')||hasDynamicLabels(theme?.headingDesign)||Object.values(theme?.headingLevels??{}).some(hasDynamicLabels)||Object.values(theme?.studyDesigns??{}).some(hasStudyNumbering)||(theme?.library?.entries??[]).some(e=>e.usage==='study'&&hasStudyNumbering(e.design));
       if(whole||needsContext){
         const snapshot=await unwrap(api.readBook());
         if(job!==generation.current)return;
