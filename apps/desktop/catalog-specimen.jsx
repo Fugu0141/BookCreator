@@ -23,7 +23,7 @@ export function CatalogSpecimen({card,typography,geometry,enabled,resolveImage})
     void measurementLane.run(async()=>{
       const options=catalogSampleOptions(card,{typography,...geometry.content,revision:id},core);
       return createPlainTextPagePreview(document,{...options,resolveImage:id=>resolveImage(id,()=>current)});
-    },{priority:'catalog',current:()=>current}).then(result=>{
+    },{priority:'catalog',current:()=>current,category:'catalog'}).then(result=>{
       if(!current||!result||!viewport.current)return;
       result.element.inert=true;
       result.element.style.width='max-content';
