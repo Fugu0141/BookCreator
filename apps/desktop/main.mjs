@@ -457,6 +457,43 @@ async function packageSmoke(){
 
   await exec("document.querySelector('[data-structured-kind=directive] [data-structured-source]').click()");
   await until("!document.querySelector('#source').hidden&&document.querySelector('#source').value.slice(document.querySelector('#source').selectionStart,document.querySelector('#source').selectionEnd).includes('eq-test')");
+  // UX-08f-3: persistent study ID, typed answer targets and whole-book validation.
+  const linkFixture='# 章\n\n:::component{name="exercise"}\n問題を解く。\n:::\n\n:::component{name="example" #another-problem}\n例題です。\n:::\n\n:::component{name="explanation"}\n解説です。\n:::\n';
+  await setStructuredSource(linkFixture);
+  await exec("document.querySelector('#editor-view-structured').click()");
+  await exec("document.querySelector('[data-study-kind=exercise] [data-study-links]').click()");
+  await until("!!document.querySelector('#study-link-editor')&&document.querySelector('#structured-study-id').value===''&&document.querySelector('#save').disabled");
+  await exec("document.querySelector('#structured-study-generate-id').click()");
+  const problemId=await exec("document.querySelector('#structured-study-id').value");
+  await exec("document.querySelector('#structured-study-link-cancel').click()");
+  await until("!document.querySelector('#study-link-editor')&&document.querySelector('#source').value==="+JSON.stringify(linkFixture));
+  await exec("document.querySelector('[data-study-kind=exercise] [data-study-links]').click()");
+  await until("!!document.querySelector('#structured-study-generate-id')");
+  await exec("document.querySelector('#structured-study-generate-id').click()");
+  const generatedProblem=await exec("document.querySelector('#structured-study-id').value");
+  if(!generatedProblem.startsWith('study-')||problemId===generatedProblem)throw Error('Study identity generation failed');
+  await exec("document.querySelector('#structured-study-link-apply').click()");
+  const identifiedFixture=linkFixture.replace('name="exercise"}','name="exercise" #'+generatedProblem+'}');
+  await until("!document.querySelector('#study-link-editor')&&document.querySelector('#source').value==="+JSON.stringify(identifiedFixture));
+  await exec("document.querySelector('[data-study-kind=exercise] [data-study-links]').click()");
+  await until("document.querySelector('#structured-study-id')?.value==="+JSON.stringify(generatedProblem)+"&&!document.querySelector('#structured-study-generate-id')");
+  await exec("document.querySelector('#structured-study-link-cancel').click()");
+  await exec("document.querySelector('[data-study-kind=explanation] [data-study-links]').click()");
+  await until("document.querySelector('#structured-study-target')?.options.length===3&&Array.from(document.querySelector('#structured-study-target').options).some(o=>o.value==="+JSON.stringify(generatedProblem)+"&&o.textContent.includes('1.1'))");
+  await exec("(()=>{const e=document.querySelector('#structured-study-target');e.value="+JSON.stringify(generatedProblem)+";e.dispatchEvent(new Event('change',{bubbles:true}));})()");
+  await exec("document.querySelector('#structured-study-link-apply').click()");
+  const linkedFixture=identifiedFixture.replace('name="explanation"}','name="explanation" answer-to="'+generatedProblem+'"}');
+  await until("!document.querySelector('#study-link-editor')&&document.querySelector('#source').value==="+JSON.stringify(linkedFixture));
+  await exec("document.querySelector('#preview-book').click()");
+  await until("document.querySelector('#workspace-layout-state').dataset.phase==='ready'&&document.querySelector('#workspace-layout-state').dataset.scope==='book'");
+  await exec("document.querySelector('[data-study-kind=explanation] [data-study-links]').click()");
+  await until("document.querySelector('#structured-study-target')?.value==="+JSON.stringify(generatedProblem));
+  await exec("(()=>{const e=document.querySelector('#structured-study-target');e.value='';e.dispatchEvent(new Event('change',{bubbles:true}));})()");
+  await exec("document.querySelector('#structured-study-link-apply').click()");
+  await until("!document.querySelector('#study-link-editor')&&!document.querySelector('#source').value.includes('answer-to=')");
+  await exec("document.querySelector('#structured-undo').click()");
+  await until("document.querySelector('#source').value==="+JSON.stringify(linkedFixture));
+  await exec("document.querySelector('#editor-view-source').click()");
   // UX-08f-2: stable numbered equation, reference picker and protected numbering.
   const numberedFixture='# 章\n\n本文です。\n\n$$\nx^2\n$$\n';
   await setStructuredSource(numberedFixture);
