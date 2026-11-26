@@ -754,3 +754,34 @@ test('equation references and wrapper attributes fail closed',()=>{
   ])assert.equal(run(source).options,undefined,source);
   assert.ok(run(eq+'\n参照 :ref{target="eq"}。').options);
 });
+
+
+test('GUI numbered equation insertion and re-edit retain exact ID, fences, and references',()=>{
+  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds,validateDisplayMath:engine.parsePreviewMath,validateInlineMath:engine.parsePreviewMath,parseReference:bcm.parseReferenceToken};
+  const plan=(source,start,end,formula,id)=>planDisplayMath(source,start,end,formula,bcm.scanDocument,engine.parsePreviewMath,id);
+  for(const nl of ['\n','\r\n']){
+    const original=['# 章','','参照 :ref{target="eq-editor"}。','','結び。',''].join(nl),pos=original.indexOf(nl)+nl.length;
+    const p=plan(original,pos,pos,'x^2','eq-editor'),next=bcm.applyPatches(original,[p.patch]);
+    assert.equal(next.slice(0,pos)+next.slice(pos+p.patch.replacement.length),original);
+    assert.equal(next.slice(p.selection.start,p.selection.end),'x^2');
+    const t=inspectDisplayMath(next,p.selection.start,p.selection.end,bcm.scanDocument);
+    assert.equal(t.numbered,true);assert.equal(t.equationId,'eq-editor');
+    const q=plan(next,p.selection.start,p.selection.end,'\\frac{a}{b}'),updated=bcm.applyPatches(next,[q.patch]);
+    assert.equal(updated,next.slice(0,p.selection.start)+'\\frac{a}{b}'+next.slice(p.selection.end));
+    assert.equal(updated.slice(q.selection.start,q.selection.end),'\\frac{a}{b}');
+    const prepared=prepareBrowserPreview({documentId:'chapter',revision:'1',source:updated,startOn:'page'},'1','numbered-editor',{width:100000,height:70000},deps);
+    assert.deepEqual(prepared.diagnostics,[]);
+    assert.equal(prepared.options.blocks.find(b=>b.displayMath).equationNumber,'1.1');
+    assert.ok(prepared.options.blocks.some(b=>b.request.text.includes('式 (1.1)')));
+    assert.throws(()=>plan(updated,updated.length,updated.length,'y','eq-editor'),RangeError);
+    assert.throws(()=>plan(next,p.selection.start,p.selection.end,'y','eq-new'),RangeError);
+  }
+  const unnumbered=':::layout{#eq-keep numbered="false"}\n$$\nx\n$$\n:::\n';
+  const q=plan(unnumbered,unnumbered.indexOf('\nx\n')+1,unnumbered.indexOf('\nx\n')+2,'y');
+  assert.equal(bcm.applyPatches(unnumbered,[q.patch]),unnumbered.replace('\nx\n','\ny\n'));
+  for(const id of ['','1bad','bad id','x} evil'])assert.throws(()=>plan('',0,0,'x',id),RangeError);
+  for(const source of [':::layout{#eq numbered="true" width="90%"}\n$$\nx\n$$\n:::\n',':::layout{#eq numbered="true"}\n$$\nx\n$$\n本文。\n:::\n']){
+    const p=source.indexOf('\nx\n')+1;
+    assert.throws(()=>plan(source,p,p+1,'y'),RangeError);
+  }
+});
