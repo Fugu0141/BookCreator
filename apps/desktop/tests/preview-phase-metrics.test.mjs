@@ -14,7 +14,7 @@ test('only valid numeric phase records are copied and bounded',()=>{
   assert.equal(m.record('book',1,timing(2)),false);
   m.record('book',false,timing(2));m.record('manuscript',true,timing(3));
   const rows=m.snapshot();assert.deepEqual(rows.map(r=>r.measurementMs),[2,3]);
-  assert.deepEqual(Object.keys(rows[0]),['scope','cacheEnabled','mathCacheEnabled','paragraphCacheEnabled','pageCacheEnabled',...phaseKeys]);
+  assert.deepEqual(Object.keys(rows[0]),['scope','cacheEnabled','mathCacheEnabled','paragraphCacheEnabled','pageCacheEnabled','reusePaperPages',...phaseKeys]);
   rows[0].imagesMs=999;assert.equal(m.snapshot()[0].imagesMs,2);
   m.clear();assert.deepEqual(m.snapshot(),[]);
 });
@@ -27,7 +27,9 @@ test('phase summary separates scope and cache mode; latest differs from median',
   assert.equal(m.record('book',true,timing(9),false,true),false);
   assert.equal(m.record('book',false,timing(10),false,true,true),true);
   assert.equal(m.record('book',false,timing(11),false,true,1),false);
-  const [warm,disabled,chapter,math,paragraph,page]=summarizePreviewPhases(m.snapshot());
+  assert.equal(m.record('book',false,timing(12),false,true,false,true),true);
+  assert.equal(m.record('book',false,timing(13),false,true,false,1),false);
+  const [warm,disabled,chapter,math,paragraph,page,partial]=summarizePreviewPhases(m.snapshot());
   assert.equal(warm.count,4);assert.deepEqual(warm.median,timing(6));assert.deepEqual(warm.latest,timing(20));
   assert.equal(disabled.cacheEnabled,false);assert.deepEqual(disabled.median,timing(5));
   assert.equal(chapter.scope,'manuscript');assert.deepEqual(chapter.latest,timing(6));
@@ -35,5 +37,7 @@ test('phase summary separates scope and cache mode; latest differs from median',
   assert.equal(paragraph.paragraphCacheEnabled,true);assert.equal(paragraph.count,1);assert.deepEqual(paragraph.latest,timing(9));
   assert.equal(page.pageCacheEnabled,true);assert.equal(page.paragraphCacheEnabled,true);assert.equal(page.count,1);assert.deepEqual(page.latest,timing(10));
   assert.equal(paragraph.pageCacheEnabled,false);
+  assert.equal(partial.reusePaperPages,true);assert.equal(partial.count,1);assert.deepEqual(partial.latest,timing(12));
+  assert.equal(paragraph.reusePaperPages,false);
   assert.deepEqual(summarizePreviewPhases([]),[]);
 });
