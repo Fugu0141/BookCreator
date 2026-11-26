@@ -4,11 +4,12 @@ import {mkdtempSync,realpathSync,statSync} from 'node:fs';
 import {join,dirname,basename} from 'node:path';
 import {tmpdir} from 'node:os';
 import {fileURLToPath} from 'node:url';
-import {openWorkspace,createProject} from './workspace.mjs';
+import {openWorkspace,createProject,recoveryManifest} from './workspace.mjs';
 import {projectCatalog} from './project-catalog.mjs';
 import {STIX_FONT,verifyPinnedFontBlob} from './bundled-math-font.mjs';
 import {createHash,randomUUID} from 'node:crypto';
 import {recoveryKey,recoveryStore,recoveryStatus} from './manuscript-recovery.mjs';
+import {listRecoveryCandidates} from './recovery-hub.mjs';
 const PACKAGE_CRASH_PREPARE=process.argv.includes('--package-crash-prepare');
 const PACKAGE_CRASH_VERIFY=process.argv.includes('--package-crash-verify');
 const PACKAGE_RESTART_SMOKE=PACKAGE_CRASH_PREPARE||PACKAGE_CRASH_VERIFY||process.argv.includes('--package-restart-smoke');
@@ -58,8 +59,9 @@ async function run(){
     workspace=next;recoverySessions.clear();
     let recent, catalogWarning;
     try{recent=await catalog.remember(next.manifestPath,next.summary.title);}catch(e){catalogWarning='書籍一覧を更新できませんでした: '+String(e.message??e);}
-    return {...next.summary,typography,fonts,settings,recent,catalogWarning};
+    return {...next.summary,typography,fonts,settings,recent,catalogWarning,projectId:recent?.find(p=>p.path===next.manifestPath)?.id??null};
   }
+  handle('listRecoveryCandidates',async(...args)=>{checkArgs(args,0);return listRecoveryCandidates(catalog,recovery,recoveryManifest);});
   handle('listProjects',async(...args)=>{checkArgs(args,0);return catalog.list();});
   handle('openRegisteredProject',async(...args)=>{checkArgs(args,1);return activate(await openWorkspace(await catalog.pathFor(args[0])));});
   handle('favoriteProject',async(...args)=>{checkArgs(args,2);return catalog.favorite(...args);});
