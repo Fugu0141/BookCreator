@@ -1,6 +1,7 @@
 import {mkdir,writeFile,readFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {benchmarkFixture} from './benchmark-fixture.mjs';
+import {cacheComparisonPlan,summarizeCacheComparison} from './benchmark-comparison.mjs';
 export async function prepareBenchmark(root){
   const fixture=benchmarkFixture();
   await mkdir(join(root,'manuscript'),{recursive:true});
@@ -73,30 +74,55 @@ export async function runBookBenchmark(win,app,root,fixture){
   const cachedStats=await cacheStats();
   if(cachedStats.hits<=0||cachedStats.entries<=0)throw Error('Benchmark expected reuse of unchanged uniform text');
   const cachedPaper=await paperSignature();
-  await click('#performance-cache-enabled');
-  const disabledStats=await cacheStats();
-  if(disabledStats.entries!==0||disabledStats.hits!==0)throw Error('Disabling cache must release entries');
   await click('#performance-close');
-  for(let i=1;i<=3;i++){
-    await raw("document.querySelector('#preview > div').dataset.paperProbe='old'");
-    await measure('whole-book-uncached-'+i,'book',()=>click('#preview-book'),"document.querySelector('#preview > div').dataset.paperProbe!=='old'");
-    if(await paperSignature()!==cachedPaper)throw Error('Uncached page DOM differs from cached page DOM');
+  // Reset the cache before each warm arm; prime both arms symmetrically.
+  // A warm-up run is recorded separately, never included in the paired summary.
+  async function setComparisonCache(enabled){
+    await click('#performance-toggle');
+    const checked=()=>raw("document.querySelector('#performance-cache-enabled').checked");
+    if(await checked())await click('#performance-cache-enabled');
+    if(enabled)await click('#performance-cache-enabled');
+    if(await checked()!==enabled)throw Error('Cache toggle did not take effect');
+    const reset=await cacheStats();
+    if(reset.entries!==0||reset.hits!==0||reset.misses!==0)throw Error('Cache reset must release entries and counters');
+    await click('#performance-close');
   }
-  await click('#performance-toggle');
-  await click('#performance-cache-enabled');
-  await click('#performance-close');
-  for(let i=1;i<=4;i++){
+  async function repeat(label){
     await raw("document.querySelector('#preview > div').dataset.paperProbe='old'");
-    await measure(i===1?'whole-book-cache-cold':'whole-book-cache-warm-'+(i-1),'book',()=>click('#preview-book'),"document.querySelector('#preview > div').dataset.paperProbe!=='old'");
-    if(await paperSignature()!==cachedPaper)throw Error('Rebuilt cached page DOM differs from original');
+    await measure(label,'book',()=>click('#preview-book'),"document.querySelector('#preview > div').dataset.paperProbe!=='old'");
+    if(await paperSignature()!==cachedPaper)throw Error('Cache comparison page DOM differs: '+label);
   }
+  async function readComparisonStats(){
+    await click('#performance-toggle');
+    const stats=await cacheStats();
+    await click('#performance-close');
+    return stats;
+  }
+  let finalCache;
+  for(const {pair,order} of cacheComparisonPlan()){
+    for(const arm of order){
+      const enabled=arm==='warm';
+      await setComparisonCache(enabled);
+      await repeat('cache-prime-'+pair+'-'+arm);
+      const primed=await readComparisonStats();
+      await repeat('cache-pair-'+pair+'-'+arm);
+      const repeated=await readComparisonStats();
+      if(enabled){
+        if(primed.entries<=0||repeated.entries<=0||repeated.hits<=primed.hits)
+          throw Error('Expected additional warm cache hits in pair '+pair);
+        finalCache=repeated;
+      }else if([primed,repeated].some(s=>s.entries!==0||s.hits!==0||s.misses!==0))
+        throw Error('Disabled cache accumulated data in pair '+pair);
+    }
+  }
+  const cacheComparison=summarizeCacheComparison(samples);
+  // Restore the normal setting before verifying book-session release.
+  await setComparisonCache(true);
   await click('#performance-toggle');
-  const finalCache=await cacheStats();
-  if(finalCache.hits<=0||finalCache.entries<=0)throw Error('Expected warm cache hits');
   const summary=await raw("Array.from(document.querySelectorAll('#performance-summary tbody tr')).map(tr=>({stage:tr.dataset.stage,category:tr.dataset.category,values:Array.from(tr.querySelectorAll('td')).map(td=>td.textContent)}))");
   await click('#performance-close');await click('#mode-home');await click('#open');
   await until('cache session reopened',"document.querySelector('.workspace-shell').dataset.workspaceMode==='writing'&&!document.querySelector('#open').disabled&&!document.querySelector('#source').value");
   await click('#performance-toggle');
   if((await cacheStats()).entries!==0)throw Error('Cache entries survived book reopen');
-  console.log('BENCH report '+JSON.stringify({version:2,chapters:fixture.chapters.map(c=>({id:c.id,characters:c.source.length,sections:c.sections,blocks:c.blocks})),initialMemory,finalMemory:memory(),samples,summary,cachedStats,finalCache}));
+  console.log('BENCH report '+JSON.stringify({version:3,fixtureVersion:2,cacheComparison,chapters:fixture.chapters.map(c=>({id:c.id,characters:c.source.length,sections:c.sections,blocks:c.blocks})),initialMemory,finalMemory:memory(),samples,summary,cachedStats,finalCache}));
 }
