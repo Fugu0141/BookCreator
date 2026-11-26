@@ -12,6 +12,6 @@ export function benchmarkFixture(){
     return {id,source:'# '+id+'\n\n'+sections.join('\n\n')+'\n',sections:count,blocks:1+count*3+Math.ceil(count/5)};
   });
   const manifest='schemaVersion: 1\ndocumentFormat: {name: bcm, version: 1}\ntitle: "Synthetic benchmark"\nlanguage: ja\ntheme: themes/default/theme.yaml\npage: {size: A4}\nsections:\n'+chapters.map(c=>'  - {id: '+c.id+', type: manuscript, role: body, path: manuscript/'+c.id+'.md}\n').join('');
-  const oversizedSource='# 上限検査\n\n'+Array.from({length:128},(_,i)=>'上限検査段落 '+(i+1)).join('\n\n')+'\n';
+  const oversizedSource='# 上限検査\n\n'+Array.from({length:128},(_,i)=>'## 上限検査節 '+(i+1)).join('\n\n')+'\n';
   return {chapters,manifest,oversizedSource};
 }
