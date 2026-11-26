@@ -1,11 +1,25 @@
 import {projectBlocks} from './structured-blocks.mjs';
-import {studyTemplate} from '../../dist/index.js';
+import {slottedStudyTemplate,isCustomComponentId,namedSlotDefinitions} from '../../dist/index.js';
+import {projectStudy} from './structured-study.mjs';
 
 const stripEnd=s=>s.replace(/(?:\r\n|\n)$/,'');
 const simple=row=>row&&row.payload!==null&&['paragraph','math'].includes(row.kind);
 const same=(a,b)=>a.kind===b.kind&&a.level===b.level&&stripEnd(a.raw)===stripEnd(b.raw);
 const templates={heading:()=> '## 新しい見出し\n',paragraph:()=> '新しい本文を入力してください。\n',math:()=> '$$\nx^2\n$$\n'};
 export const insertionChoices=[['paragraph','本文'],['heading','見出し H2'],['math','独立数式'],...Object.entries({example:'例題',exercise:'練習問題',explanation:'解説',note:'補足',tip:'ポイント',warning:'注意',important:'重要'})];
+export function structuredInsertionOptions(library){
+  return [...insertionChoices,...(library?.entries??[]).filter(e=>e.usage==='study'&&isCustomComponentId(e.id)).map(e=>[e.id,e.name])];
+}
+export function studyInsertionSlots(kind,theme){
+  const entries=theme?.library?.entries??[];
+  const custom=isCustomComponentId(kind),binding=theme?.studyBindings?.[kind];
+  if(custom||binding){
+    const entry=entries.find(e=>e.id===(custom?kind:binding)&&e.usage==='study');
+    if(!entry)throw Error('登録部品の定義が見つかりません。デザインを確認してください。');
+    return namedSlotDefinitions(entry.design);
+  }
+  return namedSlotDefinitions(theme?.studyDesigns?.[kind]);
+}
 const blankGap=(source,a,b)=>a&&b&&/^(?:[ \t]*(?:\r\n|\n))+$/.test(source.slice(a.range.end,b.range.start));
 export function canBlockOperation(source,rows,index,action){
   const row=rows[index];
@@ -16,7 +30,7 @@ export function canBlockOperation(source,rows,index,action){
   const other=action==='up'?index-1:action==='down'?index+1:-1;
   return simple(rows[other])&&blankGap(source,rows[Math.min(index,other)],rows[Math.max(index,other)]);
 }
-export function planBlockOperation(source,request,{scan,parseInline,applyPatches,validateMath}){
+export function planBlockOperation(source,request,{scan,parseInline,applyPatches,validateMath,theme}){
   const before=projectBlocks(source,scan,parseInline),rows=before.rows;
   if(before.diagnostics.length||request.source!==source)throw Error('原稿が変化しました。構造を確認してください。');
   const {action,index}=request;
@@ -29,8 +43,15 @@ export function planBlockOperation(source,request,{scan,parseInline,applyPatches
     let raw;
     if(action==='duplicate')raw=stripEnd(rows[index].raw)+eol;
     else{
-      if(!insertionChoices.some(([v])=>v===request.kind))throw Error('不明な挿入種類');
-      raw=(templates[request.kind]?.()??studyTemplate(request.kind)).replace(/\n/g,eol);
+      if(!structuredInsertionOptions(theme?.library).some(([v])=>v===request.kind))throw Error('不明な挿入種類または未登録の部品');
+      const choice=request.kind;
+      if(Object.hasOwn(templates,choice))raw=templates[choice]().replace(/\n/g,eol);
+      else{
+        const slots=studyInsertionSlots(choice,theme).filter(s=>!s.optional||request.includeOptional===true).map(s=>s.name);
+        raw=slottedStudyTemplate(choice,undefined,undefined,slots).replace(/\n/g,eol);
+        const parsed=scan(raw),study=projectStudy(raw,parsed.blocks[0]??{});
+        if(parsed.diagnostics.length||parsed.blocks.length!==1||!study||JSON.stringify(study.fields.map(f=>f.name))!==JSON.stringify(['content',...slots]))throw Error('登録部品の入力欄を作成できません。');
+      }
     }
     const created=projectBlocks(raw,scan,parseInline);
     if(created.diagnostics.length||created.rows.length!==1)throw Error('挿入する構造が不正です。');
