@@ -460,3 +460,15 @@ body{font-family:BCFont_NotoSansJP,system-ui,sans-serif}.font-control,.typograph
 .structured-editor[data-editing=true] .structured-block[data-active=true]{border-color:var(--bc-primary);box-shadow:0 0 0 1px var(--bc-primary)}
 .mixed-field-tools{display:flex;gap:5px;flex-wrap:wrap;margin-top:4px}
 .mixed-text-field:not(:focus-within)>.mixed-field-tools,.structured-mixed[data-inline-active=true] .mixed-field-tools{display:none}
+
+/* UX-09b: a single insertion surface with explicit position and category. */
+.structured-more-actions:not([open])>.structured-actions{display:none}
+.structured-insert-panel[hidden]{display:none!important}
+.structured-operation-toolbar{justify-content:space-between}
+.structured-insert-panel{margin:6px 0 12px;padding:12px;border:1px solid var(--bc-border);border-radius:6px;background:#f6f9fb}
+.structured-insert-categories,.structured-insert-fields{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px}
+.structured-insert-categories button{font-size:12px;padding:6px 12px}
+.structured-insert-categories button[aria-pressed=true]{border-color:var(--bc-primary);color:var(--bc-primary);font-weight:600;background:white}
+.structured-insert-fields label{display:flex;flex:1 1 180px;flex-direction:column;gap:4px;font-size:12px;min-width:0}
+.structured-insert-fields select{width:100%;min-width:0}
+.structured-insert-confirm{justify-content:flex-end}
