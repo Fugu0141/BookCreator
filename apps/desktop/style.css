@@ -444,3 +444,6 @@ body{font-family:BCFont_NotoSansJP,system-ui,sans-serif}.font-control,.typograph
 .structured-mixed{line-height:1.7;white-space:pre-wrap;overflow-wrap:anywhere}
 .structured-mixed .mixed-protected{display:inline-block;border:1px solid var(--bc-border);border-radius:4px;padding:2px 5px;margin:2px;color:inherit;max-width:100%;overflow-wrap:anywhere}
 .mixed-text-field{display:block;margin:4px 0}.mixed-text-field textarea{box-sizing:border-box;width:100%;font:inherit;resize:vertical;line-height:1.6}
+
+/* Mixed range mode: one selectable rendered paragraph, no editable markup. */
+.mixed-range-preview{white-space:pre-wrap;overflow-wrap:anywhere;user-select:text;line-height:1.8;padding:12px;border:1px solid #888;border-radius:6px;min-height:3em;cursor:text}.mixed-range-preview .mixed-range-selected{outline:2px solid #3973b8;border-radius:4px}.mixed-range-preview ::selection{background:#b5d7ff;color:#182536}
