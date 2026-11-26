@@ -145,19 +145,42 @@ function workspaceSmokeExec(){
     if(/^#(?:source(?:-.*)?|editor-font|study-(?!design).+|preview-button|preview-book)$/.test(selector)||selector.startsWith('[data-section='))return 'writing';
     return null;
   };
+  const panelFor=selector=>{
+    if(/^#source-list-/.test(selector))return 'list';
+    if(/^#source-(?:math|inline-math|equation-numbering|equation-reference)$/.test(selector))return 'math';
+    if(/^#study-(?:kind|instance-id|generate-id|answer-to|include-optional|append)$/.test(selector))return 'study';
+    if(/^#source-(?:combined|color|apply-|clear-|font|super|sub)/.test(selector))return 'format';
+    if(selector==='#editor-font')return 'view';
+    return null;
+  };
   return async js=>{
     // Read-only assertions must not navigate or change the current mode.
     if(/\.(?:click|dispatchEvent|setSelectionRange|focus)\(/.test(js)){
-      const selector=/document\.querySelector\('([^']+)'\)/.exec(js)?.[1];
+      const selectors=[...js.matchAll(/document\.querySelector\('([^']+)'\)|document\.getElementById\('([^']+)'\)/g)].map(m=>m[1]??'#'+m[2]);
+      const selector=selectors[0];
       const mode=selector&&routeFor(selector);
-      if(mode&&!await raw("!!document.querySelector("+JSON.stringify(selector)+")?.getClientRects().length")){
+      if(mode&&!await raw("document.querySelector('.workspace-shell').dataset.workspaceMode==="+JSON.stringify(mode))){
         await raw("document.querySelector('#mode-"+mode+"').click()");
         let visible=false;
         for(let i=0;i<100;i++){
-          if(await raw("!!document.querySelector("+JSON.stringify(selector)+")?.getClientRects().length")){visible=true;break;}
+          if(await raw("document.querySelector('.workspace-shell').dataset.workspaceMode==="+JSON.stringify(mode))){visible=true;break;}
           await new Promise(r=>setTimeout(r,50));
         }
-        if(!visible)throw Error('Cannot reach visible '+selector+' in '+mode);
+        if(!visible){
+          const panel=panelFor(selector);
+          if(!panel)throw Error('Cannot reach visible '+selector+' in '+mode);
+          // Grouped commands become visible only after the group is expanded.
+        }
+      }
+      const panel=selectors.map(panelFor).find(Boolean);
+      if(panel&&!await raw("!!document.querySelector('#writing-tools-"+panel+"')?.getClientRects().length")){
+        await raw("document.querySelector('#writing-panel-"+panel+"').click()");
+        let visible=false;
+        for(let i=0;i<100;i++){
+          if(await raw("!!document.querySelector('#writing-tools-"+panel+"')?.getClientRects().length")){visible=true;break;}
+          await new Promise(r=>setTimeout(r,50));
+        }
+        if(!visible)throw Error('Cannot open writing panel '+panel);
       }
     }
     return raw(js);
@@ -190,6 +213,14 @@ async function packageSmoke(){
   if(!await exec("document.querySelector('.publication-checks').textContent.includes('未保存：原稿・テーマ')&&document.querySelector('.publication-checks').textContent.includes('全冊の最新組版が必要')"))throw Error('Publication preparation state incorrect');
   await exec("document.querySelector('#mode-writing').click()");
   await until("document.querySelector('.workspace-shell').dataset.workspaceMode==='writing'&&!!document.querySelector('#source').getClientRects().length&&document.querySelector('#source').value==="+JSON.stringify(sample));
+  if(!await exec("document.querySelector('.writing-toolbar button').getClientRects().length>0&&[...document.querySelectorAll('.writing-tool-panel')].every(e=>e.hidden)"))throw Error('Writing default exposes detailed commands');
+  await exec("document.querySelector('#writing-panel-math').click()");
+  await until("!document.querySelector('#writing-tools-math').hidden&&document.querySelector('#writing-tools-format').hidden");
+  await exec("document.querySelector('#writing-panel-format').click()");
+  await until("document.querySelector('#writing-tools-math').hidden&&!document.querySelector('#writing-tools-format').hidden");
+  if(!await exec("document.querySelector('#source').value==="+JSON.stringify(sample)))throw Error('Toolbar panel switch changed manuscript');
+  await exec("document.querySelector('#writing-panel-format').click()");
+  await until("[...document.querySelectorAll('.writing-tool-panel')].every(e=>e.hidden)");
   await exec("document.querySelector('#preview-button').click()");
   await until("!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-inline-math] math msup')&&!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-display-math] math mfrac')&&document.querySelector('#preview > div').shadowRoot.querySelector('[data-equation-number]')?.textContent==='(1.1)'");
   await exec("document.fonts.ready.then(()=>true)");

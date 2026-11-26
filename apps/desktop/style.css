@@ -119,3 +119,22 @@ body{font-family:BCFont_NotoSansJP,system-ui,sans-serif}.font-control,.typograph
 .hub-content>.new-book button+button{margin-left:8px}
 @media(max-width:1000px){.project-hub{grid-template-columns:165px minmax(0,1fr)}.hub-content{padding:20px}.hub-list-header,.hub-project-row{grid-template-columns:minmax(0,1fr) 125px 120px}}
 @media(max-width:720px){.project-hub{grid-template-columns:125px minmax(0,1fr)}.hub-content{padding:12px}.hub-list-header,.hub-project-row{grid-template-columns:minmax(0,1fr) 120px}.hub-list-header>span:nth-child(2),.hub-project-row time{display:none}.hub-heading{flex-wrap:wrap}}
+
+
+/* UX-03a: high-frequency writing actions and one opt-in detail panel. */
+.writing-toolbar-wrap{flex:none;margin-bottom:10px}
+.writing-toolbar{display:flex;align-items:center;flex-wrap:wrap;gap:5px;padding:6px;background:white;border:1px solid #d7e0e7;border-radius:6px}
+.writing-toolbar button{background:#edf2f6;color:#263c50;padding:6px 9px;min-height:32px;font-size:13px;border:1px solid transparent}
+.writing-toolbar button:hover:not(:disabled){background:#dfeaf3}
+.writing-toolbar .writing-panel-toggle[aria-expanded=true]{background:#d5e6f2;border-color:#7b9eb9;color:#163e5b}
+.writing-tool-separator{width:1px;height:24px;background:#d7e0e7;margin:0 3px}
+.writing-tool-panel{margin-top:6px;padding:10px 12px;border:1px solid #d7e0e7;border-radius:6px;background:white;max-height:220px;overflow:auto}
+.writing-tool-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px}
+.writing-tool-heading button{font-size:12px;padding:5px 8px}
+.writing-tool-panel>.controls{margin:0;gap:8px}
+.writing-tool-panel>.controls button{font-size:13px;padding:6px 9px}
+.writing-tool-panel .writing-tool-note{flex-basis:100%;margin:0 0 4px}
+.writing-tool-panel label{display:flex;gap:5px;align-items:center;flex-wrap:wrap}
+.writing-tool-panel input:not([type=checkbox]):not([type=color]):not([type=number]){width:140px}
+.writing-tool-panel .font-control{margin:0}
+@media(max-width:1000px){.writing-toolbar button{padding:5px 7px;font-size:12px}.writing-tool-panel{max-height:180px}}
