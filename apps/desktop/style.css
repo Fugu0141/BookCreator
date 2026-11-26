@@ -11,3 +11,62 @@ body{font-family:BCFont_NotoSansJP,system-ui,sans-serif}.font-control,.typograph
 .lab-overlay{position:fixed;inset:0;background:#172c3eb0;z-index:20;display:flex;align-items:center;justify-content:center;padding:20px}.component-lab{width:min(100%,1050px);height:min(95vh,850px);display:flex;flex-direction:column;background:#f8fafc;border-radius:6px;overflow:hidden}.lab-grid{display:grid;grid-template-columns:280px minmax(0,1fr);flex:1;min-height:0;gap:1px;background:#cdd5dc}.lab-grid>section{background:#f8fafc;overflow:auto;padding:16px}.lab-grid label{display:block;margin:7px 0}.lab-grid label input:not([type=checkbox]),.lab-grid label select{display:block;width:100%;padding:4px}.lab-grid [data-lab-node]{display:block;width:100%;margin-bottom:4px;background:#e2e8f0;color:#172c3e;text-align:left}.lab-grid [data-lab-node].active{background:#b5d8ee}.lab-row{display:flex;gap:4px;flex-wrap:wrap}.component-lab footer{display:flex;align-items:center;gap:12px;max-height:none}.component-lab footer span{font-size:12px}#lab-preview{overflow:auto;padding:8px}#lab-status{padding:6px 0;white-space:pre-wrap}
 
 .component-lab header .lab-row{margin-left:auto}.component-lab header button{white-space:nowrap}#lab-preview{overscroll-behavior:contain}
+
+
+/* UX-02a — persistent workspace shell; old editor and lab internals remain intact. */
+[hidden]{display:none!important}
+.workspace-shell{height:100vh;display:flex;flex-direction:column;overflow:hidden;background:#f2f5f7}
+.workspace-header{min-height:52px;padding:8px 18px;flex:none}
+.workspace-header>div:first-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.workspace-actions{display:flex;align-items:center;gap:8px;flex:none}
+.workspace-actions button+button{margin-left:0}
+.save-indicator{font-size:12px;color:#d0deea}
+.workspace-nav{flex:none;display:flex;gap:8px;padding:4px 18px;background:#fff;border-bottom:1px solid #d7e0e7}
+.workspace-nav button{color:#334155;background:transparent;border-radius:0;border-bottom:3px solid transparent;padding:8px 16px;font-size:14px}
+.workspace-nav button[aria-current=page]{color:#195475;background:#edf4f8;border-bottom-color:#195475}
+.workspace-nav button:hover:not(:disabled){background:#e8f0f6}
+.workspace-tools{flex:none;display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:#fff;border-bottom:1px solid #d7e0e7;padding:7px 18px}
+.workspace-tools .controls{margin:0}
+.workspace-tools>button{margin-left:auto;background:#e4edf4;color:#28465e}
+.workspace-main{flex:1;min-height:0;height:auto;overflow:hidden;grid-template-columns:220px minmax(0,1fr)}
+.workspace-main.mode-writing.with-paper{grid-template-columns:190px minmax(0,1fr) minmax(0,1.05fr)}
+.workspace-main.mode-design,.workspace-main.mode-layout,.workspace-main.mode-settings,.workspace-main.mode-publication{grid-template-columns:minmax(0,1fr)}
+.workspace-outline{padding:16px}
+.workspace-main>.editor{display:flex;flex-direction:column;min-height:0;overflow:auto}
+.workspace-main>.editor>textarea#source{height:auto;min-height:180px;flex:1 0 180px}
+.workspace-main>.editor>p:last-child{flex:none;margin:8px 0 0}
+.workspace-main>.paper{display:flex;flex-direction:column;min-height:0;overflow:hidden}
+.workspace-main>.paper>#preview{flex:1;min-height:0;max-height:none;overflow:auto;overscroll-behavior:contain;background:#e7edf2;border-radius:4px}
+.workspace-main.mode-layout .paper>#preview>div{width:max-content;margin:0 auto}
+.workspace-home{flex:1;overflow:auto;padding:48px 24px}
+.home-inner{max-width:720px;margin:auto;padding:28px;border:1px solid #d6e0e7;border-radius:12px;background:#fff}
+.home-inner h1,.workspace-main h1{font-size:23px;margin:0 0 10px}
+.home-actions{display:flex;flex-wrap:wrap;gap:10px;margin:24px 0}
+.home-actions button{min-height:42px;padding:10px 20px}
+.home-actions button+button{background:#e5edf3;color:#29465f}
+.home-inner .new-book{max-width:500px;padding:16px}
+.home-resume{border-top:1px solid #d6e0e7;padding-top:18px}
+.workspace-design,.workspace-settings,.workspace-publication{overflow:auto;min-width:0;background:#f7f9fb;padding:24px}
+.design-grid{display:grid;grid-template-columns:minmax(260px,1fr) minmax(280px,1fr);gap:20px;max-width:1100px}
+.design-grid>section{background:#fff;border:1px solid #d6e0e7;border-radius:8px;padding:18px;min-width:0}
+.design-controls>button,.design-controls>label{display:block;margin-bottom:10px}
+.design-controls>label select{display:block;margin-top:5px}
+.design-controls .font-manager{max-width:600px}
+.workspace-settings .new-book{max-width:680px;padding:18px}
+.workspace-settings .new-book button+button{margin-left:8px}
+.workspace-shell>footer{flex:none;min-height:28px;max-height:64px;padding:6px 18px}
+.workspace-shell button:focus-visible,.workspace-shell select:focus-visible,.workspace-shell input:focus-visible{outline:2px solid #2176b3;outline-offset:2px}
+@media(max-width:1000px){
+  .workspace-main.mode-writing{grid-template-columns:170px minmax(0,1fr)}
+  .workspace-main.mode-writing.with-paper{grid-template-columns:150px minmax(0,1fr) minmax(0,1fr)}
+  .workspace-header{padding:8px}
+  .workspace-nav{padding:4px 8px;gap:2px}
+  .workspace-nav button{padding:8px 10px}
+  .workspace-tools{padding:6px 8px}
+  .save-indicator{display:none}
+}
+@media(max-width:720px){
+  .design-grid{grid-template-columns:minmax(0,1fr)}
+  .workspace-main.mode-writing.with-paper{grid-template-columns:120px minmax(0,1fr);grid-template-rows:minmax(200px,1fr) minmax(180px,1fr)}
+  .workspace-main.mode-writing.with-paper>.paper{grid-column:1/-1}
+}
