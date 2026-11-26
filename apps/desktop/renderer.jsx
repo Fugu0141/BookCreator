@@ -1,4 +1,5 @@
 import {measurementLane} from './measurement-lane.mjs';
+import {performanceMetrics} from './performance-metrics.mjs';
 import {retryPreviewRead,unwrapIpc} from './preview-read-retry.mjs';
 import {CatalogSpecimen} from './catalog-specimen.jsx';
 import React,{useState,useRef,useEffect} from 'react';
@@ -542,9 +543,11 @@ function App(){
     const scope=whole?'book':'manuscript';
     if(!automatic){if(mode==='writing'||mode==='layout')setPreviewScopeOverride({mode,scope});if(mode==='writing'&&compactWriting)setCompactPane('paper');else setShowPaper(true);}
     resetLayout(false,scope);setMeasuring(true);setLayoutState({phase:'running',scope,pages:0});if(!automatic)setStatus('実測組版中…');
-    return layoutScheduler.current.submit(job=>renderRequest(job,whole,scope,automatic));
+    const requestedAt=performance.now();
+    return layoutScheduler.current.submit(job=>renderRequest(job,whole,scope,automatic,requestedAt));
   }
-  async function renderRequest(job,whole,scope,automatic){
+  async function renderRequest(job,whole,scope,automatic,requestedAt){
+    const startedAt=performance.now();let outcome='cancelled';
     const raw=text;let diagnostics=[],documents=[];
     try{
       const input=describeLayoutInput({whole,file,raw,page,savedSettings,typography,theme,fonts,order,job,bundledFingerprint:__BUNDLED_FONT_FINGERPRINT__},{paperGeometry,hasDynamicLabels,hasStudyNumbering});
@@ -558,7 +561,7 @@ function App(){
       const options=prepared.options;
       validateLayoutOptions(options,input.fonts);
       const geometry=input.geometry;
-      const result=await measurementLane.run(()=>createPlainTextPagePreview(document,{...options,paper:geometry.paper,resolveImage:id=>resolveImage(id,current)}),{current});
+      const result=await measurementLane.run(()=>createPlainTextPagePreview(document,{...options,paper:geometry.paper,resolveImage:id=>resolveImage(id,current)}),{current,category:scope});
       if(!result||!layoutScheduler.current.isCurrent(job))return;
       const pages=describeMeasuredPaper(result,options,{previewSourceRange,paperThumbnail,onNavigate:(documentId,range)=>{
         if(!layoutScheduler.current.isCurrent(job))return;
@@ -571,9 +574,10 @@ function App(){
       const pageNumber=retained?Math.max(1,Math.min(activePage,pages.length)):1;
       setLayoutPages(pages);setActivePage(pageNumber);setPageJump(String(pageNumber));
       setLayoutState({phase:'ready',scope,pages:result.plan.pages.length});
+      outcome='success';
       if(!automatic)setStatus(result.plan.pages.length+' ページ · '+(whole?'書籍全体':'選択原稿')+' · 実測プレビュー（出版不可）');
-    }catch(e){if(layoutScheduler.current.isCurrent(job)){setLayoutState({phase:'failed',scope,pages:0});setLayoutDiagnostics(diagnosticRecords(diagnostics,documents,e));if(!automatic)setStatus(String(e.message??e));}}
-    finally{if(layoutScheduler.current.isCurrent(job))setMeasuring(false);}
+    }catch(e){if(layoutScheduler.current.isCurrent(job)){outcome='failed';setLayoutState({phase:'failed',scope,pages:0});setLayoutDiagnostics(diagnosticRecords(diagnostics,documents,e));if(!automatic)setStatus(String(e.message??e));}}
+    finally{performanceMetrics.record({stage:'layout',category:scope,outcome,waitMs:startedAt-requestedAt,runMs:performance.now()-startedAt});if(layoutScheduler.current.isCurrent(job))setMeasuring(false);}
   }
   function navigatePage(number){
     if(layoutState.phase!=='ready'||!Number.isInteger(number)||number<1||number>layoutPages.length)return;
