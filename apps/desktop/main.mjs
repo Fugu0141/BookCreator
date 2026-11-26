@@ -7,7 +7,8 @@ import {fileURLToPath} from 'node:url';
 import {openWorkspace,createProject} from './workspace.mjs';
 import {STIX_FONT,verifyPinnedFontBlob} from './bundled-math-font.mjs';
 import {createHash} from 'node:crypto';
-const SMOKE=process.argv.includes('--smoke');
+const PACKAGE_SMOKE=process.argv.includes('--package-smoke');
+const SMOKE=PACKAGE_SMOKE||process.argv.includes('--smoke');
 const smokeRoot=SMOKE?mkdtempSync(join(tmpdir(),'bc-electron-')):undefined;
 if(smokeRoot)app.setPath('userData',smokeRoot);
 protocol.registerSchemesAsPrivileged([{scheme:'bookcreator',privileges:{standard:true,secure:true,supportFetchAPI:true}}]);
@@ -116,7 +117,30 @@ async function run(){
     await writeFile(join(smokeRoot,'manuscript','chapter.md'),'# 見出し\n\n'+('日本語と English text の実測組版です。 '.repeat(30)).trim()+'\n');
   }
   await win.loadURL(PAGE);
-  if(SMOKE)await smoke();
+  if(PACKAGE_SMOKE)await packageSmoke();
+  else if(SMOKE)await smoke();
+}
+// Short distribution smoke test: no installed fonts, user projects or native dialogs required.
+async function packageSmoke(){
+  const exec=js=>win.webContents.executeJavaScript(js);
+  const until=async js=>{for(let i=0;i<150;i++){if(await exec(js))return;await new Promise(r=>setTimeout(r,100));}throw Error('Package smoke timeout: '+js+'; '+await exec("document.querySelector('#status')?.textContent"));};
+  await until("!!document.querySelector('#open')");
+  if(!await exec("typeof require==='undefined'&&typeof process==='undefined'&&!!window.bookcreator"))throw Error('Renderer isolation failed');
+  await exec("document.querySelector('#open').click()");
+  await until("!!document.querySelector('[data-section=chapter]')");
+  await exec("document.querySelector('[data-section=chapter]').click()");
+  await until("document.querySelector('#source')?.value.includes('見出し')");
+  const sample='# 二次方程式\n\n本文 $x^2$ です。\n\n:::layout{#eq-test numbered="true"}\n$$\n\\frac{1}{2}\n$$\n:::\n';
+  await exec("(()=>{const el=document.querySelector('#source');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(el,"+JSON.stringify(sample)+");el.dispatchEvent(new Event('input',{bubbles:true}));})()");
+  await until("document.querySelector('#source').value==="+JSON.stringify(sample));
+  await exec("document.querySelector('#preview-button').click()");
+  await until("!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-inline-math] math msup')&&!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-display-math] math mfrac')&&document.querySelector('#preview > div').shadowRoot.querySelector('[data-equation-number]')?.textContent==='(1.1)'");
+  if(!await exec("Array.from(document.fonts).some(f=>f.family.includes('BCFont_NotoSansJP')&&f.status==='loaded')&&Array.from(document.fonts).some(f=>f.family.includes('BCFont_STIXTwoMath')&&f.status==='loaded')"))throw Error('Bundled fonts not loaded');
+  await exec("document.querySelector('#save').click()");
+  await until("document.querySelector('#status').textContent.includes('保存しました')");
+  if(await readFile(join(smokeRoot,'manuscript','chapter.md'),'utf8')!==sample)throw Error('Packaged app source save mismatch');
+  console.log('PASS portable Windows package: isolated renderer, workspace, math, bundled fonts, numbering, save');
+  closing=true;win.destroy();await rm(smokeRoot,{recursive:true,force:true,maxRetries:10,retryDelay:100});app.exit(0);
 }
 async function smoke(){
   const exec=js=>win.webContents.executeJavaScript(js);
