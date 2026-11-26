@@ -457,6 +457,41 @@ async function packageSmoke(){
 
   await exec("document.querySelector('[data-structured-kind=directive] [data-structured-source]').click()");
   await until("!document.querySelector('#source').hidden&&document.querySelector('#source').value.slice(document.querySelector('#source').selectionStart,document.querySelector('#source').selectionEnd).includes('eq-test')");
+  // UX-08f-2: stable numbered equation, reference picker and protected numbering.
+  const numberedFixture='# 章\n\n本文です。\n\n$$\nx^2\n$$\n';
+  await setStructuredSource(numberedFixture);
+  await exec("document.querySelector('#editor-view-structured').click()");
+  await exec("document.querySelector('[data-structured-kind=math] [data-structured-numbering]').click()");
+  await until("!!document.querySelector('[data-equation-wrapper] math')&&document.querySelector('[data-equation-wrapper]').dataset.equationWrapper.startsWith('eq-')&&!document.querySelector('#structured-undo').disabled");
+  const structuredEqId=await exec("document.querySelector('[data-equation-wrapper]').dataset.equationWrapper");
+  const numberedSource=await exec("document.querySelector('#source').value");
+  if(!numberedSource.includes('#'+structuredEqId+' numbered="true"'))throw Error('Missing persistent numbered equation identity');
+  await exec("document.querySelector('[data-equation-edit]').click()");
+  await setStructuredValue('x^3');
+  await until("!document.querySelector('#structured-apply').disabled");
+  await exec("document.querySelector('#structured-apply').click()");
+  const formulaSource=numberedSource.replace('x^2','x^3');
+  await until("!document.querySelector('#structured-value')&&document.querySelector('#source').value==="+JSON.stringify(formulaSource));
+  await exec("document.querySelector('[data-structured-kind=paragraph] [data-structured-edit]').click()");
+  await exec("(()=>{const e=document.querySelector('#structured-value');e.focus();e.setSelectionRange(2,2);})()");
+  await exec("document.querySelector('#structured-reference-open').click()");
+  await until("document.querySelector('#equation-reference-target')?.value==="+JSON.stringify(structuredEqId)+"&&document.querySelector('#source').hidden");
+  await exec("document.querySelector('#equation-reference-cancel').click()");
+  await until("!document.querySelector('#equation-reference-editor')&&document.querySelector('#structured-value').value==='本文です。'");
+  await exec("(()=>{const e=document.querySelector('#structured-value');e.focus();e.setSelectionRange(2,2);})()");
+  await exec("document.querySelector('#structured-reference-open').click()");
+  await until("!document.querySelector('#equation-reference-apply')?.disabled&&!!document.querySelector('#equation-reference-apply')");
+  await exec("document.querySelector('#equation-reference-apply').click()");
+  const referenceSource=formulaSource.replace('本文です。','本文:ref{target="'+structuredEqId+'" format="label-number"}です。');
+  await until("!document.querySelector('#equation-reference-editor')&&!document.querySelector('#structured-value')&&document.querySelector('#source').hidden&&document.querySelector('#source').value==="+JSON.stringify(referenceSource));
+  await exec("document.querySelector('[data-equation-wrapper] [data-structured-numbering]').click()");
+  await until("!document.querySelector('#open').disabled&&document.querySelector('#status').textContent.includes('Book validation failed')");
+  if(!await exec("document.querySelector('#source').value==="+JSON.stringify(referenceSource)))throw Error('Referenced equation numbering was removed');
+  await exec("document.querySelector('#preview-button').click()");
+  await until("document.querySelector('#preview > div')?.shadowRoot?.textContent.includes('式 (1.1)')&&!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-equation-number]')");
+  await exec("document.querySelector('#structured-undo').click()");
+  await until("document.querySelector('#source').value==="+JSON.stringify(formulaSource));
+  await exec("document.querySelector('#editor-view-source').click()");
   await setStructuredSource(sample);
   await until("document.querySelector('#source').value==="+JSON.stringify(sample));
 
