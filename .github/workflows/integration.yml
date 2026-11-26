@@ -16,7 +16,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Fugu0141/BookCreator_Markdown
-          ref: 0a096d3e0b3c294b7f9e17054a40ab8a844c2a52
+          ref: 9121a91da770b30782d7a9ca07b073143ea6ffab
           path: BookCreator_Markdown
           persist-credentials: false
       - uses: actions/checkout@v4
