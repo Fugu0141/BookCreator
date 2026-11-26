@@ -949,7 +949,7 @@ async function smoke(){
   await until("document.querySelector('#math-formula')?.value==='x^2'&&document.querySelector('#math-numbered')?.checked===true&&document.querySelector('#math-numbered')?.disabled===true");
   await setMathInput('y^2');
   await exec("document.querySelector('#math-apply').click()");
-  const editedNumbered=numberedSource.replace('\nx^2\n$$\n:::', '\ny^2\n$$\n:::');
+  const editedNumbered=numberedSource.replace('\nx^2\n$$\n:::', ()=>'\ny^2\n$$\n:::');
   await until("document.querySelector('#source').value==="+JSON.stringify(editedNumbered));
   await until("(()=>{const e=document.querySelector('#source');return e.value.slice(e.selectionStart,e.selectionEnd)==='y^2';})()");
   await exec("document.querySelector('#preview-book').click()");
