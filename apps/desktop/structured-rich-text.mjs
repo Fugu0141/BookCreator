@@ -1,4 +1,4 @@
-import {serializeInlineStyle} from '../../dist/index.js';
+import {serializeInlineStyle,normalizeInlineStyle,inlineFontFamily} from '../../dist/index.js';
 
 export function richProjection(raw,parseInline){
   try{
@@ -101,4 +101,53 @@ export function richCaretOffset(raw,parseInline,start,end){
   const boundaries=new Set([p.text.length,...Array.from(new Intl.Segmenter(undefined,{granularity:'grapheme'}).segment(p.text),g=>g.index)]);
   if(!boundaries.has(start))throw Error('文字の途中には挿入できません。');
   return boundary(p,start,'start');
+}
+
+// Logical range formatting: split only affected segments, preserve untouched
+// raw tokens and all properties other than the requested property.
+export function formatLogicalText(raw,start,end,format,parseInline){
+  const before=richProjection(raw,parseInline);
+  if(!before||!Number.isSafeInteger(start)||!Number.isSafeInteger(end)||start<0||end<=start||end>before.text.length)throw Error('文字を選択してください。');
+  const boundaries=new Set([before.text.length,...Array.from(new Intl.Segmenter(undefined,{granularity:'grapheme'}).segment(before.text),g=>g.index)]);
+  if(!boundaries.has(start)||!boundaries.has(end)||/[\r\n]/.test(before.text.slice(start,end)))throw Error('改行や文字の途中を含まない範囲を選択してください。');
+  const styleAt=s=>before.inlineStyles.find(r=>r.start===s.start&&r.end===s.end);
+  const selected=before.sourceMap.segments.filter(s=>s.start<end&&s.end>start);
+  const flags={bold:['fontWeight',700],italic:['italic',true],underline:['underline',true]};
+  let key,value;
+  if(typeof format==='string'&&Object.hasOwn(flags,format)){
+    [key,value]=flags[format];
+    if(selected.every(s=>styleAt(s)?.[key]===value))value=null;
+  }else if(format&&typeof format==='object'&&Object.keys(format).length===1){
+    if(Object.hasOwn(format,'color')){key='color';value=format.color;}
+    else if(Object.hasOwn(format,'fontSize')){key='fontSize';value=format.fontSize;}
+    else if(Object.hasOwn(format,'font')){key='fontFamily';value=format.font===null?null:inlineFontFamily(format.font);}
+    else throw Error('未対応の書式です。');
+  }else throw Error('未対応の書式です。');
+  const pieces=[];
+  for(const s of before.sourceMap.segments){
+    const run=styleAt(s),style=run?styleOf(run):{},original=raw.slice(s.outerStart,s.outerEnd);
+    if(s.end<=start||s.start>=end){pieces.push({start:s.start,end:s.end,style,raw:original});continue;}
+    if(!run&&!plainSegment(s))throw Error('特殊記号をまたぐ書式変更には対応していません。');
+    const a=Math.max(start,s.start),b=Math.min(end,s.end),changed={...style};
+    if(value===null)delete changed[key];else changed[key]=value;
+    const next=normalizeInlineStyle(changed);
+    if(JSON.stringify(style)===JSON.stringify(next)){pieces.push({start:s.start,end:s.end,style,raw:original});continue;}
+    for(const [from,to,props,inside] of [[s.start,a,style,false],[a,b,next,true],[b,s.end,style,false]]){
+      if(from>=to)continue;
+      const text=before.text.slice(from,to);
+      // Styled tokens cannot encode leading/trailing whitespace or newlines.
+      // Reject rather than silently applying a style to only part of a selection.
+      if(Object.keys(props).length&&(text.trim()!==text||/[\r\n]/.test(text)))throw Error('書式範囲の端の空白を除いて選択してください。');
+      pieces.push({start:from,end:to,style:props,text,preferSpan:original.startsWith(':style{')||inside&&(typeof format==='object'||format==='underline')});
+    }
+  }
+  const expected=pieces.filter(p=>Object.keys(p.style).length).map(p=>({start:p.start,end:p.end,...p.style}));
+  for(const explicit of [false,true]){
+    try{
+      const next=pieces.map(p=>p.raw??(Object.keys(p.style).length?serializeInlineStyle(p.text,p.style,explicit||p.preferSpan).raw:p.text)).join('');
+      const checked=richProjection(next,parseInline);
+      if(checked&&checked.text===before.text&&JSON.stringify(checked.inlineStyles)===JSON.stringify(expected))return next;
+    }catch{/* Try explicit style tokens for changed fragments only. */}
+  }
+  throw Error('書式の境界を安全に保持できません。選択範囲を調整してください。');
 }
