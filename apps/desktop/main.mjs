@@ -5,6 +5,7 @@ import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {fileURLToPath} from 'node:url';
 import {openWorkspace,createProject} from './workspace.mjs';
+import {projectCatalog} from './project-catalog.mjs';
 import {STIX_FONT,verifyPinnedFontBlob} from './bundled-math-font.mjs';
 import {createHash} from 'node:crypto';
 const PACKAGE_SMOKE=process.argv.includes('--package-smoke');
@@ -37,6 +38,18 @@ function requireWorkspace(){if(!workspace)throw Error('Open a project first');re
 function checkArgs(args,count){if(args.length!==count)throw Error('Invalid arguments');}
 async function run(){
   await app.whenReady();
+  const catalog=projectCatalog(app.getPath('userData'));
+  async function activate(next){
+    const typography=await next.typography(),settings=await next.bookSettings(),fonts=await loadProjectFonts(next);
+    workspace=next;
+    let recent, catalogWarning;
+    try{recent=await catalog.remember(next.manifestPath,next.summary.title);}catch(e){catalogWarning='書籍一覧を更新できませんでした: '+String(e.message??e);}
+    return {...next.summary,typography,fonts,settings,recent,catalogWarning};
+  }
+  handle('listProjects',async(...args)=>{checkArgs(args,0);return catalog.list();});
+  handle('openRegisteredProject',async(...args)=>{checkArgs(args,1);return activate(await openWorkspace(await catalog.pathFor(args[0])));});
+  handle('favoriteProject',async(...args)=>{checkArgs(args,2);return catalog.favorite(...args);});
+  handle('forgetProject',async(...args)=>{checkArgs(args,1);return catalog.forget(args[0]);});
   session.defaultSession.setPermissionRequestHandler((_wc,_permission,callback)=>callback(false));
   session.defaultSession.setPermissionCheckHandler(()=>false);
   session.defaultSession.webRequest.onBeforeRequest((details,callback)=>callback({cancel:!details.url.startsWith('bookcreator://app/')}));
@@ -78,13 +91,13 @@ async function run(){
     checkArgs(args,0);
     const selected=SMOKE?{canceled:false,filePaths:[join(smokeRoot,'book.yaml')]}:await dialog.showOpenDialog(win,{title:'book.yaml を開く',properties:['openFile'],filters:[{name:'BookCreator project',extensions:['yaml']}]});
     if(selected.canceled)return null;
-    const next=await openWorkspace(selected.filePaths[0]);const typography=await next.typography(),fonts=await loadProjectFonts(next);workspace=next;return {...next.summary,typography,fonts,settings:await next.bookSettings()};
+    return activate(await openWorkspace(selected.filePaths[0]));
   });
   handle('create',async(...args)=>{
     checkArgs(args,1);
     const selected=SMOKE?{canceled:false,filePaths:[smokeRoot]}:await dialog.showOpenDialog(win,{title:'新規書籍の保存先（親フォルダ）',properties:['openDirectory']});
     if(selected.canceled)return null;
-    const next=await createProject(selected.filePaths[0],args[0]);const typography=await next.typography(),fonts=await loadProjectFonts(next);workspace=next;return {...next.summary,typography,fonts,settings:await next.bookSettings()};
+    return activate(await createProject(selected.filePaths[0],args[0]));
   });
   handle('readImage',async(...args)=>{checkArgs(args,1);const image=await requireWorkspace().image(args[0]);return new Uint8Array(image.bytes);});
   handle('listImages',async(...args)=>{checkArgs(args,0);return requireWorkspace().images();});
@@ -122,10 +135,39 @@ async function run(){
   else if(SMOKE)await smoke();
 }
 // Short distribution smoke test: no installed fonts, user projects or native dialogs required.
+// Existing regression scenarios still use the real controls, but reach them through
+// the appropriate workflow surface rather than invoking hidden DOM controls.
+function workspaceSmokeExec(){
+  const raw=js=>win.webContents.executeJavaScript(js);
+  const routeFor=selector=>{
+    if(/^#(?:open|new-project|new-title|new-folder|new-size|create-project)$/.test(selector))return 'home';
+    if(/^#(?:font-manager|font-license|font-license-text|font-copy|import-font|image-manager|image-copy|import-image|lab-level|component-lab|paragraph-lab|study-design-kind|study-design-lab|body-font|body-weight|heading-font|heading-weight|math-font|save-theme)$/.test(selector))return 'design';
+    if(/^#(?:source(?:-.*)?|editor-font|study-(?!design).+|preview-button|preview-book)$/.test(selector)||selector.startsWith('[data-section='))return 'writing';
+    return null;
+  };
+  return async js=>{
+    // Read-only assertions must not navigate or change the current mode.
+    if(/\.(?:click|dispatchEvent|setSelectionRange|focus)\(/.test(js)){
+      const selector=/document\.querySelector\('([^']+)'\)/.exec(js)?.[1];
+      const mode=selector&&routeFor(selector);
+      if(mode&&!await raw("!!document.querySelector("+JSON.stringify(selector)+")?.getClientRects().length")){
+        await raw("document.querySelector('#mode-"+mode+"').click()");
+        let visible=false;
+        for(let i=0;i<100;i++){
+          if(await raw("!!document.querySelector("+JSON.stringify(selector)+")?.getClientRects().length")){visible=true;break;}
+          await new Promise(r=>setTimeout(r,50));
+        }
+        if(!visible)throw Error('Cannot reach visible '+selector+' in '+mode);
+      }
+    }
+    return raw(js);
+  };
+}
 async function packageSmoke(){
-  const exec=js=>win.webContents.executeJavaScript(js);
+  const exec=workspaceSmokeExec();
   const until=async js=>{for(let i=0;i<150;i++){if(await exec(js))return;await new Promise(r=>setTimeout(r,100));}throw Error('Package smoke timeout: '+js+'; '+await exec("document.querySelector('#status')?.textContent"));};
-  await until("!!document.querySelector('#open')");
+  await until("!!document.querySelector('#open')?.getClientRects().length&&!document.querySelector('#open').disabled");
+  if(!await exec("document.querySelector('.workspace-shell').dataset.workspaceMode==='home'&&!document.querySelector('#source').getClientRects().length&&!document.querySelector('#body-font').getClientRects().length"))throw Error('Initial home exposes unrelated controls');
   if(!await exec("typeof require==='undefined'&&typeof process==='undefined'&&!!window.bookcreator"))throw Error('Renderer isolation failed');
   await exec("document.querySelector('#open').click()");
   await until("!!document.querySelector('[data-section=chapter]')");
@@ -137,6 +179,17 @@ async function packageSmoke(){
   const sample='# 二次方程式\n\n本文 $x^2$ です。\n\n:::layout{#eq-test numbered="true"}\n$$\n\\frac{1}{2}\n$$\n:::\n';
   await exec("(()=>{const el=document.querySelector('#source');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(el,"+JSON.stringify(sample)+");el.dispatchEvent(new Event('input',{bubbles:true}));})()");
   await until("document.querySelector('#source').value==="+JSON.stringify(sample));
+  if(!await exec("document.querySelector('#workspace-save-state').textContent==='未保存：原稿・テーマ'&&document.querySelector('#workspace-layout-state').dataset.phase==='idle'"))throw Error('Independent unsaved targets missing');
+  if(!await exec("document.querySelector('.workspace-shell').dataset.workspaceMode==='writing'&&!document.querySelector('#body-font').getClientRects().length&&!document.querySelector('#preview').getClientRects().length"))throw Error('Writing does not isolate design and paper controls');
+  await exec("document.querySelector('#mode-design').click()");
+  await until("document.querySelector('.workspace-shell').dataset.workspaceMode==='design'&&!!document.querySelector('#body-font').getClientRects().length&&!document.querySelector('#source').getClientRects().length");
+  await exec("document.querySelector('#mode-layout').click()");
+  await until("document.querySelector('.workspace-shell').dataset.workspaceMode==='layout'&&!!document.querySelector('#preview').getClientRects().length&&!document.querySelector('#source').getClientRects().length");
+  await exec("document.querySelector('#mode-publication').click()");
+  await until("document.querySelector('.workspace-shell').dataset.workspaceMode==='publication'&&!document.querySelector('#preview').getClientRects().length");
+  if(!await exec("document.querySelector('.publication-checks').textContent.includes('未保存：原稿・テーマ')&&document.querySelector('.publication-checks').textContent.includes('全冊の最新組版が必要')"))throw Error('Publication preparation state incorrect');
+  await exec("document.querySelector('#mode-writing').click()");
+  await until("document.querySelector('.workspace-shell').dataset.workspaceMode==='writing'&&!!document.querySelector('#source').getClientRects().length&&document.querySelector('#source').value==="+JSON.stringify(sample));
   await exec("document.querySelector('#preview-button').click()");
   await until("!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-inline-math] math msup')&&!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-display-math] math mfrac')&&document.querySelector('#preview > div').shadowRoot.querySelector('[data-equation-number]')?.textContent==='(1.1)'");
   await exec("document.fonts.ready.then(()=>true)");
@@ -144,6 +197,36 @@ async function packageSmoke(){
   await exec("document.querySelector('#save').click()");
   await until("document.querySelector('#status').textContent.includes('保存しました')");
   if(await readFile(join(smokeRoot,'manuscript','chapter.md'),'utf8')!==sample)throw Error('Packaged app source save mismatch');
+  await until("document.querySelector('#workspace-save-state').textContent==='未保存：テーマ'&&document.querySelector('#workspace-layout-state').dataset.phase==='ready'&&document.querySelector('#workspace-layout-state').dataset.scope==='manuscript'");
+  // A saved manuscript does not imply a saved theme or a current whole-book plan.
+  await exec("document.querySelector('#mode-design').click()");
+  await until("document.querySelector('.workspace-shell').dataset.workspaceMode==='design'");
+  await exec("document.querySelector('#save-theme').click()");
+  await until("document.querySelector('#workspace-save-state').textContent==='保存済み'");
+  await exec("document.querySelector('#mode-writing').click()");
+  await until("document.querySelector('.workspace-shell').dataset.workspaceMode==='writing'");
+  await exec("(()=>{const e=document.querySelector('#source');e.dispatchEvent(new CompositionEvent('compositionstart',{bubbles:true,data:'あ'}));})()");
+  await until("document.querySelector('#mode-design').disabled");
+  await exec("(()=>{const e=document.querySelector('#source');e.dispatchEvent(new CompositionEvent('compositionend',{bubbles:true,data:'あ'}));})()");
+  await until("!document.querySelector('#mode-design').disabled");
+  await exec("(()=>{const e=document.querySelector('#source');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(e,"+JSON.stringify(sample+'\n追記。\n')+");e.dispatchEvent(new Event('input',{bubbles:true}));})()");
+  await until("document.querySelector('#workspace-save-state').textContent==='未保存：原稿'&&document.querySelector('#workspace-layout-state').dataset.phase==='stale'&&!document.querySelector('#preview > div')");
+  if(await readFile(join(smokeRoot,'manuscript','chapter.md'),'utf8')!==sample)throw Error('Unsaved edit changed disk');
+  await exec("document.querySelector('#save').click()");
+  await until("document.querySelector('#workspace-save-state').textContent==='保存済み'");
+  await exec("document.querySelector('#mode-home').click()");
+  await until("document.querySelector('.workspace-shell').dataset.workspaceMode==='home'&&document.querySelectorAll('.hub-project-row').length===1");
+  if(!await exec("!document.querySelector('#mode-writing').getClientRects().length&&!document.querySelector('#source').getClientRects().length"))throw Error('Home exposes editing controls');
+  await exec("document.querySelector('.hub-row-actions button').click()");
+  await until("document.querySelector('.hub-row-actions button').getAttribute('aria-pressed')==='true'&&!document.querySelector('#open').disabled");
+  const catalog=JSON.parse(await readFile(join(smokeRoot,'project-catalog.json'),'utf8'));
+  if(catalog.entries.length!==1||!catalog.entries[0].favorite||catalog.entries[0].title!=='Desktop smoke')throw Error('Catalog persistence mismatch');
+  await exec("document.querySelector('#project-favorites-only').click()");
+  await until("document.querySelectorAll('.hub-project-row').length===1");
+  await exec("document.querySelector('.hub-project-open').click()");
+  await until("document.querySelector('.workspace-shell').dataset.workspaceMode==='writing'&&!document.querySelector('#open').disabled");
+  await exec("document.querySelector('[data-section=chapter]').click()");
+  await until("document.querySelector('#source').value==="+JSON.stringify(sample+'\n追記。\n'));
   const report='PASS portable Windows package: isolated renderer, workspace, math, bundled fonts, numbering, save';
   if(process.env.BC_PACKAGE_SMOKE_REPORT)await writeFile(process.env.BC_PACKAGE_SMOKE_REPORT,report+'\n',{flag:'wx'});
   console.log(report);
@@ -152,9 +235,9 @@ async function packageSmoke(){
   closing=true;win.destroy();app.exit(0);
 }
 async function smoke(){
-  const exec=js=>win.webContents.executeJavaScript(js);
+  const exec=workspaceSmokeExec();
   const until=async js=>{for(let i=0;i<100;i++){if(await exec(js))return;await new Promise(r=>setTimeout(r,100));}throw Error('Timed out: '+js+'; renderer status: '+await exec("document.querySelector('#status')?.textContent")+'; inline nodes: '+await exec("JSON.stringify([...document.querySelector('#preview > div')?.shadowRoot?.querySelectorAll('[data-named-slot=extra] [data-inline-style]')??[]].map(s=>({text:s.textContent,style:s.getAttribute('style')})))"));};
-  await until("!!document.querySelector('#open')");
+  await until("!!document.querySelector('#open')&&!document.querySelector('#open').disabled");
   if(!await exec("typeof require==='undefined' && typeof process==='undefined' && !!window.bookcreator"))throw Error('Renderer isolation failed');
   await exec("document.querySelector('#open').click()");
   await until("!!document.querySelector('[data-section=chapter]')");
