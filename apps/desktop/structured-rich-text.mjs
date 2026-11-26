@@ -56,3 +56,12 @@ export function replaceLogicalText(raw,value,parseInline){
   if(!after||after.text!==value||JSON.stringify(after.inlineStyles)!==JSON.stringify(expected))throw Error('入力によって書式や構造が変化するため反映できません。記法編集を利用してください。');
   return next;
 }
+
+// A rich-text caret maps to a source boundary, never into a style token.
+export function richCaretOffset(raw,parseInline,start,end){
+  const p=richProjection(raw,parseInline);
+  if(!p||!Number.isSafeInteger(start)||start!==end||start<0||start>p.text.length)throw Error('文章の挿入位置にカーソルを置いてください。');
+  const boundaries=new Set([p.text.length,...Array.from(new Intl.Segmenter(undefined,{granularity:'grapheme'}).segment(p.text),g=>g.index)]);
+  if(!boundaries.has(start))throw Error('文字の途中には挿入できません。');
+  return boundary(p,start,'start');
+}
