@@ -37,11 +37,11 @@ export function mixedDraftParts(original,draft){
   if(!original||!staged||JSON.stringify(fixedParts(staged.parts))!==JSON.stringify(fixedParts(original.parts)))throw Error('参照または書式が変化しました。');
   return staged;
 }
-function composeMixed(parts,values){
+function composeMixed(parts,values,allowPlain=false){
   if(!Array.isArray(values)||values.length!==parts.filter(p=>p.kind==='text').length||values.some(v=>typeof v!=='string'||v.includes('\r')))throw Error('文章入力が不正です。');
   let index=0;
   const value=parts.map(p=>p.kind==='text'?values[index++]:p.raw).join('');
-  const check=projectMixed(value);
+  const check=projectMixed(value,allowPlain);
   index=0;
   if(!check||check.parts.length!==parts.length||check.parts.some((p,i)=>p.kind!==parts[i].kind||(p.kind==='text'?p.value!==values[index++]:p.raw!==parts[i].raw)))throw Error('数式・参照・書式の構造が変化する入力は反映できません。');
   return {value,parts:check.parts};
@@ -77,12 +77,12 @@ export function planMixedEdit(source,draft,{scan,parseInline,applyPatches,projec
   const {value}=composeMixed(parts,draft.values);
   return replaceMixedParagraph(source,before,at,row,value,{scan,parseInline,applyPatches,project});
 }
-function replaceMixedParagraph(source,before,at,row,value,{scan,parseInline,applyPatches,project},allowReference=false){
+function replaceMixedParagraph(source,before,at,row,value,{scan,parseInline,applyPatches,project},allowReference=false,allowPlain=false){
   const body=row.raw.replace(/(?:\r\n|\n)$/,''),suffix=row.raw.slice(body.length);
   const crlf=row.raw.includes('\r\n')||(!row.raw.includes('\n')&&source.includes('\r\n'));
   const replacement=(crlf?value.replace(/\n/g,'\r\n'):value)+suffix;
   const next=applyPatches(source,[{range:row.range,expected:row.raw,replacement}]),after=project(next,scan,parseInline);
-  if(after.diagnostics.length||after.rows.length!==before.rows.length||after.rows.some((r,i)=>i!==at&&(r.raw!==before.rows[i].raw||r.kind!==before.rows[i].kind))||!after.rows[at]?.mixed||after.rows[at].raw!==replacement||(!allowReference&&after.rows[at].kind!==row.kind))throw Error('周囲の原稿構造が変化しました。');
+  if(after.diagnostics.length||after.rows.length!==before.rows.length||after.rows.some((r,i)=>i!==at&&(r.raw!==before.rows[i].raw||r.kind!==before.rows[i].kind))||(!after.rows[at]?.mixed&&!(allowPlain&&after.rows[at]?.kind==='paragraph'&&after.rows[at]?.payload===value))||after.rows[at].raw!==replacement||(!allowReference&&after.rows[at].kind!==row.kind))throw Error('周囲の原稿構造が変化しました。');
   return next;
 }
 
@@ -138,4 +138,18 @@ export function startRichMath(draft,offset,formula){
   const values=parts.filter(p=>p.kind==='text').map(p=>p.value);
   const next=composeMixed(parts,values);
   return {...draft,rich:false,mixed:true,mixedBase:draft.value,mixedLayout:next.value,values,inlineEdit:null};
+}
+
+// A confirmed removal is a dedicated book-validated transaction, not a normal
+// mixed draft edit. It removes exactly one selected atom, keeping both text sides.
+export function planMixedRemoval(source,draft,request,options){
+  const currentSource=planMixedEdit(source,draft,options);
+  const {scan,parseInline,project}=options,before=project(currentSource,scan,parseInline);
+  const at=before.rows.findIndex(r=>r.range.start===draft.row.range.start),row=before.rows[at];
+  if(!row?.mixed||before.diagnostics.length)throw Error('本文の構造が変化しました。');
+  const parts=row.mixed.parts.slice(),i=request.part,part=parts[i];
+  if(request.mode!=='delete'||!Number.isSafeInteger(i)||!part||!['math','reference'].includes(part.kind)||part.kind!==request.kind||part.raw!==request.original||parts[i-1]?.kind!=='text'||parts[i+1]?.kind!=='text')throw Error('削除対象が変化しました。');
+  parts.splice(i-1,3,{kind:'text',value:parts[i-1].value+parts[i+1].value});
+  const {value}=composeMixed(parts,parts.filter(p=>p.kind==='text').map(p=>p.value),true);
+  return replaceMixedParagraph(currentSource,before,at,row,value,options,true,true);
 }
