@@ -9,7 +9,7 @@ import {projectCatalog} from './project-catalog.mjs';
 import {STIX_FONT,verifyPinnedFontBlob} from './bundled-math-font.mjs';
 import {createHash,randomUUID} from 'node:crypto';
 import {recoveryKey,recoveryStore,recoveryStatus} from './manuscript-recovery.mjs';
-import {listRecoveryCandidates} from './recovery-hub.mjs';
+import {listUnifiedRecovery} from './recovery-hub.mjs';
 import {settingsRecovery} from './settings-recovery.mjs';
 import {componentRecovery} from './component-recovery.mjs';
 const PACKAGE_CRASH_PREPARE=process.argv.includes('--package-crash-prepare');
@@ -79,7 +79,14 @@ async function run(){
     try{recent=await catalog.remember(next.manifestPath,next.summary.title);}catch(e){catalogWarning='書籍一覧を更新できませんでした: '+String(e.message??e);}
     return {...next.summary,typography,fonts,settings,settingRecovery,recent,catalogWarning,projectId:recent?.find(p=>p.path===next.manifestPath)?.id??null};
   }
-  handle('listRecoveryCandidates',async(...args)=>{checkArgs(args,0);return listRecoveryCandidates(catalog,recovery,recoveryManifest);});
+  handle('listRecoveryCandidates',async(...args)=>{
+    checkArgs(args,0);
+    return listUnifiedRecovery(catalog,{manuscript:recovery,settings:recoveryStore(app.getPath('userData'),'settings'),components:recoveryStore(app.getPath('userData'),'components')},recoveryManifest,async path=>{
+      const readOnly=await openWorkspace(path),theme=await readOnly.typography();
+      if(!theme.libraryEditable)throw Error('Component library unavailable');
+      return theme.library.entries;
+    });
+  });
   handle('listProjects',async(...args)=>{checkArgs(args,0);return catalog.list();});
   handle('openRegisteredProject',async(...args)=>{checkArgs(args,1);return activate(await openWorkspace(await catalog.pathFor(args[0])));});
   handle('favoriteProject',async(...args)=>{checkArgs(args,2);return catalog.favorite(...args);});
