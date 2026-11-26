@@ -457,6 +457,32 @@ async function packageSmoke(){
 
   await exec("document.querySelector('[data-structured-kind=directive] [data-structured-source]').click()");
   await until("!document.querySelector('#source').hidden&&document.querySelector('#source').value.slice(document.querySelector('#source').selectionStart,document.querySelector('#source').selectionEnd).includes('eq-test')");
+  // UX-08f-4a: logical editing preserves styled source and blocks unsafe replacements.
+  const richFixture='# 章\n\n**重要**な文章です。\n';
+  await setStructuredSource(richFixture);
+  await exec("document.querySelector('#editor-view-structured').click()");
+  await until("!!document.querySelector('[data-structured-kind=paragraph] [data-rich-edit]')&&!document.querySelector('[data-structured-kind=paragraph] .structured-block-menu').open");
+  await exec("document.querySelector('[data-structured-kind=paragraph] .structured-block-menu summary').click()");
+  await until("document.querySelector('[data-structured-kind=paragraph] .structured-block-menu').open");
+  await exec("document.querySelector('[data-structured-kind=paragraph] [data-rich-edit]').click()");
+  await until("document.querySelector('#structured-rich-value')?.value==='重要な文章です。'&&!!document.querySelector('.rich-text-preview span[style]')&&!document.querySelector('.rich-format-toolbar')");
+  const setRichValue=value=>exec("(()=>{const e=document.querySelector('#structured-rich-value');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(e,"+JSON.stringify(value)+");e.dispatchEvent(new Event('input',{bubbles:true}));})()");
+  await setRichValue('重要な文章です。追加。');
+  await until("!document.querySelector('#structured-apply').disabled&&document.querySelector('.rich-text-preview').textContent.includes('追加。')");
+  await setRichValue('重要な文章です。追加。*');
+  await until("document.querySelector('#structured-apply').disabled&&!!document.querySelector('.structured-rich-editor [role=alert]')");
+  await setRichValue('重要な文章です。追加。');
+  await until("!document.querySelector('#structured-apply').disabled");
+  await exec("(()=>{const e=document.querySelector('#structured-rich-value');e.focus();e.setSelectionRange(3,5);e.dispatchEvent(new Event('select',{bubbles:true}));})()");
+  await until("!!document.querySelector('[data-rich-format=underline]')&&!document.querySelector('[data-rich-format=underline]').disabled");
+  await exec("document.querySelector('[data-rich-format=underline]').click()");
+  await until("Array.from(document.querySelectorAll('.rich-text-preview span')).some(s=>s.textContent==='文章'&&s.style.textDecoration==='underline')");
+  await exec("document.querySelector('#structured-apply').click()");
+  const richExpected=richFixture.replace('な文章です。','な:style{text="文章" underline="true"}です。追加。');
+  await until("!document.querySelector('#structured-rich-value')&&document.querySelector('#source').value==="+JSON.stringify(richExpected));
+  await exec("document.querySelector('#structured-undo').click()");
+  await until("document.querySelector('#source').value==="+JSON.stringify(richFixture));
+  await exec("document.querySelector('#editor-view-source').click()");
   // UX-08f-3: persistent study ID, typed answer targets and whole-book validation.
   const linkFixture='# 章\n\n:::component{name="exercise"}\n問題を解く。\n:::\n\n:::component{name="example" #another-problem}\n例題です。\n:::\n\n:::component{name="explanation"}\n解説です。\n:::\n';
   await setStructuredSource(linkFixture);
