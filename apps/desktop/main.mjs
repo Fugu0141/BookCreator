@@ -323,11 +323,11 @@ async function packageSmoke(){
   await exec("document.querySelector('#editor-view-structured').click()");
   await until("!document.querySelector('#structured-append').disabled&&document.querySelector('#structured-undo').disabled");
   await exec("document.querySelector('#structured-append').click()");
-  await until("document.querySelector('#source').value==='新しい本文を入力してください。\n'&&!document.querySelector('#structured-undo').disabled");
+  await until("document.querySelector('#source').value==='新しい本文を入力してください。\\n'&&!document.querySelector('#structured-undo').disabled");
   await exec("document.querySelector('#structured-undo').click()");
   await until("document.querySelector('#source').value===''&&!document.querySelector('#structured-redo').disabled");
   await exec("document.querySelector('#structured-redo').click()");
-  await until("document.querySelector('#source').value==='新しい本文を入力してください。\n'");
+  await until("document.querySelector('#source').value==='新しい本文を入力してください。\\n'");
   await exec("document.querySelector('#editor-view-source').click()");
   await setStructuredSource(structuredFixture);
   await exec("document.querySelector('#editor-view-structured').click()");
