@@ -457,6 +457,7 @@ async function smoke(){
   if(!await exec("Math.abs(parseFloat(document.querySelector('#preview > div').shadowRoot.querySelector('[data-page]').style.width)-210*96/25.4)<0.1"))throw Error('Physical A4 preview width mismatch');
   await exec("document.querySelector('#component-lab').click()");
   await until("!!document.querySelector('#lab-measure')");
+  if(!await exec("(()=>{const q=s=>document.querySelector(s),a=q('.lab-layers').getBoundingClientRect(),b=q('.lab-canvas').getBoundingClientRect(),c=q('.lab-inspector').getBoundingClientRect();return a.width>0&&b.width>0&&c.width>0&&a.right<=b.left&&b.right<=c.left&&q('.lab-layers').contains(q('[data-lab-node]'))&&q('.lab-inspector').contains(q('#lab-padding'))&&q('.lab-canvas').contains(q('#lab-preview'));})()"))throw Error('Component editor pane order or controls incorrect');
   await exec("document.querySelector('#lab-measure').click()");
   await until("!document.querySelector('#lab-apply').disabled");
   await exec("document.querySelector('#lab-cancel').click()");
@@ -812,6 +813,7 @@ async function smoke(){
   // Register the paragraph design in the same catalog, then bind and detach it.
   await exec("document.querySelector('#paragraph-lab').click()");
   await until("!!document.querySelector('#paragraph-library-select')");
+  if(!await exec("(()=>{const q=s=>document.querySelector(s),a=q('.lab-layers').getBoundingClientRect(),b=q('.lab-canvas').getBoundingClientRect(),c=q('.lab-inspector').getBoundingClientRect();return a.width>0&&b.width>0&&c.width>0&&a.right<=b.left&&b.right<=c.left&&q('.lab-layers').contains(q('#paragraph-library-select'))&&q('.lab-inspector').contains(q('#paragraph-padding'))&&q('.lab-canvas').contains(q('#paragraph-preview'));})()"))throw Error('Paragraph editor pane order or controls incorrect');
   if(!await exec("document.querySelector('#paragraph-library-select').options.length===1"))throw Error('Heading library entries exposed in paragraph lab');
   await exec("document.querySelector('#paragraph-measure').click()");
   await until("!document.querySelector('#paragraph-apply').disabled");
