@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
-import {editDocument,compileMeasuredManuscript,canReviewLayout,prepareBrowserPreview,prepareBookBrowserPreview,defaultHeadingDesign,defaultParagraphDesign,previewSourceRange,planInlineFormat,planListFormat,planListIndent,planListBatch,inspectDisplayMath,planDisplayMath,inspectInlineMath,planInlineMath} from '../dist/index.js';
+import {editDocument,compileMeasuredManuscript,canReviewLayout,prepareBrowserPreview,prepareBookBrowserPreview,defaultHeadingDesign,defaultParagraphDesign,previewSourceRange,planInlineFormat,planListFormat,planListIndent,planListBatch,inspectDisplayMath,planDisplayMath,inspectInlineMath,planInlineMath,equationReferenceTargets,planEquationReference} from '../dist/index.js';
 const load = (variable, fallback) => import(pathToFileURL(resolve(process.env[variable] ?? fallback)).href);
 const bcm = await load('BCM_DIST', '../BookCreator_Markdown/dist/index.js');
 const engine = await load('ENGINE_DIST', '../BookCreator_LayoutEngine/dist/index.js');
@@ -783,5 +783,29 @@ test('GUI numbered equation insertion and re-edit retain exact ID, fences, and r
   for(const source of [':::layout{#eq numbered="true" width="90%"}\n$$\nx\n$$\n:::\n',':::layout{#eq numbered="true"}\n$$\nx\n$$\n本文。\n:::\n']){
     const p=source.indexOf('\nx\n')+1;
     assert.throws(()=>plan(source,p,p+1,'y'),RangeError);
+  }
+});
+
+
+test('GUI equation reference insertion uses book order, exact patches and stable cross-file targets',()=>{
+  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds,validateDisplayMath:engine.parsePreviewMath,validateInlineMath:engine.parsePreviewMath,parseReference:bcm.parseReferenceToken};
+  for(const nl of ['\n','\r\n']){
+    const source=['# 章','','**係数** と $x$ を参照。',''].join(nl),formula=[':::layout{#eq-next numbered="true"}','$$','x^2','$$',':::',''].join(nl);
+    const docs=[{documentId:'a',revision:'1',source,startOn:'page'},{documentId:'b',revision:'1',source:formula,startOn:'page'}];
+    assert.deepEqual(equationReferenceTargets(docs,deps),[{id:'eq-next',number:'2.1',documentId:'b',formula:'x^2'}]);
+    const p=source.indexOf('を参照'),plan=planEquationReference(docs,'a',p,p,'eq-next','number',deps);
+    const next=bcm.applyPatches(source,[plan.patch]),token=':ref{target="eq-next" format="number"}';
+    assert.equal(next,source.slice(0,p)+token+source.slice(p));
+    assert.equal(next.slice(plan.selection.start,plan.selection.end),token);
+    const updated=[{...docs[0],source:next},docs[1]];
+    const prepared=prepareBookBrowserPreview(updated,'1','reference-editor',{width:100000,height:70000},deps);
+    assert.deepEqual(prepared.diagnostics,[]);
+    assert.ok(prepared.options.sections[0].blocks.some(b=>b.request?.text.includes('2.1')));
+    const q=planEquationReference(updated,'a',p+token.length,p+token.length,'eq-next','label-number',deps);
+    assert.ok(q.patch.replacement.includes('label-number'));
+    for(const [start,end,id] of [[source.indexOf('係数')+1,source.indexOf('係数')+1,'eq-next'],[p,p+1,'eq-next'],[p,p,'missing'],[1,1,'eq-next']])assert.throws(()=>planEquationReference(docs,'a',start,end,id,'number',deps),RangeError);
+    assert.throws(()=>planEquationReference(updated,'a',p+5,p+5,'eq-next','number',deps),RangeError);
+    assert.throws(()=>equationReferenceTargets([...docs,{...docs[1],documentId:'c'}],deps),RangeError);
+    assert.deepEqual(equationReferenceTargets([docs[0],{...docs[1],source:formula.replace('true','false')}],deps),[]);
   }
 });
