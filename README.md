@@ -23,6 +23,7 @@ BookCreator consumes both libraries. Neither library requires the other or the a
 | [COMPONENT_SYSTEM](docs/COMPONENT_SYSTEM.md) | テーマ・部品・BCM属性の変換 |
 | [EDITOR_TRANSACTIONS](docs/EDITOR_TRANSACTIONS.md) | 局所編集・Undo・原稿保全 |
 | [UI_DESIGN](docs/UI_DESIGN.md) | 画面と操作の契約 |
+| [UI_WORKFLOW_REDESIGN](docs/UI_WORKFLOW_REDESIGN.md) | 制作工程中心の画面再設計案・操作移設・実装順序 |
 | [PDF_EXPORT](docs/PDF_EXPORT.md) | HTML出版確認、PDF生成・検査 |
 | [GIT_INTEGRATION](docs/GIT_INTEGRATION.md) | Git/GitHub、認証・競合 |
 | [PLATFORM_ARCHITECTURE](docs/PLATFORM_ARCHITECTURE.md) | Desktop/Web、IPC・セキュリティ |
