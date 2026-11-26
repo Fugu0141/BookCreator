@@ -127,7 +127,7 @@ function App(){
   async function applyBook(next){resetRecovery();invalidate();setLayoutState({phase:'idle',scope:null,pages:0});setImages([]);setImageManager(false);setImageAllowed(false);setFonts(await registerProjectFonts(next.fonts??[]));setEditorFont(noto);setRights({license:'',licenseText:'',copyAllowed:false,embedAllowed:false});setBook(next);if(next.recent)setProjects(next.recent);setCatalogError(next.catalogWarning??'');setMode('writing');setWritingPanel(null);setEditorView('source');setStructuredDraft(null);setStudyLinkDraft(null);setStructuredHistory(null);setStructuredComposing(false);setOutlineOpen(true);setCompactPane('editor');setPageListOpen(true);setPageInfoOpen(true);setShortcutHelp(false);setDesignTab('styles');setComponentSearch('');setComponentFilter('all');setInitialLibraryEntry(null);setShowPaper(false);setFontManager(false);setStudyInstanceId('');setAnswerTo('');setStudyChoice('example');applySettings(next.settings);setShowSettings(false);setFile(null);setText('');setTheme(next.typography);setTypography(fromRoles(next.typography.roles));setCreating(false);setLabOpen(false);setParagraphOpen(false);setStudyOpen(false);setLabLevel("default");setStatus(next.typography.message??'原稿を選択してください。');}
   useEffect(()=>{void refreshProjects();},[]);
   async function loadRecoveryHub(){try{setRecoveryHub(await unwrap(api.listRecoveryCandidates()));setRecoveryHubError('');}catch(e){setRecoveryHub(null);setRecoveryHubError(String(e.message??e));}}
-  async function refreshProjects(){await io(async()=>{try{setProjects(await unwrap(api.listProjects()));setCatalogError('');}catch(e){setCatalogError(String(e.message??e));}await loadRecoveryHub();});}
+  async function refreshProjects(){await io(async()=>{let next;try{next=await unwrap(api.listProjects());setCatalogError('');}catch(e){setCatalogError(String(e.message??e));}await loadRecoveryHub();if(next)setProjects(next);});}
   function openRecoveryHub(){setCreating(false);setHomeTab('recovery');void io(loadRecoveryHub);}
   function openRecoveryItem(item){
     if(routeBlockRef.current||composing.current)return;
@@ -550,7 +550,7 @@ function App(){
     if(next===mode)return;
     if(busy||recoveryOpen||composing.current||structuredComposing||structuredDraft||studyLinkDraft||mathDraft||referenceDraft||labOpen||paragraphOpen||studyOpen){setStatus('現在の操作を完了または取り消してから画面を切り替えてください。');return;}
     if(next!=='home'&&!book)return;
-    setCreating(false);setMode(next);setCompactPane('editor');setCompactFocusRequest(null);setWritingPanel(null);if(next==='home'){setHomeTab('projects');void io(loadRecoveryHub);}setShowSettings(next==='settings');
+    setCreating(false);setMode(next);setCompactPane('editor');setCompactFocusRequest(null);setWritingPanel(null);if(next==='home'){setHomeTab('projects');setRecoveryHub(null);setRecoveryHubError('');}setShowSettings(next==='settings');
   }
   function workspaceKey(event){
     // Leave native input undo/redo, IME and active modal interactions alone.
