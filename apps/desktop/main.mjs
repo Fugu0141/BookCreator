@@ -18,7 +18,8 @@ const PACKAGE_CRASH_VERIFY=process.argv.includes('--package-crash-verify');
 const EXTRA_CRASH_MODE=['settings-prepare','settings-verify','components-prepare','components-verify'].find(mode=>process.argv.includes('--package-crash-'+mode));
 const PACKAGE_RESTART_SMOKE=!!EXTRA_CRASH_MODE||PACKAGE_CRASH_PREPARE||PACKAGE_CRASH_VERIFY||process.argv.includes('--package-restart-smoke');
 const PACKAGE_SMOKE=PACKAGE_RESTART_SMOKE||process.argv.includes('--package-smoke');
-const SMOKE=PACKAGE_SMOKE||process.argv.includes('--smoke');
+const BENCHMARK=!PACKAGE_SMOKE&&process.argv.includes('--benchmark');
+const SMOKE=PACKAGE_SMOKE||BENCHMARK||process.argv.includes('--smoke');
 const smokeParent=PACKAGE_SMOKE?process.env.BC_PACKAGE_SMOKE_TMP||tmpdir():tmpdir();
 function restartSmokeRoot(){
   // Only an explicitly supplied, runner-owned child of the isolated test parent.
@@ -287,6 +288,16 @@ async function run(){
     if(session?.workspace===current&&session.baseRevision===args[1])session.baseRevision=saved.revision;
     return saved;
   });
+  if(BENCHMARK){
+    const {prepareBenchmark,runBookBenchmark}=await import('./benchmark-runner.mjs');
+    const fixture=await prepareBenchmark(smokeRoot);
+    await win.loadURL(PAGE);
+    await runBookBenchmark(win,app,smokeRoot,fixture);
+    closing=true;win.destroy();
+    // On Windows Chromium may still hold profile databases until process exit.
+    if(process.platform!=='win32')await rm(smokeRoot,{recursive:true,force:true,maxRetries:10,retryDelay:100});
+    app.exit(0);return;
+  }
   if(SMOKE&&!PACKAGE_RESTART_SMOKE){
     await mkdir(join(smokeRoot,'manuscript'));
     await mkdir(join(smokeRoot,'themes','default'),{recursive:true});
