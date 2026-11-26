@@ -1,4 +1,4 @@
-import {prepareManuscript,type Scan,type Manuscript,type PreparationDependencies} from './manuscript-poc.js';
+import {prepareManuscript,numberedEquationTargets,type Scan,type Manuscript,type PreparationDependencies} from './manuscript-poc.js';
 import {parsePreviewInline} from './inline-preview.js';
 import type {InlineEditPlan} from './inline-edit.js';
 
@@ -8,7 +8,7 @@ function prepare<S extends Scan>(documents:readonly Manuscript[],deps:Preparatio
   if(!deps.parseReference)throw RangeError('Reference parser unavailable');
   const result=prepareManuscript(documents,'1','reference-edit',size,deps);
   if(!result.input)throw RangeError('Resolve manuscript diagnostics before editing references: '+result.diagnostics.map(d=>d.message).join('; '));
-  const targets=result.items.flatMap(i=>i.kind==='math'&&i.origin.persistentId&&i.equationNumber?[{id:i.origin.persistentId,number:i.equationNumber,documentId:i.origin.documentId,formula:i.text}]:[]);
+  const targets=numberedEquationTargets(result.items);
   return {items:result.items,targets};
 }
 export function equationReferenceTargets<S extends Scan>(documents:readonly Manuscript[],deps:PreparationDependencies<S>){
