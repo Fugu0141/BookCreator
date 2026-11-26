@@ -161,7 +161,7 @@ async function smoke(){
   // Reuse the math dialog to edit a clicked inline atom and insert another at a caret.
   await exec("document.querySelector('#source-inline-math').click()");
   await until("document.querySelector('#math-formula')?.value==="+JSON.stringify(inlineMathSource.slice(1,-1)));
-  const setInlineDraft=value=>exec("(()=>{const e=document.querySelector('#math-formula');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,"+JSON.stringify(value)+");e.dispatchEvent(new Event('input',{bubbles:true}));})()");
+  const setInlineDraft=value=>exec("(()=>{const e=document.querySelector('#math-formula');Object.getOwnPropertyDescriptor(e instanceof HTMLTextAreaElement?HTMLTextAreaElement.prototype:HTMLInputElement.prototype,'value').set.call(e,"+JSON.stringify(value)+");e.dispatchEvent(new Event('input',{bubbles:true}));})()");
   await setInlineDraft(' x');
   await until("document.querySelector('#math-apply')?.disabled===true");
   await exec("document.querySelector('#math-cancel').click()");
@@ -1007,7 +1007,7 @@ async function smoke(){
   if(!await exec("(()=>{const e=document.querySelector('#source');return e.value.slice(e.selectionStart,e.selectionEnd)==="+JSON.stringify(mathFormula)+";})()"))throw Error('Formula source range mismatch');
   await exec("document.querySelector('#source-math').click()");
   await until("document.querySelector('#math-formula')?.value==="+JSON.stringify(mathFormula));
-  const setMathInput=value=>exec("(()=>{const e=document.querySelector('#math-formula');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,"+JSON.stringify(value)+");e.dispatchEvent(new Event('input',{bubbles:true}));})()");
+  const setMathInput=value=>exec("(()=>{const e=document.querySelector('#math-formula');Object.getOwnPropertyDescriptor(e instanceof HTMLTextAreaElement?HTMLTextAreaElement.prototype:HTMLInputElement.prototype,'value').set.call(e,"+JSON.stringify(value)+");e.dispatchEvent(new Event('input',{bubbles:true}));})()");
   await setMathInput('\\input{secret}');
   await until("document.querySelector('#math-apply')?.disabled===true&&!document.querySelector('#math-draft-preview math')");
   await exec("document.querySelector('#math-cancel').click()");
