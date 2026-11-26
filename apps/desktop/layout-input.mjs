@@ -37,7 +37,12 @@ export function prepareLayoutOptions(input,documents,prepareBookBrowserPreview,d
   return {options,diagnostics:prepared.diagnostics};
 }
 
+// Mirror the pinned engine's current block ceiling before entering the physical
+// measurement lane. Keep the engine's validation authoritative.
+export const PREVIEW_BLOCK_LIMIT=128;
 export function validateLayoutOptions(options,fonts){
+  const count=options.sections.reduce((sum,section)=>sum+section.blocks.length,0);
+  if(count>PREVIEW_BLOCK_LIMIT)throw Object.assign(Error('現在の実測組版上限は '+PREVIEW_BLOCK_LIMIT+' ブロックです（今回 '+count+'）。選択原稿を小さく分けて確認してください。大規模組版は今後対応予定です。'),{code:'PREVIEW_BLOCK_LIMIT'});
   const noto='BCFont_NotoSansJP';
   for(const section of options.sections)for(const block of section.blocks){
     if('kind' in block)continue;
