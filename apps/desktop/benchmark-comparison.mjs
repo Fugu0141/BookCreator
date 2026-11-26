@@ -5,7 +5,8 @@ export function cacheComparisonPlan(){
     pair:i+1,order:i%2===0?['uncached','warm']:['warm','uncached']
   }));
 }
-export function summarizeCacheComparison(samples){
+export function summarizeCacheComparison(samples,scope='book'){
+  if(!['book','manuscript'].includes(scope))throw RangeError('Invalid comparison scope');
   const lookup=new Map();
   for(const sample of samples){
     if(lookup.has(sample.label))throw Error('Duplicate benchmark sample: '+sample.label);
@@ -14,7 +15,7 @@ export function summarizeCacheComparison(samples){
   const pairs=cacheComparisonPlan().map(({pair,order})=>{
     function elapsed(arm){
       const row=lookup.get('cache-pair-'+pair+'-'+arm);
-      if(!row||row.scope!=='book'||!Number.isFinite(row.elapsedMs)||row.elapsedMs<=0)
+      if(!row||row.scope!==scope||!Number.isFinite(row.elapsedMs)||row.elapsedMs<=0)
         throw Error('Missing or invalid cache comparison sample: '+pair+' '+arm);
       return row.elapsedMs;
     }
