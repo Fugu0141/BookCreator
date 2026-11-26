@@ -153,3 +153,52 @@ export function planMixedRemoval(source,draft,request,options){
   const {value}=composeMixed(parts,parts.filter(p=>p.kind==='text').map(p=>p.value),true);
   return replaceMixedParagraph(currentSource,before,at,row,value,options,true,true);
 }
+
+// Range coordinates count UTF-16 text positions and one unit per protected atom.
+// The rendered label is never used as source or as a reference identifier.
+export function mixedRangeProjection(draft){
+  const current=composeMixed(mixedDraftParts(mixedOrigin(draft.row,draft),draft).parts,draft.values);
+  let cursor=0;
+  const parts=current.parts.map(p=>{const start=cursor;cursor+=p.kind==='text'?p.value.length:1;return {...p,start,end:cursor};});
+  return {source:current.value,parts,length:cursor};
+}
+export function planMixedRangeValue(projection,request){
+  const {start,end,replacement,original}=request;
+  if(original!==projection.source||!Number.isSafeInteger(start)||!Number.isSafeInteger(end)||start<0||end<=start||end>projection.length||typeof replacement!=='string'||/[\r\n]/.test(replacement))throw Error('選択範囲または置換文字が不正です。');
+  const parts=[],pushText=value=>{
+    if(parts.at(-1)?.kind==='text')parts.at(-1).value+=value;
+    else parts.push({kind:'text',value});
+  };
+  let inserted=false;
+  const insert=()=>{if(!inserted){pushText(replacement);inserted=true;}};
+  for(const part of projection.parts){
+    const a=part.start,b=part.end;
+    if(b<=start||a>=end){
+      if(a>=end)insert();
+      if(part.kind==='text')pushText(part.value);else parts.push(part);
+      continue;
+    }
+    if(part.kind!=='text'){
+      if(!['math','reference'].includes(part.kind)||start>a||end<b)throw Error('書式・特殊記号の途中は範囲編集できません。');
+      insert();
+      continue;
+    }
+    const left=Math.max(0,start-a),right=Math.min(part.value.length,end-a);
+    const boundaries=new Set([part.value.length,...Array.from(new Intl.Segmenter(undefined,{granularity:'grapheme'}).segment(part.value),g=>g.index)]);
+    if(!boundaries.has(left)||!boundaries.has(right))throw Error('文字の途中は選択できません。');
+    pushText(part.value.slice(0,left));insert();pushText(part.value.slice(right));
+  }
+  insert();
+  if(parts[0]?.kind!=='text')parts.unshift({kind:'text',value:''});
+  if(parts.at(-1)?.kind!=='text')parts.push({kind:'text',value:''});
+  // Adjacent atoms need an empty intervening text part for exact projection.
+  for(let i=1;i<parts.length;i++)if(parts[i-1].kind!=='text'&&parts[i].kind!=='text')parts.splice(i,0,{kind:'text',value:''});
+  return composeMixed(parts,parts.filter(p=>p.kind==='text').map(p=>p.value),true).value;
+}
+export function planMixedRange(source,draft,request,options){
+  const staged=planMixedEdit(source,draft,options),{scan,parseInline,project}=options;
+  const before=project(staged,scan,parseInline),at=before.rows.findIndex(r=>r.range.start===draft.row.range.start),row=before.rows[at];
+  if(!row?.mixed||before.diagnostics.length)throw Error('本文の構造が変化しました。');
+  const projection=mixedRangeProjection(draft),value=planMixedRangeValue(projection,request);
+  return replaceMixedParagraph(staged,before,at,row,value,options,true,true);
+}
