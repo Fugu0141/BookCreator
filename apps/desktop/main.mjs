@@ -1414,7 +1414,9 @@ async function crashRecoverySmoke(prepare){
   }
   const oracle=JSON.parse(await readFile(oraclePath,'utf8')),record=await store.get(key);
   if(oracle.version!==1||oracle.pid===process.pid||oracle.sourceHash!==digest(saved)||oracle.draftHash!==digest(draft)||record?.version!==oracle.recordVersion||record?.text!==draft)throw Error('Crash recovery oracle mismatch');
-  await openBook();
+  await click('#hub-recovery');
+  await until('home recovery candidate',"document.querySelector('#hub-recovery-summary')?.textContent==='1 件の復旧候補'&&document.querySelectorAll('.hub-recovery-row').length===1&&document.querySelector('.hub-recovery-row').textContent.includes('執筆フロー検証書籍')&&document.querySelector('.hub-recovery-row').dataset.recoverySection==='chapter-01'&&!document.querySelector('.hub-recovery-row').textContent.includes('強制終了後に復旧する未保存原稿。')");
+  await click('.hub-recovery-open');
   await until('recovery after forced exit',"document.querySelector('#recovery-dialog').open&&document.querySelector('#recovery-saved-text').value==="+JSON.stringify(saved)+"&&document.querySelector('#recovery-draft-text').value==="+JSON.stringify(draft)+"&&!!document.querySelector('#recovery-restore')");
   await click('#recovery-later');
   await until('deferred', "!document.querySelector('#recovery-dialog').open&&document.querySelector('#source').readOnly");
@@ -1437,6 +1439,9 @@ async function crashRecoverySmoke(prepare){
   await click('#save');
   await until('explicit save',"document.querySelector('#workspace-save-state').textContent==='保存済み'&&!document.querySelector('#recovery-state')");
   if(await readFile(path,'utf8')!==draft||await store.get(key))throw Error('Recovered save or cleanup failed');
+  await click('#mode-home');await click('#hub-recovery');
+  await until('home recovery list cleared',"document.querySelector('#hub-recovery-summary')?.textContent==='0 件の復旧候補'&&document.querySelectorAll('.hub-recovery-row').length===0&&!document.querySelector('#hub-recovery-warning')");
+  console.log('PASS UX-10f-4 home recovery discovery, direct navigation and list cleanup');
   const report='PASS UX-10f-3 forced process recovery, external conflict protection and explicit save';
   if(!process.env.BC_PACKAGE_SMOKE_REPORT)throw Error('Crash verification report required');
   await writeFile(process.env.BC_PACKAGE_SMOKE_REPORT,report+'\n',{flag:'wx'});
