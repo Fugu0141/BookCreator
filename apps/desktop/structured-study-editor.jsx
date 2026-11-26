@@ -14,12 +14,12 @@ function StudyText({parsed,family}){
   }
   parts.push(parsed.text.slice(cursor));return <>{parts}</>;
 }
-export function StudyEditor({study,library,active,draft,blocked,editable,otherDraft,onEdit,onSource,onChange,onApply,onCancel,onComposition,error,planned,source,mathFamily}){
+export function StudyEditor({study,library,active,draft,blocked,editable,otherDraft,onEdit,onSource,onLinks,onChange,onApply,onCancel,onComposition,error,planned,source,mathFamily}){
   const entry=study.customId?library?.entries.find(e=>e.id===study.customId&&e.usage==='study'):null;
   const missing=!!study.customId&&!entry;
   const name=names[study.kind]??entry?.name??'未登録の教材部品';
   return <div className="structured-study" data-study-kind={study.kind??'custom'}>
-    <div className="structured-block-heading"><strong>{name}{study.title?'：'+study.title:''}</strong>{!active&&<div className="structured-actions"><button type="button" data-study-edit disabled={!editable||blocked||otherDraft||missing} onClick={onEdit}>内容を編集</button><button type="button" className="secondary-action" data-study-source disabled={blocked||otherDraft} onClick={onSource}>ソースで開く</button></div>}</div>
+    <div className="structured-block-heading"><strong>{name}{study.title?'：'+study.title:''}</strong>{!active&&<div className="structured-actions"><button type="button" data-study-edit disabled={!editable||blocked||otherDraft||missing} onClick={onEdit}>内容を編集</button>{(study.kind==='example'||study.kind==='exercise'||study.kind==='explanation'||study.customId)&&<button type="button" className="secondary-action" data-study-links disabled={!editable||blocked||otherDraft||missing} onClick={onLinks}>ID・関連付け</button>}<button type="button" className="secondary-action" data-study-source disabled={blocked||otherDraft} onClick={onSource}>ソースで開く</button></div>}</div>
     <div className="structured-study-meta">{study.id&&<span>ID: {study.id}</span>}{study.answerTo&&<span>解答先: {study.answerTo}</span>}{study.customId&&<span>登録部品: {study.customId}</span>}</div>
     {missing&&<p className="muted">対応する登録部品が見つかりません。デザインを確認してください。</p>}
     <p className="muted">内容の簡易表示です。外観・自動採番はデザイン／組版で確認できます。</p>
