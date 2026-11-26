@@ -52,6 +52,7 @@ test('new project creates manifest, manuscript and theme, does not overwrite',as
   assert.match(await readFile(book,'utf8'),/size: A5/);
   assert.equal((await w.read('chapter-01')).text,'# はじめに\n\nここから原稿を書き始めます。\n');
   assert.equal((await w.typography()).roles.body.font,'noto-sans-jp');
+  assert.deepEqual((await w.typography()).roles.math,{font:'stix-two-math',weight:400});
   const before=await readFile(book);
   await assert.rejects(createProject(parent,options),{code:'EEXIST'});
   assert.deepEqual(await readFile(book),before);

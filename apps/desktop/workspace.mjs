@@ -75,7 +75,7 @@ function parseManifest(raw){
 }
 
 const FACE_IDS=new Map([['noto-sans-jp','BCFont_NotoSansJP'],['system-serif','serif'],['system-sans','sans-serif'],['system-monospace','monospace']]);
-const DEFAULT_ROLES={body:{font:'noto-sans-jp',weight:400},heading:{font:'noto-sans-jp',weight:700}};
+const DEFAULT_ROLES={body:{font:'noto-sans-jp',weight:400},heading:{font:'noto-sans-jp',weight:700},math:{font:'stix-two-math',weight:400}};
 function checkedRoles(value,faces=[]){
   if(!record(value)||Object.keys(value).some(k=>!['body','heading','math'].includes(k)))fail('THEME','Unsupported typography role');
   const result={};
@@ -87,7 +87,7 @@ function checkedRoles(value,faces=[]){
   if(value.math!==undefined){
     const v=value.math;
     if(!record(v)||Object.keys(v).some(k=>!['font','weight'].includes(k))||v.weight!==400||
-      !(v.font==='auto'||faces.some(f=>f.id===v.font&&f.weight===400&&f.hasMathTable===true)))fail('THEME','Expected a registered regular OpenType MATH font or auto');
+      !(v.font==='auto'||v.font==='stix-two-math'||faces.some(f=>f.id===v.font&&f.weight===400&&f.hasMathTable===true)))fail('THEME','Expected a registered regular OpenType MATH font or auto');
     // Old themes without this optional role keep exactly the same representation.
     if(v.font!=='auto')result.math={font:v.font,weight:400};
   }

@@ -312,3 +312,8 @@ LayoutEngine #24・#25 の確定SHAを固定し、数式エディタに三角関
 ### M04 — 独立数式フォント設定
 
 LayoutEngine #26 の確定SHAを使用。フォント管理でライセンス確認済みの静的Regular TTF/OTF OpenType MATHフォントをインポートし、本文・見出しとは独立した数式ロールを選択できる。テーマの任意 `typography.roles.math` にハッシュベースの登録IDとweight 400を保存し、自動選択に戻すと省略する。旧テーマ・旧通常フォントmetadata互換。紙面・原稿エディタ・Component Lab・Paragraph Labの数式へ伝播。SFNTのMATHヘッダとサブテーブル境界の事前検査、既存権利・サイズ・ハッシュ検査、ブラウザの実測probeを組み合わせる。MATH全テーブル・全glyph coverageの完全検証や出版保証ではない。数学用フォント同梱はライセンス調査・配布パッケージ設計を別途行う。CI未確認。
+
+
+### M04 — 標準数式フォント STIX Two Math
+
+新規書籍は本文・見出しにNoto Sans JP、数式にSTIX Two Math Regularを指定する。既存テーマのmathロール省略は従来のシステム自動選択を維持し、勝手に再組版結果を変更しない。mathロール `font: stix-two-math, weight: 400` を明示選択すると同梱fontを使用する。自動選択、インポート済みMATHフォントにも切替可能。Fontsource等の分割サブセットではなくGoogle Fontsリポジトリの固定revision 477b6577b3a9a9e3229eb8e0946da806d2cf822b の完全TTFとOFL.txtをビルド時取得、Git blob SHA-1照合、SFNT/MATH事前検査。任意の `BC_STIX_SOURCE_DIR` で同一固定ファイルをオフラインビルド入力に指定可能。生成物にフォント・ライセンス・SHA-256を含め、起動時も固定blobとmanifestを照合する。実行時は既存のbookcreator://app許可リスト・CSP経由のみ、ネット取得なし。数式フォントのバイト列をプレビューフィンガープリントに含める。出典 https://github.com/google/fonts/tree/477b6577b3a9a9e3229eb8e0946da806d2cf822b/ofl/stixtwomath 、上流 https://github.com/stipub/stixfonts 、SIL OFL 1.1。正式配布パッケージ・出版保証・全glyph検証は別途。CI未確認。

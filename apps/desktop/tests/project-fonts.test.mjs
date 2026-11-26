@@ -55,7 +55,7 @@ test('regular MATH font preflight, independent role roundtrip and legacy compati
   const old=JSON.parse(await readFile(oldMeta,'utf8'));delete old.hasMathTable;await writeFile(oldMeta,JSON.stringify(old));
   assert.equal((await w.fonts()).find(f=>f.id===text.id).hasMathTable,false);
   const before=await w.typography();
-  assert.equal(before.roles.math,undefined);
+  assert.deepEqual(before.roles.math,{font:'stix-two-math',weight:400});
   for(const invalid of [{font:text.id,weight:400},{font:math.id,weight:700},{font:'font-'+'0'.repeat(64),weight:400}]){
     await assert.rejects(w.saveTypography(before.revision,{...before.roles,math:invalid}),{code:'THEME'});
   }
@@ -64,5 +64,9 @@ test('regular MATH font preflight, independent role roundtrip and legacy compati
   const reopened=await openWorkspace(join(root,'book','book.yaml'));
   assert.deepEqual((await reopened.typography()).roles,selected);
   await reopened.saveTypography(saved.revision,{...selected,math:{font:'auto',weight:400}});
+  const {math:_,...legacy}=before.roles;
+  assert.deepEqual((await reopened.typography()).roles,legacy);
+  const auto=await reopened.typography();
+  await reopened.saveTypography(auto.revision,before.roles);
   assert.deepEqual((await reopened.typography()).roles,before.roles);
 });
