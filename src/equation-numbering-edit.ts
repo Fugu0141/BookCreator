@@ -1,5 +1,5 @@
 import {prepareManuscript,type Scan,type Manuscript,type PreparationDependencies} from './manuscript-poc.js';
-import {inspectDisplayMath,inspectComponentDisplayMath} from './math-edit.js';
+import {inspectDisplayMath,inspectComponentDisplayMath,planComponentDisplayMath} from './math-edit.js';
 import type {InlineEditPlan} from './inline-edit.js';
 
 const size={width:100000,height:100000};
@@ -143,4 +143,28 @@ function planNestedNumbering<S extends Scan>(docs:readonly Manuscript[],doc:Manu
     return a.kind!==b.kind||a.origin.documentId!==b.origin.documentId||a.origin.persistentId!==b.origin.persistentId||a.origin.range.start!==b.origin.range.start+shift||a.origin.range.end!==b.origin.range.end+(inside?delta:shift)||(!inside&&a.text!==b.text);
   }))throw RangeError('Numbering edit would change unrelated manuscript structure');
   return {patch:{range:{start:owner.range.start,end:owner.range.end},expected:source.slice(owner.range.start,owner.range.end),replacement:next.slice(owner.range.start,owner.range.end+delta)},selection:{start:formulaStart,end:formulaStart+target.formula.length},action:'replace'};
+}
+
+
+/** Compose two validated plans in memory. Publish only one source patch: an
+ * invalid ID or numbering operation cannot leave an unnumbered insertion. */
+export function planNumberedComponentDisplayMath<S extends Scan>(docs:readonly Manuscript[],documentId:string,start:number,end:number,formula:string,id:string,deps:PreparationDependencies<S>):InlineEditPlan{
+  const doc=docs.find(d=>d.documentId===documentId);
+  if(!doc||typeof id!=='string'||!/^[A-Za-z][A-Za-z0-9_.-]{0,127}$/.test(id))throw RangeError('Expected a new persistent equation ID');
+  const source=doc.source,context={documents:docs,documentId};
+  const target=inspectComponentDisplayMath(source,start,end,deps,context);
+  if(!target||target.mode!=='insert')throw RangeError('Expected a component insertion caret');
+  const insertion=planComponentDisplayMath(source,start,end,formula,deps,context);
+  const apply=(raw:string,plan:InlineEditPlan)=>{
+    const {range,expected,replacement}=plan.patch;
+    if(raw.slice(range.start,range.end)!==expected)throw RangeError('Stale intermediate equation patch');
+    return raw.slice(0,range.start)+replacement+raw.slice(range.end);
+  };
+  const intermediate=apply(source,insertion);
+  const updatedDocs=docs.map(d=>d===doc?{...d,source:intermediate}:d);
+  const numbered=planEquationNumbering(updatedDocs,documentId,insertion.selection.start,insertion.selection.end,true,id,deps);
+  const next=apply(intermediate,numbered);
+  const delta=next.length-source.length;
+  if(next.slice(0,target.ownerStart)!==source.slice(0,target.ownerStart)||next.slice(target.ownerEnd+delta)!==source.slice(target.ownerEnd))throw RangeError('Numbered insertion changed unrelated source');
+  return {patch:{range:{start:target.ownerStart,end:target.ownerEnd},expected:source.slice(target.ownerStart,target.ownerEnd),replacement:next.slice(target.ownerStart,target.ownerEnd+delta)},selection:numbered.selection,action:'apply'};
 }
