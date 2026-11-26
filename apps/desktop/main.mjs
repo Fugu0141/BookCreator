@@ -5,6 +5,7 @@ import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {fileURLToPath} from 'node:url';
 import {openWorkspace,createProject} from './workspace.mjs';
+import {projectCatalog} from './project-catalog.mjs';
 import {STIX_FONT,verifyPinnedFontBlob} from './bundled-math-font.mjs';
 import {createHash} from 'node:crypto';
 const PACKAGE_SMOKE=process.argv.includes('--package-smoke');
@@ -37,6 +38,18 @@ function requireWorkspace(){if(!workspace)throw Error('Open a project first');re
 function checkArgs(args,count){if(args.length!==count)throw Error('Invalid arguments');}
 async function run(){
   await app.whenReady();
+  const catalog=projectCatalog(app.getPath('userData'));
+  async function activate(next){
+    const typography=await next.typography(),settings=await next.bookSettings(),fonts=await loadProjectFonts(next);
+    workspace=next;
+    let recent, catalogWarning;
+    try{recent=await catalog.remember(next.manifestPath,next.summary.title);}catch(e){catalogWarning='書籍一覧を更新できませんでした: '+String(e.message??e);}
+    return {...next.summary,typography,fonts,settings,recent,catalogWarning};
+  }
+  handle('listProjects',async(...args)=>{checkArgs(args,0);return catalog.list();});
+  handle('openRegisteredProject',async(...args)=>{checkArgs(args,1);return activate(await openWorkspace(await catalog.pathFor(args[0])));});
+  handle('favoriteProject',async(...args)=>{checkArgs(args,2);return catalog.favorite(...args);});
+  handle('forgetProject',async(...args)=>{checkArgs(args,1);return catalog.forget(args[0]);});
   session.defaultSession.setPermissionRequestHandler((_wc,_permission,callback)=>callback(false));
   session.defaultSession.setPermissionCheckHandler(()=>false);
   session.defaultSession.webRequest.onBeforeRequest((details,callback)=>callback({cancel:!details.url.startsWith('bookcreator://app/')}));
@@ -78,13 +91,13 @@ async function run(){
     checkArgs(args,0);
     const selected=SMOKE?{canceled:false,filePaths:[join(smokeRoot,'book.yaml')]}:await dialog.showOpenDialog(win,{title:'book.yaml を開く',properties:['openFile'],filters:[{name:'BookCreator project',extensions:['yaml']}]});
     if(selected.canceled)return null;
-    const next=await openWorkspace(selected.filePaths[0]);const typography=await next.typography(),fonts=await loadProjectFonts(next);workspace=next;return {...next.summary,typography,fonts,settings:await next.bookSettings()};
+    return activate(await openWorkspace(selected.filePaths[0]));
   });
   handle('create',async(...args)=>{
     checkArgs(args,1);
     const selected=SMOKE?{canceled:false,filePaths:[smokeRoot]}:await dialog.showOpenDialog(win,{title:'新規書籍の保存先（親フォルダ）',properties:['openDirectory']});
     if(selected.canceled)return null;
-    const next=await createProject(selected.filePaths[0],args[0]);const typography=await next.typography(),fonts=await loadProjectFonts(next);workspace=next;return {...next.summary,typography,fonts,settings:await next.bookSettings()};
+    return activate(await createProject(selected.filePaths[0],args[0]));
   });
   handle('readImage',async(...args)=>{checkArgs(args,1);const image=await requireWorkspace().image(args[0]);return new Uint8Array(image.bytes);});
   handle('listImages',async(...args)=>{checkArgs(args,0);return requireWorkspace().images();});
