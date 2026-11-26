@@ -488,6 +488,10 @@ async function packageSmoke(){
   await until("document.querySelector('[data-structured-kind=paragraph] .structured-block-menu').open");
   await exec("document.querySelector('[data-structured-kind=paragraph] [data-rich-edit]').click()");
   await until("document.querySelector('#structured-rich-value')?.value==='重要な文章です。'&&!!document.querySelector('.rich-text-preview span[style]')&&!document.querySelector('.rich-format-toolbar')");
+  // UX-09a: edit mode hides unrelated actions and keeps the manuscript visible.
+  await until("document.querySelector('#structured-editor').dataset.editing==='true'&&document.querySelector('.structured-operation-toolbar').getClientRects().length===0&&document.querySelectorAll('.structured-block[data-active=true]').length===1&&document.querySelector('[data-structured-kind=heading] .structured-content').getClientRects().length>0");
+  if(!await exec("[...document.querySelectorAll('.structured-block[data-active=false] .structured-actions')].every(e=>e.getClientRects().length===0)"))throw Error('Unrelated writing actions remain visible');
+
   const setRichValue=value=>exec("(()=>{const e=document.querySelector('#structured-rich-value');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(e,"+JSON.stringify(value)+");e.dispatchEvent(new Event('input',{bubbles:true}));})()");
   await setRichValue('重要な文章です。追加。');
   await until("!document.querySelector('#structured-apply').disabled&&document.querySelector('.rich-text-preview').textContent.includes('追加。')");
@@ -502,6 +506,12 @@ async function packageSmoke(){
   await exec("document.querySelector('#structured-apply').click()");
   const richExpected=richFixture.replace('な文章です。','な:style{text="文章" underline="true"}です。追加。');
   await until("!document.querySelector('#structured-rich-value')&&document.querySelector('#source').value==="+JSON.stringify(richExpected));
+  await until("document.querySelector('#structured-editor').dataset.editing==='false'&&document.querySelector('.structured-operation-toolbar').getClientRects().length>0");
+  if(!await exec("(()=>{const row=document.querySelector('[data-structured-kind=paragraph]'),m=row.querySelector('.structured-more-actions');return !m.open&&row.querySelector('[data-rich-edit]').getClientRects().length>0&&row.querySelector('[data-structured-edit]').getClientRects().length===0;})()"))throw Error('Secondary source controls are exposed by default');
+  await exec("document.querySelector('[data-structured-kind=paragraph] .structured-more-actions summary').click()");
+  await until("document.querySelector('[data-structured-kind=paragraph] [data-structured-edit]').getClientRects().length>0");
+  await exec("document.querySelector('[data-structured-kind=paragraph] .structured-more-actions summary').click()");
+
   await exec("document.querySelector('#structured-undo').click()");
   await until("document.querySelector('#source').value==="+JSON.stringify(richFixture));
   // UX-08f-5d: target the paragraph, not the first rich-edit button (the heading).
