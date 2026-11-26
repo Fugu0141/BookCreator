@@ -2,7 +2,7 @@
 
 - 2026-11-26 / UX-10h-2
 - 状態: 実機フィードバックに基づく改修方針。以下の目標は未達を含み、実機計測と全CI成功を各段階の完了条件とする。
-- 関連: UI_WORKFLOW_REDESIGN.md、STRUCTURED_EDITOR_READINESS.md、IMPLEMENTATION_STATUS.md
+- 関連: UI_WORKFLOW_REDESIGN.md、STRUCTURED_EDITOR_READINESS.md、IMPLEMENTATION_STATUS.md、[SYSTEM_BOUNDARIES.md](SYSTEM_BOUNDARIES.md)（責務分離・堅牢化）
 - 基準版: #125（Windows実機検証）、#126（部品の初期・変更時自動プレビュー、全5CI成功、main統合済み d7231c1a46fa5798d6ffd98e7ec32377b4d0f50b）
 
 ## 1. 背景と製品原則
