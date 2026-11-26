@@ -138,7 +138,7 @@ async function run(){
 // Existing regression scenarios still use the real controls, but reach them through
 // the appropriate workflow surface rather than invoking hidden DOM controls.
 function workspaceSmokeExec(){
-  const raw=js=>win.webContents.executeJavaScript(js);
+  const raw=async js=>{try{return await win.webContents.executeJavaScript(js);}catch(e){throw Error('Renderer script failed: '+js.slice(0,800)+'; '+String(e.message??e),{cause:e});}};
   const routeFor=selector=>{
     if(/^#(?:open|new-project|new-title|new-folder|new-size|create-project)$/.test(selector))return 'home';
     if(/^#(?:font-manager|font-license|font-license-text|font-copy|import-font|image-manager|image-copy|import-image|lab-level|component-lab|paragraph-lab|study-design-kind|study-design-lab|body-font|body-weight|heading-font|heading-weight|math-font|save-theme)$/.test(selector))return 'design';
@@ -165,7 +165,7 @@ function workspaceSmokeExec(){
     if(/\.(?:click|dispatchEvent|setSelectionRange|focus)\(/.test(js)){
       const selectors=[...js.matchAll(/document\.querySelector\((['"])(.*?)\1\)|document\.getElementById\((['"])(.*?)\3\)/g)].map(m=>m[2]??'#'+m[4]);
       const selector=selectors[0];
-      const mode=selector&&routeFor(selector);
+      const mode=selector&&/^#preview-(?:book|button)$/.test(selector)&&await raw("document.querySelector('.workspace-shell').dataset.workspaceMode==='layout'")?'layout':selector&&routeFor(selector);
       if(mode&&!await raw("document.querySelector('.workspace-shell').dataset.workspaceMode==="+JSON.stringify(mode))){
         await raw("document.querySelector('#mode-"+mode+"').click()");
         let visible=false;
@@ -317,6 +317,46 @@ async function packageSmoke(){
   await until("document.querySelector('#workspace-save-state').textContent==='保存済み'");
   await exec("document.querySelector('#mode-writing').click()");
   await until("document.querySelector('.workspace-shell').dataset.workspaceMode==='writing'");
+  const navigationSample=sample+'\n'+Array.from({length:10},()=>('ページ移動のための日本語本文を確認します。'.repeat(22))).join('\n\n')+'\n';
+  const setNavigationSource=value=>exec("(()=>{const e=document.querySelector('#source');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(e,"+JSON.stringify(value)+");e.dispatchEvent(new Event('input',{bubbles:true}));})()");
+  await setNavigationSource(navigationSample);
+  await exec("document.querySelector('#mode-layout').click()");
+  await until("document.querySelector('.workspace-shell').dataset.workspaceMode==='layout'&&!document.querySelector('#layout-pages')");
+  await exec("document.querySelector('#preview-book').click()");
+  await until("document.querySelector('#workspace-layout-state').dataset.phase==='ready'&&document.querySelector('#workspace-layout-state').dataset.scope==='book'&&document.querySelectorAll('[data-layout-page]').length>1");
+  if(!await exec("document.querySelectorAll('[data-layout-page]').length===document.querySelector('#preview > div').shadowRoot.querySelectorAll('[data-page]').length&&document.querySelector('#layout-page-scope').textContent.includes('書籍全体')&&document.querySelector('.layout-page-info').textContent.includes('chapter')&&document.querySelector('#layout-prev').disabled"))throw Error('Page list does not represent measured pages');
+  await exec("document.querySelector('#layout-next').click()");
+  await until("document.querySelector('[data-layout-page=\"2\"]').getAttribute('aria-current')==='page'&&document.querySelector('#preview').scrollTop>0&&document.querySelector('#layout-page-jump').value==='2'");
+  const paperWidth=await exec("(()=>{const h=document.querySelector('#preview > div');h.dataset.paperProbe='same';return h.shadowRoot.querySelector('[data-page]').style.width;})()");
+  const changePaperZoom=value=>exec("(()=>{const e=document.querySelector('#layout-zoom');e.value="+JSON.stringify(value)+";e.dispatchEvent(new Event('change',{bubbles:true}));})()");
+  if(!await exec("document.querySelectorAll('#layout-pages .layout-thumbnail').length===document.querySelectorAll('[data-layout-page]').length"))throw Error('Missing measured page miniatures');
+  await changePaperZoom('75');
+  await until("(()=>{const v=document.querySelector('#preview'),h=v.firstElementChild,p=h.shadowRoot.querySelector('[data-page]');return Number(v.dataset.paperZoom)===.75&&Math.abs(p.getBoundingClientRect().width/p.offsetWidth-.75)<.02;})()");
+  await exec("document.querySelector('#layout-guides').click()");
+  await until("Array.from(document.querySelector('#preview > div').shadowRoot.querySelectorAll('[data-content-guide]')).every(e=>getComputedStyle(e).visibility==='hidden')");
+  await changePaperZoom('page');
+  await until("(()=>{const v=document.querySelector('#preview'),p=v.firstElementChild.shadowRoot.querySelector('[data-page]'),r=p.getBoundingClientRect();return r.width<=v.clientWidth&&r.height<=v.clientHeight;})()");
+  if(!await exec("document.querySelector('#preview > div').dataset.paperProbe==='same'&&document.querySelector('#preview > div').shadowRoot.querySelector('[data-page]').style.width==="+JSON.stringify(paperWidth)+"&&document.querySelector('#workspace-layout-state').dataset.phase==='ready'"))throw Error('Paper view altered measured result');
+  await exec("document.querySelector('#layout-guides').click()");
+  await until("Array.from(document.querySelector('#preview > div').shadowRoot.querySelectorAll('[data-content-guide]')).every(e=>getComputedStyle(e).visibility==='visible')");
+  await changePaperZoom('width');
+  await until("Number(document.querySelector('#preview').dataset.paperZoom)>0&&Number(document.querySelector('#preview').dataset.paperZoom)<=1");
+  await changePaperZoom('100');
+  await until("Number(document.querySelector('#preview').dataset.paperZoom)===1");
+
+  await exec("document.querySelector('[data-layout-page=\"1\"]').click()");
+  await until("document.querySelector('[data-layout-page=\"1\"]').getAttribute('aria-current')==='page'&&document.querySelector('#preview').scrollTop<20");
+  await exec("(()=>{const e=document.querySelector('#layout-page-jump');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,'2');e.dispatchEvent(new Event('input',{bubbles:true}));})()");
+  await exec("document.querySelector('#layout-jump').click()");
+  await until("document.querySelector('[data-layout-page=\"2\"]').getAttribute('aria-current')==='page'");
+  await exec("document.querySelector('#layout-prev').click()");
+  await until("document.querySelector('[data-layout-page=\"1\"]').getAttribute('aria-current')==='page'");
+  await exec("document.querySelector('#mode-writing').click()");
+  await setNavigationSource(sample);
+  await until("document.querySelector('#workspace-layout-state').dataset.phase==='stale'&&!document.querySelector('#layout-pages')&&!document.querySelector('#preview > div')");
+  await exec("document.querySelector('#preview-button').click()");
+  await until("document.querySelector('#workspace-layout-state').dataset.phase==='ready'&&document.querySelector('#workspace-layout-state').dataset.scope==='manuscript'");
+  if(await readFile(join(smokeRoot,'manuscript','chapter.md'),'utf8')!==sample)throw Error('Page navigation changed saved manuscript');
   await exec("(()=>{const e=document.querySelector('#source');e.dispatchEvent(new CompositionEvent('compositionstart',{bubbles:true,data:'あ'}));})()");
   await until("document.querySelector('#mode-design').disabled");
   await exec("(()=>{const e=document.querySelector('#source');e.dispatchEvent(new CompositionEvent('compositionend',{bubbles:true,data:'あ'}));})()");
