@@ -338,6 +338,31 @@ async function packageSmoke(){
   await exec("document.querySelector('#structured-apply').click()");
   const editedStructured=structuredFixture.replace('本文を編集します。','新しい本文です。').replace('x^2','x^3');
   await until("!document.querySelector('#structured-value')&&document.querySelector('#source').value==="+JSON.stringify(editedStructured));
+  // UX-08b: heading level and multi-line paragraph formatting round-trip.
+  await exec("document.querySelector('[data-structured-kind=heading] [data-structured-edit]').click()");
+  await exec("(()=>{const e=document.querySelector('#structured-heading-level');e.value='2';e.dispatchEvent(new Event('change',{bubbles:true}));})()");
+  await until("!document.querySelector('#structured-apply').disabled");
+  await exec("document.querySelector('#structured-apply').click()");
+  const leveledStructured=editedStructured.replace('# 見出し','## 見出し');
+  await until("!document.querySelector('#structured-value')&&document.querySelector('#source').value==="+JSON.stringify(leveledStructured));
+  await exec("document.querySelector('[data-structured-kind=paragraph] [data-structured-edit]').click()");
+  await setStructuredValue('新しい本文です。\n次の行です。');
+  await exec("document.querySelector('#structured-apply').click()");
+  const multilineStructured=leveledStructured.replace('新しい本文です。','新しい本文です。\n次の行です。');
+  await until("!document.querySelector('#structured-value')&&document.querySelector('#source').value==="+JSON.stringify(multilineStructured)+"&&document.querySelectorAll('[data-structured-kind=paragraph]').length===1");
+  await exec("document.querySelector('[data-structured-kind=paragraph] [data-structured-edit]').click()");
+  await exec("(()=>{const e=document.querySelector('#structured-value');e.focus();e.setSelectionRange(0,3);})()");
+  await exec("document.querySelector('[data-structured-format=bold]').click()");
+  await until("document.querySelector('#structured-value').value.startsWith('**新しい**')");
+  await exec("document.querySelector('#structured-apply').click()");
+  const formattedStructured=multilineStructured.replace('新しい本文','**新しい**本文');
+  await until("!document.querySelector('#structured-value')&&document.querySelector('#source').value==="+JSON.stringify(formattedStructured)+"&&document.querySelector('[data-structured-kind=paragraph] .structured-content span')?.style.fontWeight==='700'");
+  await exec("document.querySelector('[data-structured-kind=paragraph] [data-structured-edit]').click()");
+  await setStructuredValue('新しい本文です。\n\n別の段落');
+  await until("document.querySelector('#structured-apply').disabled");
+  await exec("document.querySelector('#structured-cancel').click()");
+  await until("!document.querySelector('#structured-value')&&document.querySelector('#source').value==="+JSON.stringify(formattedStructured));
+
   await exec("document.querySelector('[data-structured-kind=directive] [data-structured-source]').click()");
   await until("!document.querySelector('#source').hidden&&document.querySelector('#source').value.slice(document.querySelector('#source').selectionStart,document.querySelector('#source').selectionEnd).includes('eq-test')");
   await setStructuredSource(sample);
