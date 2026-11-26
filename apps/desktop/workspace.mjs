@@ -246,6 +246,35 @@ export async function openWorkspace(manifestPath){
     get manifestPath(){return manifest;},
     async bookSettings(){await checkManifest();return settingsView();},
     // Only the main process uses these typed recovery snapshots. No disk writes.
+    // Recovery is never a theme save. Resolve the editor target and resources
+    // with the same validators as the actual apply/register operations.
+    async componentRecoveryContext(target){
+      await checkManifest();
+      if(!record(target)||Object.keys(target).some(k=>!['usage','level','entryId'].includes(k))||!['heading','paragraph','study'].includes(target.usage))fail('INPUT','Invalid component recovery target');
+      const {usage,level,entryId}=target;
+      if(usage==='heading'&&!['default','1','2','3','4','5','6'].includes(level)||
+        usage==='paragraph'&&level!=='default'||
+        usage==='study'&&![...studyKinds,'custom'].includes(level)||
+        entryId!==null&&(!validId(entryId)||!entryId.startsWith('component-')))fail('INPUT','Invalid component editor identity');
+      const t=await readTheme();
+      if(!t.editable||!sourceInfo(t.bytes).editable||usage==='heading'&&!t.componentEditable||usage==='paragraph'&&!t.paragraphEditable||usage==='study'&&!t.studyEditable)fail('THEME','Component editor is unavailable');
+      const entry=entryId===null?null:t.library.entries.find(e=>e.id===entryId&&e.usage===usage);
+      // Missing registered targets are returned as unavailable; the draft
+      // may still be inspected but cannot be applied to a different entry.
+      const available=entryId===null?(level!=='custom'||t.libraryEditable):!!entry&&t.libraryEditable;
+      return {revision:t.revision,identity:summary.themePath,target:{usage,level,entryId},available};
+    },
+    async validateComponentRecovery(target,value){
+      const context=await this.componentRecoveryContext(target);
+      if(!context.available)fail('THEME','Original component target is unavailable');
+      if(!record(value)||Object.keys(value).length!==2||!Object.hasOwn(value,'design')||!Object.hasOwn(value,'name')||typeof value.name!=='string'||value.name.length>200||/[\p{Cc}\p{Cs}]/u.test(value.name))fail('INPUT','Invalid component recovery draft');
+      const design=validateComponentDesign(value.design,target.usage);
+      checkComponentFonts(design,await fontStore.list());
+      await checkComponentImages([design],imageStore);
+      // The work-in-progress name may be empty; registering still requires
+      // the existing library validation and explicit confirmation.
+      return {name:value.name,design};
+    },
     async recoverySettings(kind){
       const manifestFile=await checkManifest();
       if(kind==='typography'){
