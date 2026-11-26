@@ -1283,11 +1283,14 @@ async function writingJourneySmoke(){
   await click('#design-tab-components');
   await click('#catalog-custom-new');
   await until('custom editor',"!!document.querySelector('#lab-library-name')&&!document.querySelector('#lab-library-bind')");
+  await until('initial custom live preview',"document.querySelector('#lab-preview').dataset.previewPhase==='ready'&&!!document.querySelector('#lab-preview > div')?.shadowRoot?.querySelector('[data-content-slot]')&&document.querySelector('#lab-preview').dataset.previewConfirmed==='false'");
   await input('#lab-library-name',customName);
   await click('[data-property-choice=layout]');
   const padding=await raw("Number(document.querySelector('#lab-padding').value)===5?6:5");
   await input('#lab-padding',String(padding));
   await until('changed padding',"Number(document.querySelector('#lab-padding').value)==="+padding);
+  await until('edited live preview',"document.querySelector('#lab-preview').dataset.previewPhase==='ready'&&document.querySelector('#lab-preview').dataset.previewConfirmed==='false'&&document.querySelector('#lab-library-add').disabled&&[...document.querySelector('#lab-preview > div')?.shadowRoot?.querySelectorAll('[data-fixed-label]')??[]].some(e=>e.textContent==="+JSON.stringify(customName+'：サンプル')+")");
+  console.log('PASS UX-10h-1 initial and edited custom component preview without pressing measure');
   // UX-10c: one required named slot and one independently optional slot.
   await click('#lab-add-menu');
   await click('#lab-add-slot');
@@ -2330,6 +2333,7 @@ async function smoke(){
   // Paragraph styling must preserve line fragmentation and not change heading components.
   await exec("document.querySelector('#paragraph-lab').click()");
   await until("!!document.querySelector('#paragraph-measure')");
+  await until("document.querySelector('#paragraph-preview')?.dataset.previewPhase==='ready'&&!!document.querySelector('#paragraph-preview > div')?.shadowRoot?.querySelector('[data-fragmentable-frame]')&&document.querySelector('#paragraph-apply').disabled");
   await exec("(()=>{const e=document.querySelector('#paragraph-sample');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(e,('本文の分割を検証する文章です。'.repeat(55)+'\\n\\n').repeat(3)+'本文の分割を検証する文章です。'.repeat(55));e.dispatchEvent(new Event('input',{bubbles:true}));})()");
   await exec("document.querySelector('#paragraph-measure').click()");
   await until("!document.querySelector('#paragraph-apply').disabled && document.querySelector('#paragraph-preview > div').shadowRoot.querySelectorAll('[data-page]').length>1");
@@ -2346,12 +2350,12 @@ async function smoke(){
   const setLabSample=(selector,value)=>exec("(()=>{const e=document.querySelector("+JSON.stringify(selector)+");Object.getOwnPropertyDescriptor(e instanceof HTMLTextAreaElement?HTMLTextAreaElement.prototype:HTMLInputElement.prototype,'value').set.call(e,"+JSON.stringify(value)+");e.dispatchEvent(new Event('input',{bubbles:true}));})()");
   await setLabSample('#paragraph-sample','係数 $\\frac{1}{2}$ です。');
   await exec("document.querySelector('#paragraph-sample-bcm').click()");
-  await until("document.querySelector('#paragraph-apply').disabled && !document.querySelector('#paragraph-preview > div')");
+  await until("document.querySelector('#paragraph-apply').disabled && document.querySelector('#paragraph-preview').dataset.previewConfirmed==='false'");
   await exec("document.querySelector('#paragraph-measure').click()");
   await until("!!document.querySelector('#paragraph-preview > div')?.shadowRoot?.querySelector('[data-inline-math] math mfrac')");
   await setLabSample('#paragraph-sample','式 $x');
   await exec("document.querySelector('#paragraph-measure').click()");
-  await until("document.querySelector('#paragraph-apply').disabled && !document.querySelector('#paragraph-preview > div') && document.querySelector('#paragraph-status').textContent.includes('Invalid inline math')");
+  await until("document.querySelector('#paragraph-apply').disabled && document.querySelector('#paragraph-preview').dataset.previewPhase==='error' && document.querySelector('#paragraph-status').textContent.includes('Invalid inline math')");
   await exec("document.querySelector('#paragraph-sample-bcm').click()");
   await setLabSample('#paragraph-sample',plainParagraphSample);
   await exec("document.querySelector('#paragraph-measure').click()");
@@ -2561,12 +2565,12 @@ async function smoke(){
   await setLabSample('#lab-sample','**問題** $x^2$ です。');
   await setLabSample('[data-lab-slot-sample=hint]','ヒント $\\sqrt{x}$ です。');
   await exec("document.querySelector('#lab-sample-bcm').click()");
-  await until("document.querySelector('#lab-library-add').disabled && !document.querySelector('#lab-preview > div')");
+  await until("document.querySelector('#lab-library-add').disabled && document.querySelector('#lab-preview').dataset.previewConfirmed==='false'");
   await exec("document.querySelector('#lab-measure').click()");
   await until("!!document.querySelector('#lab-preview > div')?.shadowRoot?.querySelector('[data-content-slot] [data-inline-math] math msup') && !!document.querySelector('#lab-preview > div')?.shadowRoot?.querySelector('[data-named-slot=hint] [data-inline-math] math msqrt')");
   await setLabSample('[data-lab-slot-sample=hint]','ヒント $x');
   await exec("document.querySelector('#lab-measure').click()");
-  await until("document.querySelector('#lab-library-add').disabled && !document.querySelector('#lab-preview > div') && document.querySelector('#lab-status').textContent.includes('Invalid inline math')");
+  await until("document.querySelector('#lab-library-add').disabled && document.querySelector('#lab-preview').dataset.previewPhase==='error' && document.querySelector('#lab-status').textContent.includes('Invalid inline math')");
   // Numbered sample wrappers share a disposable chapter, including cross-slot references.
   await exec("document.querySelector('#lab-multiline-sample').click()");
   await setLabSample('#lab-sample','問題。\n\n:::layout{#eq-lab-main numbered="true"}\n$$\nx\n$$\n:::');
@@ -2576,7 +2580,7 @@ async function smoke(){
   await until("!document.querySelector('#lab-library-add').disabled");
   await setLabSample('[data-lab-slot-sample=hint]','参照 :ref{target="missing" format="number"}。');
   await exec("document.querySelector('#lab-measure').click()");
-  await until("document.querySelector('#lab-library-add').disabled&&!document.querySelector('#lab-preview > div')&&document.querySelector('#lab-status').textContent.includes('Invalid numbered study sample')");
+  await until("document.querySelector('#lab-library-add').disabled&&document.querySelector('#lab-preview').dataset.previewPhase==='error'&&document.querySelector('#lab-status').textContent.includes('Invalid numbered study sample')");
   await exec("document.querySelector('#lab-multiline-sample').click()");
   await exec("document.querySelector('#lab-sample-bcm').click()");
   await setLabSample('#lab-sample',plainStudySample);
