@@ -287,3 +287,9 @@ UX-03c #74 のheadに依存。デザイン内にスタイル・部品ライブ�
 ### UX-09d — 初回CI後の修正
 
 #109 head 6522c4d0ebfb1311ea569840b60653bbcda1563d はCore/Cross-library/Pages/Linux Desktop成功、Windows package run 45825110984 (job 139927143293) で原稿一覧を閉じた後の幅検査がtimeout。CSS viewportの現在値をresizeとmatchMedia changeで同期し、境界を越えた場合だけ本文へ戻す。狭幅紙面の表示と広幅の紙面表示設定を分離。Windows smokeは倍率変更後のReact状態を待ち、広幅での一覧表示を確認してから幅を測定し、狭幅紙面表示後に広幅の設定が保持されることを検証。原因の確定は再CIを要する。実機・ネイティブDPI未確認、GUI既定化保留。
+
+
+## UX-09e — 狭幅画面の操作・フォーカス (2026-11-26)
+
+#109 修正head e6c0195c16447fd76c8bb30cb5e2baf74d996eb6 はCore/Cross-library/Pages/Linux Desktop成功。Windows run 45825769078 (job 139929384185) は前回の一覧幅検査を通過した後、200% zoom時のclientWidth比較でtimeout。本branchはその全変更を含み、スクロールバーの影響を避けるためgrid cell外寸・左右境界と可視状態を比較する。原因は再CIで確認する。
+狭幅での明示的な原稿一覧・本文・参考紙面切替時にフォーカスを移動。原稿一覧は選択中または最初の有効な原稿、ソースはtextarea（選択範囲を維持）、構造編集と紙面はラベル付き領域を対象とする。幅変化だけではフォーカスを強制しない。未確定案/IME等の既存ガードを維持、同一原稿選択もガードを通す。Windows smokeにフォーカス、ソース選択範囲、構造編集案の切替禁止・取消・原文不変を追加。新規CI、実Windows/OS DPI/日本語IME操作は未確認。GUI既定化保留。
