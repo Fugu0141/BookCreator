@@ -69,7 +69,7 @@ export function ComponentLab({design,typography,width,height,onApply:saveDesign,
   const inputKey=measurementKey();
   const ready=previewPhase==='ready'&&measurement.current.isReady(inputKey);
   useEffect(()=>{
-    if((previewPhase==='ready'||previewPhase==='measuring')&&!measurement.current.matches(inputKey))invalidate();
+    if(previewPhase!=='pending'&&!measurement.current.matches(inputKey))invalidate();
   },[inputKey,previewPhase]);
   const view=useLabViewport(target,dragging),[sampleOpen,setSampleOpen]=useState(false);
   const rows=flatten(draft.children),location=locate(draft.children,selected),node=location?.node;
@@ -196,7 +196,7 @@ export function ComponentLab({design,typography,width,height,onApply:saveDesign,
     if(busy||dragging||previewPhase!=='pending')return;
     refreshTimer.current=setTimeout(()=>void measure(historyRef.current.present,null,true),180);
     return ()=>clearTimeout(refreshTimer.current);
-  },[draft,customOnly?libraryName:'',customOnly?libraryId:'',sample,slotSamples,omittedSlots,studyTitle,linkedSample,sampleBcm,width,height,busy,dragging,previewPhase]);
+  },[draft,customOnly?libraryName:'',customOnly?libraryId:'',sample,slotSamples,omittedSlots,studyTitle,linkedSample,sampleBcm,width,height,busy,dragging,previewPhase,inputKey]);
   function setFont(target,font){
     if(target==='content'){
       const {font:old,...rest}=historyRef.current.present;commit(font?{...rest,font}:rest);
