@@ -1,17 +1,26 @@
 import {app,BrowserWindow,dialog,ipcMain,protocol,session} from 'electron';
 import {readFile,writeFile,mkdir,rm} from 'node:fs/promises';
-import {mkdtempSync} from 'node:fs';
-import {join} from 'node:path';
+import {mkdtempSync,realpathSync,statSync} from 'node:fs';
+import {join,dirname,basename} from 'node:path';
 import {tmpdir} from 'node:os';
 import {fileURLToPath} from 'node:url';
 import {openWorkspace,createProject} from './workspace.mjs';
 import {projectCatalog} from './project-catalog.mjs';
 import {STIX_FONT,verifyPinnedFontBlob} from './bundled-math-font.mjs';
 import {createHash} from 'node:crypto';
-const PACKAGE_SMOKE=process.argv.includes('--package-smoke');
+const PACKAGE_RESTART_SMOKE=process.argv.includes('--package-restart-smoke');
+const PACKAGE_SMOKE=PACKAGE_RESTART_SMOKE||process.argv.includes('--package-smoke');
 const SMOKE=PACKAGE_SMOKE||process.argv.includes('--smoke');
 const smokeParent=PACKAGE_SMOKE?process.env.BC_PACKAGE_SMOKE_TMP||tmpdir():tmpdir();
-const smokeRoot=SMOKE?mkdtempSync(join(smokeParent,'bc-electron-')):undefined;
+function restartSmokeRoot(){
+  // Only an explicitly supplied, runner-owned child of the isolated test parent.
+  // Never reuse the application's normal userData or initialize fixtures again.
+  if(!process.env.BC_PACKAGE_SMOKE_TMP||!process.env.BC_PACKAGE_RESTART_ROOT)throw Error('Restart smoke requires an isolated test profile');
+  const parent=realpathSync(process.env.BC_PACKAGE_SMOKE_TMP),root=realpathSync(process.env.BC_PACKAGE_RESTART_ROOT);
+  if(!basename(parent).startsWith('bc-package-profile-')||dirname(root)!==parent||!basename(root).startsWith('bc-electron-')||!statSync(join(root,'ux10-restart.json')).isFile())throw Error('Invalid restart smoke profile');
+  return root;
+}
+const smokeRoot=PACKAGE_RESTART_SMOKE?restartSmokeRoot():SMOKE?mkdtempSync(join(smokeParent,'bc-electron-')):undefined;
 if(smokeRoot)app.setPath('userData',smokeRoot);
 protocol.registerSchemesAsPrivileged([{scheme:'bookcreator',privileges:{standard:true,secure:true,supportFetchAPI:true}}]);
 const PAGE='bookcreator://app/index.html';
@@ -123,7 +132,7 @@ async function run(){
   handle('saveBookSettings',async(...args)=>{checkArgs(args,2);return requireWorkspace().saveBookSettings(...args);});
   handle('read',async(...args)=>{checkArgs(args,1);if(typeof args[0]!=='string')throw Error('Invalid section');return requireWorkspace().read(args[0]);});
   handle('save',async(...args)=>{checkArgs(args,3);if(typeof args[0]!=='string')throw Error('Invalid section');return requireWorkspace().save(...args);});
-  if(SMOKE){
+  if(SMOKE&&!PACKAGE_RESTART_SMOKE){
     await mkdir(join(smokeRoot,'manuscript'));
     await mkdir(join(smokeRoot,'themes','default'),{recursive:true});
     await writeFile(join(smokeRoot,'themes','default','theme.yaml'),'schemaVersion: 1\nid: default\nname: Default\n');
@@ -131,7 +140,8 @@ async function run(){
     await writeFile(join(smokeRoot,'manuscript','chapter.md'),'# 見出し\n\n'+('日本語と English text の実測組版です。 '.repeat(30)).trim()+'\n');
   }
   await win.loadURL(PAGE);
-  if(PACKAGE_SMOKE)await packageSmoke();
+  if(PACKAGE_RESTART_SMOKE)await packageRestartSmoke();
+  else if(PACKAGE_SMOKE)await packageSmoke();
   else if(SMOKE)await smoke();
 }
 // Short distribution smoke test: no installed fonts, user projects or native dialogs required.
@@ -1249,7 +1259,57 @@ async function writingJourneySmoke(){
   if(await readFile(manuscript,'utf8')!==expected||await readFile(themePath,'utf8')!==themeRegistered)throw Error('Writing journey: reload or compose changed saved files');
   console.log('PASS UX-10b custom component design, registration, insertion, measured paper and persisted geometry');
   console.log('PASS UX-10c required and optional slots, independent instances, cancel, measured omission and saved round-trip');
+  // Independent restart oracle, written only after the complete first-phase journey.
+  const digest=bytes=>createHash('sha256').update(bytes).digest('hex');
+  await writeFile(join(smokeRoot,'ux10-restart.json'),JSON.stringify({version:1,pid:process.pid,title,customName,customId,padding,sourceHash:digest(expected),themeHash:digest(themeRegistered),manifestHash:digest(await readFile(join(smokeRoot,folder,'book.yaml')))}),{flag:'wx'});
   console.log('PASS UX-10a new A5 book, structured writing, math, study component, whole-book composition, explicit save and fresh renderer reopen');
+}
+// The CI runner starts a second executable only after the first has exited.
+async function packageRestartSmoke(){
+  const oracle=JSON.parse(await readFile(join(smokeRoot,'ux10-restart.json'),'utf8'));
+  if(oracle.version!==1||!Number.isSafeInteger(oracle.pid)||oracle.pid===process.pid||oracle.title!=='執筆フロー検証書籍'||oracle.customName!=='二次方程式のポイント'||!/^component-[a-f0-9-]+$/.test(oracle.customId)||![5,6].includes(oracle.padding)||![oracle.sourceHash,oracle.themeHash,oracle.manifestHash].every(x=>/^[a-f0-9]{64}$/.test(x)))throw Error('Invalid first-process restart oracle');
+  const root=join(smokeRoot,'writing-journey'),sourcePath=join(root,'manuscript','chapter-01.md'),themePath=join(root,'themes','default','theme.yaml'),manifestPath=join(root,'book.yaml');
+  const digest=bytes=>createHash('sha256').update(bytes).digest('hex');
+  async function checkDisk(){
+    for(const [path,hash] of [[sourcePath,oracle.sourceHash],[themePath,oracle.themeHash],[manifestPath,oracle.manifestHash]])if(digest(await readFile(path))!==hash)throw Error('Restart smoke: saved file changed '+basename(path));
+  }
+  await checkDisk();
+  const expected=await readFile(sourcePath,'utf8');
+  const raw=js=>win.webContents.executeJavaScript(js);
+  const until=async(label,js)=>{for(let i=0;i<150;i++){if(await raw(js))return;await new Promise(r=>setTimeout(r,100));}throw Error('Restart smoke: '+label+'; '+await raw("document.querySelector('#status')?.textContent"));};
+  const click=async selector=>{
+    await until('reachable '+selector,"(()=>{const e=document.querySelector("+JSON.stringify(selector)+");return !!e?.getClientRects().length&&!e.disabled;})()");
+    await raw("document.querySelector("+JSON.stringify(selector)+").click()");
+  };
+  const mode=which=>"document.querySelector('.workspace-shell').dataset.workspaceMode==="+JSON.stringify(which);
+  const catalog=JSON.parse(await readFile(join(smokeRoot,'project-catalog.json'),'utf8'));
+  const entry=catalog.entries.find(e=>e.title===oracle.title);
+  if(!entry||!catalog.entries.some(e=>e.title==='Desktop smoke'&&e.favorite))throw Error('Restart smoke: saved catalog or favorite missing');
+  await until('fresh home',mode('home')+"&&document.querySelectorAll('.hub-project-row').length===2");
+  const row=await raw("[...document.querySelectorAll('.hub-project-row')].find(e=>e.querySelector('strong')?.textContent==='Desktop smoke')?.querySelector('.hub-row-actions button')?.getAttribute('aria-pressed')");
+  if(row!=='true')throw Error('Restart smoke: favorite UI not restored');
+  await raw("(()=>{const e=[...document.querySelectorAll('.hub-project-open')].find(e=>e.querySelector('strong')?.textContent==="+JSON.stringify(oracle.title)+");if(!e?.getClientRects().length||e.disabled)throw Error('Saved project not accessible');e.click();})()");
+  await until('reopened book',mode('writing')+"&&!!document.querySelector('[data-section=chapter-01]')&&!document.querySelector('[data-section=chapter-01]').disabled");
+  await click('[data-section=chapter-01]');
+  await until('exact saved source',"document.querySelector('#source').value==="+JSON.stringify(expected)+"&&document.querySelector('#workspace-save-state').textContent==='保存済み'&&document.querySelector('#workspace-layout-state').dataset.phase==='idle'");
+  await click('#editor-view-structured');
+  await until('restored structured instances',"document.querySelectorAll('[data-study-kind=custom]').length===2&&document.querySelectorAll('[data-study-kind=custom] [data-study-field=strategy]').length===2&&document.querySelectorAll('[data-study-kind=custom] [data-study-field=extension]').length===1&&!!document.querySelector('[data-structured-kind=math] math')");
+  await click('#mode-design');
+  await click('#design-tab-components');
+  await click('[data-catalog-edit=registered-'+oracle.customId+']');
+  await click('[data-property-choice=layout]');
+  await until('restored component definition',"Number(document.querySelector('#lab-padding').value)==="+oracle.padding+"&&document.querySelector('#lab-library-name').value==="+JSON.stringify(oracle.customName));
+  await click('#lab-cancel');
+  await until('closed editor',"!document.querySelector('#lab-measure')");
+  await click('#mode-layout');
+  await click('#preview-book');
+  await until('recomposed paper',"document.querySelector('#workspace-layout-state').dataset.phase==='ready'&&document.querySelector('#workspace-layout-state').dataset.scope==='book'&&(()=>{const r=document.querySelector('#preview > div')?.shadowRoot;return !!r?.querySelector('[data-display-math] math')&&r.querySelectorAll('[data-named-slot=strategy]').length===2&&r.querySelectorAll('[data-named-slot=extension]').length===1&&[...r.querySelectorAll('[data-fixed-label]')].some(e=>e.textContent==="+JSON.stringify(oracle.customName)+");})()");
+  await checkDisk();
+  const report='PASS UX-10d portable Windows process restart: catalog, favorite, exact saved files, custom slots and recomposition';
+  if(!process.env.BC_PACKAGE_SMOKE_REPORT)throw Error('Restart report path required');
+  await writeFile(process.env.BC_PACKAGE_SMOKE_REPORT,report+'\n',{flag:'wx'});
+  console.log(report);
+  closing=true;win.destroy();app.exit(0);
 }
 async function smoke(){
   const exec=workspaceSmokeExec();
