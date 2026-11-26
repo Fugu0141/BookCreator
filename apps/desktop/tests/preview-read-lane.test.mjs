@@ -39,3 +39,12 @@ test('read failure releases the lane',async()=>{
   await assert.rejects(lane.read(identity,()=>true,()=>{throw Error('disk error');}),/disk error/);
   assert.equal(await lane.read(identity,()=>true,()=>42),42);
 });
+
+test('failure from an invalidated read becomes a transient conflict',async()=>{
+  const lane=createPreviewReadLane();let reject,started;
+  const entered=new Promise(r=>{started=r;});
+  const pending=lane.read('session',()=>true,()=>{started();return new Promise((_,r)=>{reject=r;});});
+  const checked=assert.rejects(pending,{code:'PREVIEW_RETRY'});
+  await entered;lane.invalidate();reject(Error('old disk error'));await checked;
+  assert.equal(await lane.read('session',()=>true,()=>42),42);
+});
