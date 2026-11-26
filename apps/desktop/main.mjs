@@ -917,6 +917,20 @@ async function smoke(){
   await until("document.querySelector('#source').value==="+JSON.stringify(disabledNestedSource));
   await exec("(()=>{const e=document.querySelector('#source'),p=e.value.lastIndexOf('z^2');e.focus();e.setSelectionRange(p,p+3);document.querySelector('#source-equation-numbering').click();})()");
   await until("document.querySelector('#source').value==="+JSON.stringify(enabledNestedSource));
+  // The existing reference picker also works in component text.
+  const refCallout=':::callout{kind="note"}\n参照先。\n:::\n',nestedRefSource=enabledNestedSource+'\n'+refCallout;
+  await setInlineMathSource(nestedRefSource);
+  await until("document.querySelector('#source').value==="+JSON.stringify(nestedRefSource));
+  await exec("(()=>{const e=document.querySelector('#source'),p=e.value.lastIndexOf('参照先。')+3;e.focus();e.setSelectionRange(p,p);document.querySelector('#source-equation-reference').click();})()");
+  await until("!!document.querySelector('#equation-reference-editor')");
+  await exec("(()=>{const e=document.querySelector('#equation-reference-target');e.value="+JSON.stringify(nestedId)+";e.dispatchEvent(new Event('change',{bubbles:true}));})()");
+  await until("document.querySelector('#equation-reference-target')?.value==="+JSON.stringify(nestedId));
+  await exec("document.querySelector('#equation-reference-apply').click()");
+  const nestedRefToken=':ref{target="'+nestedId+'" format="label-number"}';
+  await until("document.querySelector('#source').value==="+JSON.stringify(nestedRefSource.replace('参照先。',()=> '参照先'+nestedRefToken+'。')));
+  await exec("document.querySelector('#preview-book').click()");
+  await until("(()=>{const root=document.querySelector('#preview > div')?.shadowRoot,n=root?.querySelector('[data-slot-display-math] [data-equation-number]');return !!n&&root.textContent.includes('参照先式 '+n.textContent);})()");
+
 
   await setInlineMathSource(beforeSlotMath);
   await until("document.querySelector('#source').value==="+JSON.stringify(beforeSlotMath)+" && !document.querySelector('#preview > div')");
