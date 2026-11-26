@@ -899,6 +899,25 @@ async function smoke(){
   await setInlineDraft('z^2');
   await exec("document.querySelector('#math-apply').click()");
   await until("document.querySelector('#source').value==="+JSON.stringify(beforeSlotMath+'\n\n'+nestedNumbered.replace('x^2','z^2')));
+  // Numbering toolbar: enable on a plain three-colon callout, disable, and re-enable the same ID.
+  const bareNested=':::callout{kind="note"}\n$$\nz^2\n$$\n:::\n';
+  const bareNestedSource=beforeSlotMath+'\n\n'+bareNested;
+  await setInlineMathSource(bareNestedSource);
+  await until("document.querySelector('#source').value==="+JSON.stringify(bareNestedSource));
+  await exec("(()=>{const e=document.querySelector('#source'),p=e.value.lastIndexOf('z^2');e.focus();e.setSelectionRange(p,p+3);document.querySelector('#source-equation-numbering').click();})()");
+  await until("document.querySelector('#source').value.includes("+JSON.stringify('::::callout{kind="note"}\n:::layout{#eq-')+")");
+  const enabledNestedSource=await exec("document.querySelector('#source').value");
+  const nestedId=enabledNestedSource.match(/:::layout\{#(eq-[a-f0-9-]+) numbered="true"\}/)?.[1];
+  if(!nestedId||enabledNestedSource!==beforeSlotMath+'\n\n::::callout{kind="note"}\n:::layout{#'+nestedId+' numbered="true"}\n$$\nz^2\n$$\n:::\n::::\n')throw Error('Component numbering changed unrelated text');
+  await exec("document.querySelector('#preview-button').click()");
+  await until("!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-slot-display-math] [data-equation-number]')");
+  await exec("document.querySelector('#preview > div').shadowRoot.querySelector('[data-slot-display-math] [data-equation-number]').click()");
+  await exec("document.querySelector('#source-equation-numbering').click()");
+  const disabledNestedSource=enabledNestedSource.replace('#'+nestedId+' numbered="true"','#'+nestedId+' numbered="false"');
+  await until("document.querySelector('#source').value==="+JSON.stringify(disabledNestedSource));
+  await exec("(()=>{const e=document.querySelector('#source'),p=e.value.lastIndexOf('z^2');e.focus();e.setSelectionRange(p,p+3);document.querySelector('#source-equation-numbering').click();})()");
+  await until("document.querySelector('#source').value==="+JSON.stringify(enabledNestedSource));
+
   await setInlineMathSource(beforeSlotMath);
   await until("document.querySelector('#source').value==="+JSON.stringify(beforeSlotMath)+" && !document.querySelector('#preview > div')");
   // Apply/remove/replace formatting using the actual toolbar and textarea selection.
