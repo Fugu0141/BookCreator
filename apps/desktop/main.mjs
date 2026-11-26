@@ -389,6 +389,32 @@ async function packageSmoke(){
   if(!await exec("document.querySelector('#source').value==="+JSON.stringify(inlineStructured)))throw Error('Inline draft prematurely changed source');
   await exec("document.querySelector('#structured-apply').click()");
   await until("!document.querySelector('#structured-value')&&document.querySelector('#source').value==="+JSON.stringify(inlineStructured.replace('$y^2$','$y^3$')));
+  // UX-08d: study content and slot transactions, immutable identities and fences.
+  const studyFixture=inlineStructured.replace('$y^2$','$y^3$')+'\n::::component{name="example" #gui-example title="確認"}\n:::slot{name="content"}\n問題 $x^2$ を解く。\n:::\n\n:::slot{name="hint"}\nヒントです。\n\n$$\nx^2\n$$\n:::\n::::\n\n:::component{name="explanation" #gui-answer answer-to="gui-example"}\n解説です。\n:::\n\n:::callout{kind="note"}\n補足です。\n:::\n';
+  await exec("document.querySelector('#editor-view-source').click()");
+  await setStructuredSource(studyFixture);
+  await exec("document.querySelector('#editor-view-structured').click()");
+  await until("document.querySelectorAll('[data-structured-kind=study]').length===3&&!!document.querySelector('[data-study-kind=example] [data-study-field=hint] math')");
+  await exec("document.querySelector('[data-study-kind=example] [data-study-edit]').click()");
+  await until("document.querySelector('#save').disabled&&document.querySelector('#mode-design').disabled&&document.querySelectorAll('[data-study-value]').length===2");
+  const setStudyValue=(name,value)=>exec("(()=>{const e=[...document.querySelectorAll('[data-study-value]')].find(e=>e.dataset.studyValue==="+JSON.stringify(name)+");Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(e,"+JSON.stringify(value)+");e.dispatchEvent(new Event('input',{bubbles:true}));})()");
+  await setStudyValue('hint','変更を取り消す。');
+  await exec("document.querySelector('#structured-study-cancel').click()");
+  await until("!document.querySelector('#structured-study-apply')&&document.querySelector('#source').value==="+JSON.stringify(studyFixture));
+  await exec("document.querySelector('[data-study-kind=example] [data-study-edit]').click()");
+  await setStudyValue('hint',':::slot{name="extra"}\n不正な構造\n:::');
+  await until("document.querySelector('#structured-study-apply').disabled");
+  await setStudyValue('hint','新しいヒントです。\n\n$$\n\\frac{1}{2}\n$$');
+  await setStudyValue('content','問題 $x^3$ を解く。');
+  await until("!document.querySelector('#structured-study-apply').disabled&&!!document.querySelector('[data-study-field=hint] mfrac')");
+  await exec("document.querySelector('#structured-study-apply').click()");
+  const editedStudy=studyFixture.replace('問題 $x^2$ を解く。','問題 $x^3$ を解く。').replace('ヒントです。\n\n$$\nx^2\n$$','新しいヒントです。\n\n$$\n\\frac{1}{2}\n$$');
+  await until("!document.querySelector('#structured-study-apply')&&document.querySelector('#source').value==="+JSON.stringify(editedStudy));
+  await exec("document.querySelector('[data-study-kind=explanation] [data-study-edit]').click()");
+  await setStudyValue('content','解説を変更しました。');
+  await exec("document.querySelector('#structured-study-apply').click()");
+  await until("!document.querySelector('#structured-study-apply')&&document.querySelector('#source').value==="+JSON.stringify(editedStudy.replace('解説です。','解説を変更しました。')));
+
 
 
   await exec("document.querySelector('[data-structured-kind=directive] [data-structured-source]').click()");
