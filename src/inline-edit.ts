@@ -1,7 +1,8 @@
 import {parsePreviewInline,normalizeInlineStyle,serializeInlineStyle,inlineFontFamily,type InlineRun,type InlineStyle} from './inline-preview.js';
 import {studyKind,customStudyId} from './study-blocks.js';
 import {validNamedSlot} from './preview-component.js';
-import type {Scan} from './manuscript-poc.js';
+import {prepareManuscript,createEquationResolver,numberedEquationTargets,type Scan,type PreparationDependencies} from './manuscript-poc.js';
+import type {ComponentMathBookContext} from './math-edit.js';
 
 export type InlineFormat='bold'|'italic'|'underline'|'combined'|{color:string|null}|{font:string|null;weight?:number}|{fontSize:number|null}|{baseline:'super'|'sub'|null};
 function changeStyle(style:InlineStyle,format:InlineFormat,legacy:boolean):InlineStyle{
@@ -49,7 +50,7 @@ function slot(b:Extract<Block,{kind:'directive'}>){
   return b.closed&&h.kind==='container'&&h.name==='slot'&&!h.id&&h.attributes.length===1&&a.key==='name'&&(a.value==='content'||validNamedSlot(a.value));
 }
 /** Local source edit; the scanner identifies protected ranges. No general Markdown rewriting. */
-export function planInlineFormat(source:string,start:number,end:number,format:InlineFormat,scan:(source:string)=>Scan):InlineEditPlan{
+export function planInlineFormat<S extends Scan>(source:string,start:number,end:number,format:InlineFormat,scan:(source:string)=>S,context?:ComponentMathBookContext&{deps:PreparationDependencies<S>}):InlineEditPlan{
   if(typeof source!=='string'||source.length>1000000||!Number.isSafeInteger(start)||!Number.isSafeInteger(end)||start<0||end<=start||end>source.length)throw RangeError('Invalid inline selection');
   const parsed=scan(source);
   if(parsed.source!==source||parsed.diagnostics.length)throw RangeError('Resolve manuscript scanner diagnostics before formatting');
@@ -82,10 +83,34 @@ export function planInlineFormat(source:string,start:number,end:number,format:In
       return;
     }
   }
-  body(parsed.blocks,true);
+  const prepare=(raw:string)=>{
+    if(!context)return;
+    if(context.documents.filter(d=>d.documentId===context.documentId).length!==1)throw RangeError('Expected current document in book context');
+    const docs=context.documents.map(d=>d.documentId===context.documentId?{...d,source:raw}:d);
+    const book=prepareManuscript(docs,'1','inline-format-edit',{width:100000,height:100000},context.deps);
+    if(!book.input)throw RangeError('Resolve manuscript diagnostics before formatting: '+book.diagnostics.map(d=>d.message).join('; '));
+    return book.items;
+  };
+  const items=prepare(source);
+  const resolver=context&&items?createEquationResolver(items,context.deps,context.documentId):undefined;
+  if(context&&items){
+    // The semantic compiler owns slot boundaries; only a scanner-owned raw
+    // line inside a supported slot is editable. Never descend into formulas.
+    const slots=items.filter(i=>i.origin.documentId===context.documentId&&(i.kind==='paragraph'||i.kind==='study')).flatMap(i=>[
+      {start:i.sourceTextStart??i.origin.range.start,text:i.text},
+      ...(i.namedSlots??[]).map(s=>({start:s.sourceTextStart!,text:s.text}))
+    ]);
+    const selected=slots.find(s=>start>=s.start&&end<=s.start+s.text.length);
+    if(selected){
+      const rawRows=(blocks:readonly Block[]):Block[]=>blocks.flatMap(b=>b.kind==='raw'?[b]:b.kind==='directive'?rawRows(b.children):[]);
+      const row=rawRows(parsed.blocks).find(b=>b.range.start>=selected.start&&start>=b.range.start&&end<=b.range.start+stripEnd(source.slice(b.range.start,b.range.end)).length);
+      if(row)target={start:row.range.start,end:row.range.start+stripEnd(source.slice(row.range.start,row.range.end)).length};
+    }else if(items.some(i=>i.origin.documentId===context.documentId&&i.kind==='heading'&&start>=i.origin.range.start&&end<=i.origin.range.end))body(parsed.blocks,true);
+  }else body(parsed.blocks,true);
   if(!target||start<target.start||end>target.end)return fail();
-  const line=source.slice(target.start,target.end),before=parsePreviewInline(line,target.start);
+  const line=source.slice(target.start,target.end),before=parsePreviewInline(line,target.start,context?.deps.validateInlineMath,resolver);
   let previous:InlineStyle={},preferSpan=false,inner:string;
+  if(before.sourceMap.segments.some(s=>s.derived&&start<s.outerEnd&&end>s.outerStart))return fail();
   const styled=before.sourceMap.segments.filter(s=>s.rawStart!==s.outerStart);
   const hits=styled.filter(s=>start<s.outerEnd&&end>s.outerStart);
   let logicalStart:number,logicalEnd:number,patchStart=start,patchEnd=end;
@@ -111,11 +136,11 @@ export function planInlineFormat(source:string,start:number,end:number,format:In
   if(source.slice(patchStart,patchEnd)===replacement)throw RangeError('No format change');
   const action:InlineEditPlan['action']=!Object.keys(style).length?'remove':hits.length?'replace':'apply';
   const nextLine=line.slice(0,patchStart-target.start)+replacement+line.slice(patchEnd-target.start);
-  const after=parsePreviewInline(nextLine,target.start);
+  const after=parsePreviewInline(nextLine,target.start,context?.deps.validateInlineMath,resolver);
   const expected:InlineRun[]=before.inlineStyles.filter(s=>s.end<=logicalStart||s.start>=logicalEnd);
   if(action!=='remove')expected.push({start:logicalStart,end:logicalEnd,...style});
   expected.sort((a,b)=>a.start-b.start);
-  if(after.text!==before.text||JSON.stringify(after.inlineStyles)!==JSON.stringify(expected))return fail();
+  if(after.text!==before.text||JSON.stringify(after.inlineStyles)!==JSON.stringify(expected)||JSON.stringify(after.inlineMath)!==JSON.stringify(before.inlineMath))return fail();
   // Compare structural scanner identity and source boundaries after the hypothetical patch.
   const next=source.slice(0,patchStart)+replacement+source.slice(patchEnd);
   const rescanned=scan(next),delta=replacement.length-(patchEnd-patchStart);
@@ -124,6 +149,8 @@ export function planInlineFormat(source:string,start:number,end:number,format:In
     return [b.kind,shift(b.range.start),shift(b.range.end),b.kind==='directive'?[b.closed,b.header.name,b.header.id,b.header.attributes.map(a=>[a.key,a.value]),signature(b.children,changed)]:b.level];
   });
   if(rescanned.source!==next||rescanned.diagnostics.length||JSON.stringify(signature(parsed.blocks,true))!==JSON.stringify(signature(rescanned.blocks,false)))return fail();
+  const checkedItems=prepare(next);
+  if(items&&checkedItems&&JSON.stringify(numberedEquationTargets(items))!==JSON.stringify(numberedEquationTargets(checkedItems)))return fail();
   const innerStart=patchStart+serialized.innerOffset;
   return {patch:{range:{start:patchStart,end:patchEnd},expected:source.slice(patchStart,patchEnd),replacement},selection:{start:innerStart,end:innerStart+logicalEnd-logicalStart},action};
 }
