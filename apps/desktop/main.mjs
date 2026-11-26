@@ -189,6 +189,10 @@ function workspaceSmokeExec(){
         }
         if(!visible)throw Error('Cannot open design category '+category);
       }
+      if(selectors.some(s=>/^#(?:lab-level|component-lab|paragraph-lab|study-design-kind|study-design-lab)$/.test(s))&&!await raw("document.querySelector('#component-quick-select')?.open")){
+        await raw("document.querySelector('#component-quick-select summary').click()");
+        if(!await raw("document.querySelector('#component-quick-select').open"))throw Error('Cannot open direct component selector');
+      }
       const panel=selectors.map(panelFor).find(Boolean);
       if(panel&&!await raw("!!document.querySelector('#writing-tools-"+panel+"')?.getClientRects().length")){
         await raw("document.querySelector('#writing-panel-"+panel+"').click()");
@@ -241,6 +245,17 @@ async function packageSmoke(){
     await until("document.querySelector('#design-tab-"+category+"').getAttribute('aria-current')==='page'&&!!document.querySelector('#design-panel-"+category+"').getClientRects().length&&[...document.querySelectorAll('.design-categories>section')].filter(e=>e.getClientRects().length).length===1");
   }
   if(!await exec("document.querySelector('#workspace-save-state').textContent.includes('テーマ')"))throw Error('Design category switch lost unsaved typography');
+  await exec("document.querySelector('#design-tab-components').click()");
+  await until("!document.querySelector('#design-panel-components').hidden&&document.querySelectorAll('#component-catalog .catalog-card').length>=15");
+  if(!await exec("document.querySelectorAll('#component-catalog [data-catalog-edit]').length>=15&&[...document.querySelectorAll('#component-catalog [data-catalog-edit]')].every(e=>e.disabled)&&!document.querySelector('#component-quick-select').open"))throw Error('Unsaved typography must block editing from catalog');
+  await exec("(()=>{const e=document.querySelector('#component-filter');e.value='heading';e.dispatchEvent(new Event('change',{bubbles:true}));})()");
+  await until("document.querySelectorAll('#component-catalog .catalog-card').length===7");
+  await exec("(()=>{const e=document.querySelector('#component-search');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,'H3');e.dispatchEvent(new Event('input',{bubbles:true}));})()");
+  await until("document.querySelectorAll('#component-catalog .catalog-card').length===1&&!!document.querySelector('[data-catalog-edit=heading-3]')");
+  await exec("(()=>{const e=document.querySelector('#component-search');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,'');e.dispatchEvent(new Event('input',{bubbles:true}));})()");
+  await exec("(()=>{const e=document.querySelector('#component-filter');e.value='all';e.dispatchEvent(new Event('change',{bubbles:true}));})()");
+  await until("document.querySelectorAll('#component-catalog .catalog-card').length>=15");
+  await exec("document.querySelector('#design-tab-styles').click()");
   await exec("document.querySelector('#mode-layout').click()");
   await until("document.querySelector('.workspace-shell').dataset.workspaceMode==='layout'&&!!document.querySelector('#preview').getClientRects().length&&!document.querySelector('#source').getClientRects().length");
   await exec("document.querySelector('#mode-publication').click()");
