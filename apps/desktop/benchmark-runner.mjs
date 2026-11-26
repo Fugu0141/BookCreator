@@ -80,7 +80,7 @@ export async function runBookBenchmark(win,app,root,fixture){
   await click('#performance-toggle');
   await until('metrics',"document.querySelector('#performance-summary tbody tr[data-stage=layout][data-category=book]')?.dataset.success>0&&document.querySelector('#performance-memory')?.dataset.phase==='ready'");
   async function readPhaseSample(scope,enabled,mathEnabled=false,paragraphEnabled=false,pageEnabled=false,reuseEnabled=false){
-    const selector='#performance-phase-summary tr[data-scope='+scope+'][data-cache-enabled='+String(enabled)+'][data-math-cache-enabled='+String(mathEnabled)+'][data-paragraph-cache-enabled='+String(paragraphEnabled)+'][data-page-cache-enabled='+String(pageEnabled)+'][data-reuse-paper-pages='+String(reuseEnabled)+']';
+    const selector='#performance-phase-summary tr[data-scope='+scope+'][data-cache-enabled='+String(enabled)+'][data-math-cache-enabled='+String(mathEnabled)+'][data-paragraph-cache-enabled='+String(paragraphEnabled)+'][data-page-cache-enabled='+String(pageEnabled)+'][data-reuse-paper-pages='+String(reuseEnabled)+'][data-sparse-paper-pages=false]';
     const sample=await raw("(()=>{const e=document.querySelector("+JSON.stringify(selector)+");return e?{count:Number(e.dataset.count),timings:JSON.parse(e.dataset.latest)}:null;})()");
     if(!sample||!Number.isSafeInteger(sample.count)||sample.count<1||
       Object.keys(sample.timings).length!==phaseKeys.length||!phaseKeys.every(k=>Number.isFinite(sample.timings[k])&&sample.timings[k]>=0))
@@ -371,7 +371,7 @@ export async function runBookBenchmark(win,app,root,fixture){
       await setPartial(enabled);
       // A first partial-mode sample does not exist until the edit succeeds.
       await click('#performance-toggle');
-      const beforeCount=await raw("Number(document.querySelector('#performance-phase-summary tr[data-scope=manuscript][data-cache-enabled=false][data-math-cache-enabled=false][data-paragraph-cache-enabled=true][data-page-cache-enabled=false][data-reuse-paper-pages="+String(enabled)+"]')?.dataset.count??0)");
+      const beforeCount=await raw("Number(document.querySelector('#performance-phase-summary tr[data-scope=manuscript][data-cache-enabled=false][data-math-cache-enabled=false][data-paragraph-cache-enabled=true][data-page-cache-enabled=false][data-reuse-paper-pages="+String(enabled)+"][data-sparse-paper-pages=false]')?.dataset.count??0)");
       await click('#performance-close');
       await raw("(()=>{const h=document.querySelector('#preview > div');window.__bcPartialBenchmark={host:h,pages:[...h.shadowRoot.querySelectorAll('[data-page]')]};document.querySelector('#source').focus();})()");
       const label='partial-edit-pair-'+pair+'-'+arm;
