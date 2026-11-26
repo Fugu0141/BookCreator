@@ -429,6 +429,23 @@ async function packageSmoke(){
   await until("!document.querySelector('#structured-value')&&document.querySelector('#source').value==="+JSON.stringify(inlineStructured.replace('$y^2$','$y^3$')));
   await exec("document.querySelector('[data-mixed-edit]').click()");
   await until("document.querySelectorAll('[data-mixed-math] math').length===2&&!!document.querySelector('[data-mixed-text]')");
+  // UX-08f-5b: mixed formula updates are staged, invalid formula and cancel are safe.
+  await exec("document.querySelectorAll('[data-mixed-math-edit]')[1].click()");
+  await until("document.querySelector('#mixed-math-formula')?.value==='y^3'&&document.querySelector('#structured-apply').disabled");
+  const setMixedFormula=value=>exec("(()=>{const e=document.querySelector('#mixed-math-formula');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,"+JSON.stringify(value)+");e.dispatchEvent(new Event('input',{bubbles:true}));})()");
+  await setMixedFormula('\\notacommand{x}');
+  await until("document.querySelector('#mixed-math-update').disabled");
+  await setMixedFormula('y^4');
+  await until("!document.querySelector('#mixed-math-update').disabled");
+  await exec("document.querySelector('#mixed-math-update').click()");
+  await until("!document.querySelector('#mixed-math-formula')&&!document.querySelector('#structured-apply').disabled&&document.querySelector('#source').value==="+JSON.stringify(inlineStructured.replace('$y^2$','$y^3$')));
+  await exec("document.querySelector('#structured-apply').click()");
+  await until("document.querySelector('#source').value==="+JSON.stringify(inlineStructured.replace('$y^2$','$y^4$')));
+  await exec("document.querySelector('#structured-undo').click()");
+  await until("document.querySelector('#source').value==="+JSON.stringify(inlineStructured.replace('$y^2$','$y^3$')));
+  await exec("document.querySelector('[data-mixed-edit]').click()");
+  await until("!!document.querySelector('[data-mixed-text]')");
+
   await exec("document.querySelector('#structured-cancel').click()");
   await until("!document.querySelector('[data-mixed-text]')&&document.querySelector('#source').value==="+JSON.stringify(inlineStructured.replace('$y^2$','$y^3$')));
 
@@ -635,6 +652,19 @@ async function packageSmoke(){
   await exec("document.querySelector('[data-mixed-edit]').click()");
   await until("document.querySelector('[data-mixed-text=\"0\"]')?.value==='本文'&&document.querySelector('#save').disabled");
   const setMixed=(i,value)=>exec("(()=>{const e=document.querySelector('[data-mixed-text=\""+i+"\"]');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(e,"+JSON.stringify(value)+");e.dispatchEvent(new Event('input',{bubbles:true}));})()");
+  await exec("(()=>{const e=document.querySelector('[data-mixed-text=\"0\"]');e.focus();e.setSelectionRange(1,1);document.querySelector('[data-mixed-math-insert=\"0\"]').click();})()");
+  await until("!!document.querySelector('#mixed-math-formula')");
+  await setMixedFormula('x^2');
+  await until("!document.querySelector('#mixed-math-update').disabled");
+  await exec("document.querySelector('#mixed-math-update').click()");
+  await until("!!document.querySelector('[data-mixed-math] math')&&!!document.querySelector('[data-mixed-reference]')&&document.querySelector('#source').value==="+JSON.stringify(referenceSource));
+  await exec("document.querySelector('#structured-apply').click()");
+  await until("document.querySelector('#source').value==="+JSON.stringify(referenceSource.replace('本文:ref','本$x^2$文:ref')));
+  await exec("document.querySelector('#structured-undo').click()");
+  await until("document.querySelector('#source').value==="+JSON.stringify(referenceSource));
+  await exec("document.querySelector('[data-mixed-edit]').click()");
+  await until("document.querySelector('[data-mixed-text=\"0\"]')?.value==='本文'");
+
   await setMixed(0,'本文*');
   await until("document.querySelector('#structured-apply').disabled");
   await setMixed(0,'新しい本文');
