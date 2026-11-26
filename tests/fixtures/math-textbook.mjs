@@ -17,18 +17,18 @@ const wrap=(id,formula,numbered=true)=>[':::layout{#'+id+' numbered="'+numbered+
 export function makeMathTextbook(nl='\n'){
   const docs=[
     ['quadratic',[
-      '# 二次方程式','','**係数** $a\\ne0$ のとき、二次方程式を考える。','','次章の定義は '+ref('eq-derivative')+' を参照。',
+      '# 二次方程式','','**係数** $a\\neq0$ のとき、二次方程式を考える。','','次章の定義は '+ref('eq-derivative')+' を参照。',
       '',...wrap('eq-quadratic',formulas.quadratic),'',
       ':::::component{#example-quadratic name="'+componentId+'"}',
       '::::slot{name="hint"}','判別式の定義。','',...wrap('eq-discriminant',formulas.discriminant),'::::','',
       '::::slot{name="content"}','式 '+ref('eq-quadratic','number')+' を因数分解する。','',...wrap('eq-factor',formulas.factor),'','解は $x=2$ または $x=3$。','::::',':::::','',
       '確認：'+ref('eq-factor')+' と '+ref('eq-discriminant')+'。','']],
     ['calculus',[
-      '# 微分','','前章の '+ref('eq-quadratic')+' から関数を考える。','','...独立式の定義。','',...wrap('eq-derivative',formulas.derivative),'',
+      '# 微分','','前章の '+ref('eq-quadratic')+' から関数を考える。','','微分係数の定義。','',...wrap('eq-derivative',formulas.derivative),'',
       '::::callout{kind="note"}','途中式：','',...wrap('eq-aligned',formulas.aligned),'','式 '+ref('eq-derivative','number')+' を用いた。','::::','',
       '絶対値の定義：','',...wrap('eq-cases',formulas.cases,false),'']],
     ['appendix',[
-      '行列の例。','','...参考：'+ref('eq-aligned')+'。','',...wrap('eq-matrix',formulas.matrix),'',
+      '行列の例。','','参考：'+ref('eq-aligned')+'。','',...wrap('eq-matrix',formulas.matrix),'',
       '式 '+ref('eq-matrix','number')+' を確認する。','']]
   ];
   return docs.map(([documentId,lines])=>({documentId,revision:'1',source:lines.join(nl),startOn:'page'}));
