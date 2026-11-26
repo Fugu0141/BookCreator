@@ -214,3 +214,18 @@ body{font-family:BCFont_NotoSansJP,system-ui,sans-serif}.font-control,.typograph
 .lab-zoom-controls output{font-size:12px;color:#40566b;font-variant-numeric:tabular-nums}
 .lab-sample-toggle{background:#e4edf4;color:#28465e;width:100%;text-align:left}
 .lab-sample-area [data-sample-fields]:not([hidden]){padding:8px 2px 0}
+
+/* UX-06a: dedicated layout workspace; all panels share one measured preview. */
+.workspace-main.mode-layout{grid-template-columns:minmax(130px,16%) minmax(0,1fr) minmax(160px,21%)}
+.layout-page-list,.layout-page-info{min-height:0;overflow:auto;overscroll-behavior:contain}
+#layout-pages button{display:block;width:100%;padding:10px;text-align:left}
+#layout-pages button[aria-current=page]{background:#d9eaf4;border-color:#397da1}
+.layout-page-info dl{font-size:13px;margin:12px 0}
+.layout-page-info dt{color:#536878;margin-top:12px}
+.layout-page-info dd{margin:4px 0;overflow-wrap:anywhere}
+.layout-page-toolbar{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:8px;flex-shrink:0}
+.layout-page-toolbar form{display:flex;align-items:center;flex-wrap:wrap;gap:6px}
+.layout-page-toolbar input{width:64px;padding:6px}
+.layout-page-toolbar button{padding:7px 9px}
+.workspace-main.mode-layout #preview{scroll-padding-top:8px}
+@media(max-width:750px){.workspace-main.mode-layout{grid-template-columns:minmax(105px,22%) minmax(0,1fr);grid-template-rows:minmax(0,1fr) auto}.workspace-main.mode-layout>.layout-page-info{grid-column:1/-1;max-height:150px}.workspace-main.mode-layout>.layout-page-info dl{display:flex;flex-wrap:wrap;gap:6px;align-items:baseline}.workspace-main.mode-layout>.layout-page-info dt{margin:0}.workspace-main.mode-layout>.layout-page-info dd{margin:0 8px 0 0}}
