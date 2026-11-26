@@ -14,7 +14,8 @@ import {settingsRecovery} from './settings-recovery.mjs';
 import {componentRecovery} from './component-recovery.mjs';
 const PACKAGE_CRASH_PREPARE=process.argv.includes('--package-crash-prepare');
 const PACKAGE_CRASH_VERIFY=process.argv.includes('--package-crash-verify');
-const PACKAGE_RESTART_SMOKE=PACKAGE_CRASH_PREPARE||PACKAGE_CRASH_VERIFY||process.argv.includes('--package-restart-smoke');
+const EXTRA_CRASH_MODE=['settings-prepare','settings-verify','components-prepare','components-verify'].find(mode=>process.argv.includes('--package-crash-'+mode));
+const PACKAGE_RESTART_SMOKE=!!EXTRA_CRASH_MODE||PACKAGE_CRASH_PREPARE||PACKAGE_CRASH_VERIFY||process.argv.includes('--package-restart-smoke');
 const PACKAGE_SMOKE=PACKAGE_RESTART_SMOKE||process.argv.includes('--package-smoke');
 const SMOKE=PACKAGE_SMOKE||process.argv.includes('--smoke');
 const smokeParent=PACKAGE_SMOKE?process.env.BC_PACKAGE_SMOKE_TMP||tmpdir():tmpdir();
@@ -256,7 +257,8 @@ async function run(){
     await writeFile(join(smokeRoot,'manuscript','chapter.md'),'# 見出し\n\n'+('日本語と English text の実測組版です。 '.repeat(30)).trim()+'\n');
   }
   await win.loadURL(PAGE);
-  if(PACKAGE_CRASH_PREPARE||PACKAGE_CRASH_VERIFY)await crashRecoverySmoke(PACKAGE_CRASH_PREPARE);
+  if(EXTRA_CRASH_MODE)await productionDataCrashSmoke(EXTRA_CRASH_MODE);
+  else if(PACKAGE_CRASH_PREPARE||PACKAGE_CRASH_VERIFY)await crashRecoverySmoke(PACKAGE_CRASH_PREPARE);
   else if(PACKAGE_RESTART_SMOKE)await packageRestartSmoke();
   else if(PACKAGE_SMOKE)await packageSmoke();
   else if(SMOKE)await smoke();
@@ -1450,6 +1452,98 @@ async function packageRestartSmoke(){
 // fixture. Renderer reload is not yet a forced process crash.
 // Run in a dedicated CI-owned profile only. The runner kills the first
 // process tree after the checkpoint marker, without invoking close/save.
+// Independent process pairs for settings and components. A component lab
+// cannot be opened while typography is dirty; do not bypass that guard.
+async function productionDataCrashSmoke(mode){
+  const [kind,stage]=mode.split('-'),prepare=stage==='prepare';
+  const root=join(smokeRoot,'writing-journey'),manifest=join(root,'book.yaml'),theme=join(root,'themes','default','theme.yaml'),source=join(root,'manuscript','chapter-01.md');
+  const oraclePath=join(smokeRoot,'ux10-crash-'+kind+'.json'),store=recoveryStore(smokeRoot,kind);
+  const raw=js=>win.webContents.executeJavaScript(js);
+  const until=async(label,js)=>{for(let i=0;i<150;i++){if(await raw(js))return;await new Promise(r=>setTimeout(r,100));}throw Error('Production crash '+mode+': '+label+'; '+await raw("document.querySelector('#status')?.textContent"));};
+  const click=async selector=>{
+    await until('reachable '+selector,"(()=>{const e=document.querySelector("+JSON.stringify(selector)+");return !!e?.getClientRects().length&&!e.disabled;})()");
+    await raw("document.querySelector("+JSON.stringify(selector)+").click()");
+  };
+  const change=(selector,value)=>raw("(()=>{const e=document.querySelector("+JSON.stringify(selector)+");if(!e?.getClientRects().length||e.disabled)throw Error('Select unavailable');e.value="+JSON.stringify(value)+";e.dispatchEvent(new Event('change',{bubbles:true}));})()");
+  const input=(selector,value)=>raw("(()=>{const e=document.querySelector("+JSON.stringify(selector)+");if(!e?.getClientRects().length||e.disabled)throw Error('Input unavailable');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,"+JSON.stringify(String(value))+");e.dispatchEvent(new Event('input',{bubbles:true}));})()");
+  const hashes=async()=>Object.fromEntries(await Promise.all(Object.entries({manifest,theme,source}).map(async([k,p])=>[k,createHash('sha256').update(await readFile(p)).digest('hex')])));
+  const records=async()=>{const list=await store.list();if(list.unreadable)throw Error('Unreadable recovery fixture');return list.records.sort((a,b)=>a.key.localeCompare(b.key));};
+  const saved=await hashes();
+  const restart=JSON.parse(await readFile(join(smokeRoot,'ux10-restart.json'),'utf8'));
+  async function homeReady(){await until('home catalog',"[...document.querySelectorAll('.hub-project-open')].some(e=>e.querySelector('strong')?.textContent==='執筆フロー検証書籍'&&!e.disabled)");}
+  async function openBook(){await homeReady();await raw("(()=>{const e=[...document.querySelectorAll('.hub-project-open')].find(e=>e.querySelector('strong')?.textContent==='執筆フロー検証書籍');e.click();})()");await click('[data-section=chapter-01]');}
+  async function hub(expected){
+    await homeReady();await click('#hub-recovery');
+    await until('unified recovery list',"document.querySelector('#hub-recovery-summary')?.textContent==="+JSON.stringify(expected+' 件の復旧候補')+"&&document.querySelectorAll('.hub-recovery-row').length==="+expected+"&&!document.querySelector('#hub-recovery-warning')");
+  }
+  function same(a,b){return JSON.stringify(a)===JSON.stringify(b);}
+  if(!process.env.BC_PACKAGE_SMOKE_REPORT)throw Error('Isolated crash report required');
+  if(prepare){
+    if((await records()).length)throw Error('Unexpected prior '+kind+' recovery records');
+    await openBook();
+    let values;
+    if(kind==='settings'){
+      await click('#mode-design');await click('#design-tab-styles');
+      const font=await raw("document.querySelector('#body-font').value==='serif'?'sans-serif':'serif'");
+      await change('#body-font',font);await click('#book-settings');
+      const size=await raw("document.querySelector('#page-size').value==='A4'?'A5':'A4'");
+      await change('#page-size',size);
+      await until('two settings checkpoints',"['typography','book-settings'].every(k=>document.querySelector('#settings-recovery-state-'+k)?.dataset.phase==='recorded')&&document.querySelector('#workspace-save-state').textContent==='未保存：テーマ・書籍設定'");
+      values={font,size};
+    }else{
+      await click('#mode-design');await click('#design-tab-components');
+      await click('[data-catalog-edit=registered-'+restart.customId+']');
+      await click('[data-property-choice=layout]');
+      await until('component ready',"!document.querySelector('#lab-padding').disabled");
+      const padding=await raw("Number(document.querySelector('#lab-padding').value)===7?8:7");
+      await input('#lab-padding',padding);
+      await until('component checkpoint',"document.querySelector('#component-recovery-state')?.dataset.phase==='recorded'");
+      values={padding,id:restart.customId};
+    }
+    const snapshot=await records();
+    if(snapshot.length!==(kind==='settings'?2:1)||!same(await hashes(),saved))throw Error('Checkpoint missing or original files changed');
+    await writeFile(oraclePath,JSON.stringify({version:1,pid:process.pid,kind,saved,values,snapshot}),{flag:'wx'});
+    await writeFile(process.env.BC_PACKAGE_SMOKE_REPORT,'READY UX-10g-6 '+kind+' '+process.pid+'\n',{flag:'wx'});
+    return; // Runner will force-kill this still-open process.
+  }
+  const oracle=JSON.parse(await readFile(oraclePath,'utf8'));
+  if(oracle.version!==1||oracle.kind!==kind||oracle.pid===process.pid||!same(saved,oracle.saved)||!same(await records(),oracle.snapshot))throw Error('Production crash oracle mismatch');
+  if(kind==='settings'){
+    await hub(2);
+    await click('[data-recovery-setting=typography] .hub-recovery-open');
+    await until('font review',"document.querySelector('#settings-recovery-dialog').open&&!!document.querySelector('#settings-recovery-restore')");
+    await click('#settings-recovery-later');
+    await until('deferred font remains locked',"!document.querySelector('#settings-recovery-dialog').open&&document.querySelector('#body-font').disabled");
+    await click('#settings-recovery-review-typography');await click('#settings-recovery-restore');
+    await until('font restored',"!document.querySelector('#settings-recovery-dialog').open&&document.querySelector('#body-font').value==="+JSON.stringify(oracle.values.font)+"&&document.querySelector('#workspace-save-state').textContent.includes('テーマ')");
+    await click('#settings-recovery-review-book-settings');await click('#settings-recovery-restore');
+    await until('paper restored',"!document.querySelector('#settings-recovery-dialog').open&&document.querySelector('#page-size').value==="+JSON.stringify(oracle.values.size)+"&&document.querySelector('#workspace-save-state').textContent==='未保存：テーマ・書籍設定'");
+    if(!same(await hashes(),saved))throw Error('Restored settings silently changed original');
+    // Keep theme and manifest writes separate and verify cleanup of both.
+    await click('#mode-design');await click('#design-tab-styles');await click('#save-theme');
+    await until('font saved',"document.querySelector('#workspace-save-state').textContent==='未保存：書籍設定'");
+    await click('#book-settings');await click('#save-book-settings');
+    await until('both saved',"document.querySelector('#workspace-save-state').textContent==='保存済み'");
+    const after=await hashes();
+    if(after.theme===saved.theme||after.manifest===saved.manifest||after.source!==saved.source||(await records()).length)throw Error('Explicit settings save or cleanup failed');
+  }else{
+    await hub(1);
+    await click('[data-recovery-entry='+oracle.values.id+'] .hub-recovery-open');
+    await click('[data-property-choice=layout]');
+    await until('registered candidate locked',"!!document.querySelector('#component-recovery-restore')&&document.querySelector('#lab-padding').disabled");
+    await click('#component-recovery-restore');
+    await until('restored and unmeasured',"Number(document.querySelector('#lab-padding').value)==="+oracle.values.padding+"&&document.querySelector('#lab-library-replace').disabled&&!document.querySelector('#lab-measure').disabled");
+    await click('#lab-measure');await until('measured',"!document.querySelector('#lab-library-replace').disabled");
+    if(!same(await hashes(),saved))throw Error('Component recovery silently updated theme');
+    await click('#lab-cancel');await until('closed',"!document.querySelector('#lab-measure')");
+    if((await records()).length||!same(await hashes(),saved))throw Error('Component cancel lost original or retained working draft');
+  }
+  await click('#mode-home');await hub(0);
+  const report='PASS UX-10g-6 forced process recovery '+kind;
+  await writeFile(process.env.BC_PACKAGE_SMOKE_REPORT,report+'\n',{flag:'wx'});
+  console.log(report);
+  closing=true;win.destroy();app.exit(0);
+}
 async function crashRecoverySmoke(prepare){
   const root=join(smokeRoot,'writing-journey'),path=join(root,'manuscript','chapter-01.md');
   const key=recoveryKey(await realpathSync(join(root,'book.yaml')),'chapter-01','manuscript/chapter-01.md');
