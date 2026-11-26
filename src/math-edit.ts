@@ -100,7 +100,7 @@ function inlineContext<S extends Scan>(source:string,start:number,end:number,dep
   });
   const p=candidates.find(s=>start>=s.start&&end<=s.end);
   if(!p)return fail('Place the caret in ordinary body text or a study text slot, or select one inline formula');
-  const parsed=parsePreviewInline(p.text,p.start,deps.validateInlineMath);
+  const parsed=parsePreviewInline(p.text,p.start,deps.validateInlineMath,undefined,true);
   const rows:Scan['blocks'][number][]=[];
   function collect(children:Scan['blocks']){for(const b of children){if(b.kind==='raw')rows.push(b);else if(b.kind==='directive')collect(b.children);}}
   collect(blocks);
@@ -108,6 +108,7 @@ function inlineContext<S extends Scan>(source:string,start:number,end:number,dep
   if(!boundaries.has(start)||!boundaries.has(end))return fail('Selection splits a grapheme');
   for(const atom of parsed.inlineMath){
     const seg=parsed.sourceMap.segments.find(s=>s.start===atom.start&&s.end===atom.start+1)!;
+    if(atom.display&&start<seg.outerEnd&&end>=seg.outerStart)return fail('Use the independent math editor for a display formula');
     if(start>=seg.outerStart&&end<=seg.outerEnd&&(start!==end||start>seg.outerStart&&start<seg.outerEnd)){
       return {blocks,rows,parsed,target:{mode:'edit',start:seg.outerStart+1,end:seg.outerEnd-1,formula:atom.formula,logicalStart:atom.start,paragraph:p} as InlineTarget};
     }
