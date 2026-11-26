@@ -314,6 +314,35 @@ async function packageSmoke(){
     await atUiZoom(factor,visibleWithinWindow(['#save','#book-settings','#shortcut-help-toggle','#workspace-save-state','.workspace-main','.editor'])+"&&document.querySelector('.editor').clientHeight>40");
   }
   if(!await exec("document.querySelector('#source').value==="+JSON.stringify(sample)))throw Error('UI zoom altered manuscript');
+  // Round-trip structured edits, explicit cancel and opaque BCM preservation.
+  const structuredFixture='# 見出し\n\n本文を編集します。\n\n$$\nx^2\n$$\n\n'+sample.slice(sample.indexOf(':::layout'));
+  const setStructuredSource=value=>exec("(()=>{const e=document.querySelector('#source');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(e,"+JSON.stringify(value)+");e.dispatchEvent(new Event('input',{bubbles:true}));})()");
+  const setStructuredValue=value=>exec("(()=>{const e=document.querySelector('#structured-value');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(e,"+JSON.stringify(value)+");e.dispatchEvent(new Event('input',{bubbles:true}));})()");
+  await setStructuredSource(structuredFixture);
+  await exec("document.querySelector('#editor-view-structured').click()");
+  await until("document.querySelector('#source').hidden&&!!document.querySelector('#structured-editor')&&document.querySelectorAll('[data-structured-edit]').length===3");
+  if(!await exec("document.querySelector('[data-structured-kind=directive] pre').textContent.includes('eq-test')&&!document.querySelector('[data-structured-kind=directive] [data-structured-edit]')"))throw Error('Opaque BCM container not preserved');
+  await exec("document.querySelector('[data-structured-kind=heading] [data-structured-edit]').click()");
+  await setStructuredValue('新しい見出し');
+  await until("!document.querySelector('#structured-apply').disabled&&document.querySelector('#save').disabled&&document.querySelector('#mode-design').disabled");
+  await exec("document.querySelector('#structured-cancel').click()");
+  await until("!document.querySelector('#structured-value')&&document.querySelector('#source').value==="+JSON.stringify(structuredFixture));
+  await exec("document.querySelector('[data-structured-kind=paragraph] [data-structured-edit]').click()");
+  await setStructuredValue('# 意図しない見出し');
+  await until("document.querySelector('#structured-apply').disabled&&!!document.querySelector('.structured-error')");
+  await setStructuredValue('新しい本文です。');
+  await exec("document.querySelector('#structured-apply').click()");
+  await until("!document.querySelector('#structured-value')&&document.querySelector('#source').value==="+JSON.stringify(structuredFixture.replace('本文を編集します。','新しい本文です。')));
+  await exec("document.querySelector('[data-structured-kind=math] [data-structured-edit]').click()");
+  await setStructuredValue('x^3');
+  await exec("document.querySelector('#structured-apply').click()");
+  const editedStructured=structuredFixture.replace('本文を編集します。','新しい本文です。').replace('x^2','x^3');
+  await until("!document.querySelector('#structured-value')&&document.querySelector('#source').value==="+JSON.stringify(editedStructured));
+  await exec("document.querySelector('[data-structured-kind=directive] [data-structured-source]').click()");
+  await until("!document.querySelector('#source').hidden&&document.querySelector('#source').value.slice(document.querySelector('#source').selectionStart,document.querySelector('#source').selectionEnd).includes('eq-test')");
+  await setStructuredSource(sample);
+  await until("document.querySelector('#source').value==="+JSON.stringify(sample));
+
   if(!await exec("document.querySelector('.writing-toolbar button').getClientRects().length>0&&[...document.querySelectorAll('.writing-tool-panel')].every(e=>e.hidden)"))throw Error('Writing default exposes detailed commands');
   await exec("(()=>{const e=document.querySelector('#source');e.focus();e.setSelectionRange(0,0);})()");
   await until("['bold','italic','underline'].every(id=>document.querySelector('#source-'+id).disabled)");

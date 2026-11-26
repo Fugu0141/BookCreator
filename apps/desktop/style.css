@@ -368,3 +368,21 @@ body{font-family:BCFont_NotoSansJP,system-ui,sans-serif}.font-control,.typograph
 .preview-diagnostics button{font-size:12px;padding:6px 9px}
 .workspace-shell textarea:focus-visible,.workspace-shell summary:focus-visible{outline:2px solid #2176b3;outline-offset:2px}
 @media(max-width:750px){.workspace-diagnostics{padding:6px 8px;max-height:25vh}}
+
+/* UX-08a: structured editing shares the source draft; no second document. */
+.editor-view-switch{display:flex;flex-wrap:wrap;gap:5px;margin:0 0 10px}
+.editor-view-switch button{background:#e7edf3;color:#29465f;font-size:12px;padding:7px 10px;border:1px solid var(--bc-border)}
+.editor-view-switch button[aria-pressed=true]{background:#d5e6f2;border-color:#7b9eb9;color:#163e5b}
+.structured-editor{min-width:0;min-height:100px;flex:1 0 auto}
+.structured-blocks{display:grid;gap:8px}
+.structured-block{background:white;border:1px solid var(--bc-border);border-radius:6px;padding:10px 12px;min-width:0}
+.structured-block-heading{display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap}
+.structured-block-heading strong{color:var(--bc-muted);font-size:12px}
+.structured-actions{display:flex;gap:5px;flex-wrap:wrap}
+.structured-actions button{font-size:12px;padding:6px 9px}
+.structured-content{white-space:pre-wrap;overflow-wrap:anywhere;padding:8px 0 2px;line-height:1.65}
+.structured-heading-text{font-weight:700;font-size:18px}
+.structured-content pre{margin:0;white-space:pre-wrap;font-size:12px;color:#536878}
+.structured-block textarea#structured-value{width:100%;min-height:64px;height:auto;resize:vertical;font:inherit;margin:6px 0;line-height:1.6}
+.structured-block label{display:block;margin-top:8px;font-size:12px}
+.structured-error{color:var(--bc-error);overflow-wrap:anywhere}
