@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
-import {editDocument,compileMeasuredManuscript,canReviewLayout,prepareBrowserPreview,prepareBookBrowserPreview,defaultHeadingDesign,defaultParagraphDesign,previewSourceRange,planInlineFormat,planListFormat,planListIndent,planListBatch,inspectDisplayMath,planDisplayMath,inspectInlineMath,planInlineMath,inspectComponentDisplayMath,planComponentDisplayMath,previewSampleInline,equationReferenceTargets,planEquationReference,planEquationNumbering} from '../dist/index.js';
+import {editDocument,compileMeasuredManuscript,canReviewLayout,prepareBrowserPreview,prepareBookBrowserPreview,defaultHeadingDesign,defaultParagraphDesign,previewSourceRange,planInlineFormat,planListFormat,planListIndent,planListBatch,inspectDisplayMath,planDisplayMath,inspectInlineMath,planInlineMath,inspectComponentDisplayMath,planComponentDisplayMath,previewSampleInline,equationReferenceTargets,planEquationReference,planEquationNumbering,planNumberedComponentDisplayMath} from '../dist/index.js';
 const load = (variable, fallback) => import(pathToFileURL(resolve(process.env[variable] ?? fallback)).href);
 const bcm = await load('BCM_DIST', '../BookCreator_Markdown/dist/index.js');
 const engine = await load('ENGINE_DIST', '../BookCreator_LayoutEngine/dist/index.js');
@@ -1120,5 +1120,33 @@ test('study slots resolve and insert equation references without changing siblin
     assert.throws(()=>planEquationNumbering([{...doc,source:next},other],'a',fAt,fAt+3,false,undefined,deps),RangeError);
     const edit=planComponentDisplayMath(next,fAt,fAt+3,'z^2',deps,{documents:[{...doc,source:next},other],documentId:'a'});
     assert.equal(bcm.applyPatches(next,[edit.patch]),next.replace('x^2','z^2'));
+  }
+});
+
+
+test('numbered component insertion is atomic and preserves unrelated manuscript source',()=>{
+  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds,validateDisplayMath:engine.parseDisplayMath,validateInlineMath:engine.parsePreviewMath,parseReference:bcm.parseReferenceToken};
+  for(const nl of ['\n','\r\n'])for(const named of [false,true]){
+    const id='component-00000000-0000-4000-8000-000000000001';
+    const source=(named?['前文。','','::::component{name="'+id+'"}',':::slot{name="content"}','本文。',':::','',':::slot{name="hint"}','ヒント前。','','ヒント後。',':::','::::','','後文。','']:['前文。','',':::callout{kind="note"}','ヒント前。','','ヒント後。',':::','','後文。','']).join(nl);
+    const doc={documentId:'a',revision:'1',source,startOn:'page'};
+    const other={documentId:'b',revision:'1',source:[':::layout{#eq-existing numbered="true"}','$$','y^2','$$',':::',''].join(nl),startOn:'page'};
+    const at=source.indexOf('ヒント前。'+nl+nl)+'ヒント前。'.length+nl.length;
+    const formula='x^2'+nl+'+ 1';
+    const plan=planNumberedComponentDisplayMath([doc,other],'a',at,at,formula,'eq-new',deps);
+    assert.equal(plan.action,'apply');
+    const next=bcm.applyPatches(source,[plan.patch]);
+    assert.equal(next.slice(plan.selection.start,plan.selection.end),formula);
+    const originalPlain=planComponentDisplayMath(source,at,at,formula,deps,{documents:[doc,other],documentId:'a'});
+    const plain=bcm.applyPatches(source,[originalPlain.patch]);
+    const toggle=planEquationNumbering([{...doc,source:plain},other],'a',originalPlain.selection.start,originalPlain.selection.end,true,'eq-new',deps);
+    assert.equal(next,bcm.applyPatches(plain,[toggle.patch]));
+    assert.ok(next.startsWith('前文。'+nl+nl));
+    assert.ok(next.endsWith(nl+nl+'後文。'+nl));
+    assert.deepEqual(equationReferenceTargets([{...doc,source:next},other],deps),[{id:'eq-new',number:'1.1',documentId:'a',formula},{id:'eq-existing',number:'2.1',documentId:'b',formula:'y^2'}]);
+    assert.throws(()=>planNumberedComponentDisplayMath([doc,other],'a',at,at,formula,'eq-existing',deps),RangeError);
+    assert.throws(()=>planNumberedComponentDisplayMath([doc,other],'a',at,at,'\\input{secret}','eq-new',deps),RangeError);
+    assert.throws(()=>planNumberedComponentDisplayMath([doc,other],'a',at,at,formula,'bad id',deps),RangeError);
+    assert.throws(()=>planNumberedComponentDisplayMath([{...doc,source:next},other],'a',plan.selection.start,plan.selection.end,formula,'eq-second',deps),RangeError);
   }
 });
