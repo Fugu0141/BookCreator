@@ -1326,6 +1326,16 @@ async function smoke(){
   const customBefore=await exec("document.querySelector('#source').value");
   await exec("document.querySelector('#editor-view-structured').click()");
   await until("document.querySelector('[data-study-kind=custom]')?.textContent.includes('用語解説')&&!document.querySelector('[data-study-kind=custom] [data-study-edit]').disabled");
+  await exec("document.querySelector('[data-study-kind=custom] [data-study-links]').click()");
+  await until("!!document.querySelector('#structured-study-target')&&!!document.querySelector('#structured-study-generate-id')");
+  await exec("document.querySelector('#structured-study-generate-id').click()");
+  const customStudyIdentity=await exec("document.querySelector('#structured-study-id').value");
+  await exec("document.querySelector('#structured-study-link-apply').click()");
+  await until("!document.querySelector('#study-link-editor')&&document.querySelector('#source').value.includes("+JSON.stringify('#'+customStudyIdentity)+")");
+  if(!await exec("document.querySelector('#source').value.includes("+JSON.stringify('name="'+customId+'"')+")"))throw Error('Custom component definition identity changed');
+  await exec("document.querySelector('#structured-undo').click()");
+  await until("document.querySelector('#source').value==="+JSON.stringify(customBefore));
+
   await exec("document.querySelector('[data-study-kind=custom] [data-study-edit]').click()");
   await setStudyValue('content','登録部品の内容を変更しました。');
   await until("!document.querySelector('#structured-study-apply').disabled");
