@@ -7,8 +7,10 @@ import {fileURLToPath} from 'node:url';
 import {openWorkspace,createProject} from './workspace.mjs';
 import {STIX_FONT,verifyPinnedFontBlob} from './bundled-math-font.mjs';
 import {createHash} from 'node:crypto';
-const SMOKE=process.argv.includes('--smoke');
-const smokeRoot=SMOKE?mkdtempSync(join(tmpdir(),'bc-electron-')):undefined;
+const PACKAGE_SMOKE=process.argv.includes('--package-smoke');
+const SMOKE=PACKAGE_SMOKE||process.argv.includes('--smoke');
+const smokeParent=PACKAGE_SMOKE?process.env.BC_PACKAGE_SMOKE_TMP||tmpdir():tmpdir();
+const smokeRoot=SMOKE?mkdtempSync(join(smokeParent,'bc-electron-')):undefined;
 if(smokeRoot)app.setPath('userData',smokeRoot);
 protocol.registerSchemesAsPrivileged([{scheme:'bookcreator',privileges:{standard:true,secure:true,supportFetchAPI:true}}]);
 const PAGE='bookcreator://app/index.html';
@@ -116,7 +118,38 @@ async function run(){
     await writeFile(join(smokeRoot,'manuscript','chapter.md'),'# 見出し\n\n'+('日本語と English text の実測組版です。 '.repeat(30)).trim()+'\n');
   }
   await win.loadURL(PAGE);
-  if(SMOKE)await smoke();
+  if(PACKAGE_SMOKE)await packageSmoke();
+  else if(SMOKE)await smoke();
+}
+// Short distribution smoke test: no installed fonts, user projects or native dialogs required.
+async function packageSmoke(){
+  const exec=js=>win.webContents.executeJavaScript(js);
+  const until=async js=>{for(let i=0;i<150;i++){if(await exec(js))return;await new Promise(r=>setTimeout(r,100));}throw Error('Package smoke timeout: '+js+'; '+await exec("document.querySelector('#status')?.textContent"));};
+  await until("!!document.querySelector('#open')");
+  if(!await exec("typeof require==='undefined'&&typeof process==='undefined'&&!!window.bookcreator"))throw Error('Renderer isolation failed');
+  await exec("document.querySelector('#open').click()");
+  await until("!!document.querySelector('[data-section=chapter]')");
+  await exec("document.querySelector('[data-section=chapter]').click()");
+  await until("document.querySelector('#source')?.value.includes('見出し')");
+  // The legacy smoke theme intentionally has no math role (auto). Select STIX explicitly.
+  await exec("(()=>{const e=document.querySelector('#math-font');e.value='BCFont_STIXTwoMath';e.dispatchEvent(new Event('change',{bubbles:true}));})()");
+  await until("document.querySelector('#math-font').value==='BCFont_STIXTwoMath'");
+  const sample='# 二次方程式\n\n本文 $x^2$ です。\n\n:::layout{#eq-test numbered="true"}\n$$\n\\frac{1}{2}\n$$\n:::\n';
+  await exec("(()=>{const el=document.querySelector('#source');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(el,"+JSON.stringify(sample)+");el.dispatchEvent(new Event('input',{bubbles:true}));})()");
+  await until("document.querySelector('#source').value==="+JSON.stringify(sample));
+  await exec("document.querySelector('#preview-button').click()");
+  await until("!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-inline-math] math msup')&&!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-display-math] math mfrac')&&document.querySelector('#preview > div').shadowRoot.querySelector('[data-equation-number]')?.textContent==='(1.1)'");
+  await exec("document.fonts.ready.then(()=>true)");
+  await until("(()=>{const root=document.querySelector('#preview > div')?.shadowRoot,math=[...root?.querySelectorAll('math')??[]],faces=[...document.fonts];return math.length===2&&math.every(m=>m.style.fontFamily.includes('BCFont_STIXTwoMath'))&&faces.some(f=>f.family.includes('BCFont_NotoSansJP')&&f.status==='loaded')&&faces.some(f=>f.family.includes('BCFont_STIXTwoMath')&&f.status==='loaded');})()");
+  await exec("document.querySelector('#save').click()");
+  await until("document.querySelector('#status').textContent.includes('保存しました')");
+  if(await readFile(join(smokeRoot,'manuscript','chapter.md'),'utf8')!==sample)throw Error('Packaged app source save mismatch');
+  const report='PASS portable Windows package: isolated renderer, workspace, math, bundled fonts, numbering, save';
+  if(process.env.BC_PACKAGE_SMOKE_REPORT)await writeFile(process.env.BC_PACKAGE_SMOKE_REPORT,report+'\n',{flag:'wx'});
+  console.log(report);
+  // Chromium still holds profile databases until the process exits on Windows.
+  // The package test runner owns and removes the isolated parent after exit.
+  closing=true;win.destroy();app.exit(0);
 }
 async function smoke(){
   const exec=js=>win.webContents.executeJavaScript(js);
@@ -1204,4 +1237,4 @@ async function smoke(){
 }
 app.on('window-all-closed',()=>{if(!SMOKE)app.quit();});
 if(!SMOKE&&!app.requestSingleInstanceLock())app.quit();
-else run().catch(async e=>{console.error(e);if(SMOKE&&smokeRoot)await rm(smokeRoot,{recursive:true,force:true,maxRetries:10,retryDelay:100}).catch(()=>{});app.exit(1);});
+else run().catch(async e=>{console.error(e);if(SMOKE&&!PACKAGE_SMOKE&&smokeRoot)await rm(smokeRoot,{recursive:true,force:true,maxRetries:10,retryDelay:100}).catch(()=>{});app.exit(1);});
