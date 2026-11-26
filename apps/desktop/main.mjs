@@ -887,6 +887,24 @@ async function smoke(){
   const customId=await exec("Array.from(document.querySelector('#lab-library-select').options).find(e=>e.textContent==='用語解説').value");
   await exec("document.querySelector('#lab-cancel').click()");
   await until("!document.querySelector('#lab-measure')");
+  const catalogThemeBefore=await readFile(join(smokeRoot,'new-book','themes','default','theme.yaml'),'utf8');
+  await exec("(()=>{const e=document.querySelector('#component-filter');e.value='registered';e.dispatchEvent(new Event('change',{bubbles:true}));})()");
+  await until("!!document.querySelector('[data-catalog-edit=registered-"+customId+"]')");
+  await exec("document.querySelector('[data-catalog-edit=registered-"+customId+"]').click()");
+  await until("document.querySelector('#lab-library-select')?.value==="+JSON.stringify(customId)+"&&document.querySelector('#lab-library-name').value==='用語解説'&&!document.querySelector('#lab-library-bind')&&document.querySelector('#lab-library-replace').disabled");
+  await exec("document.querySelector('#lab-measure').click()");
+  await until("!document.querySelector('#lab-library-replace').disabled&&Array.from(document.querySelector('#lab-preview > div').shadowRoot.querySelectorAll('[data-fixed-label]')).some(e=>e.textContent==='用語解説：サンプル')");
+  await exec("document.querySelector('#lab-cancel').click()");
+  await until("!document.querySelector('#lab-measure')");
+  if(await readFile(join(smokeRoot,'new-book','themes','default','theme.yaml'),'utf8')!==catalogThemeBefore)throw Error('Opening registered component changed saved theme');
+  await exec("(()=>{const e=document.querySelector('#component-filter');e.value='all';e.dispatchEvent(new Event('change',{bubbles:true}));})()");
+  await exec("document.querySelector('[data-catalog-edit=heading-3]').click()");
+  await until("document.querySelector('#lab-measure')&&document.querySelector('.component-lab header').textContent.includes('H3')");
+  await exec("document.querySelector('#lab-cancel').click()");
+  await until("!document.querySelector('#lab-measure')");
+  // Restore the previous H1 target for the legacy quick-select regressions.
+  await exec("(()=>{const e=document.querySelector('#lab-level');e.value='1';e.dispatchEvent(new Event('change',{bubbles:true}));})()");
+  await until("document.querySelector('#lab-level').value==='1'");
   await exec("(()=>{const e=document.querySelector('#study-kind');e.value="+JSON.stringify(customId)+";e.dispatchEvent(new Event('change',{bubbles:true}));})()");
   await exec("document.querySelector('#study-append').click()");
   await until("document.querySelector('#source').value.includes("+JSON.stringify('name="'+customId+'"')+")");
