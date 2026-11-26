@@ -98,7 +98,6 @@ function App(){
     if(busy||working.current||!file?.editable||!node||composing.current)return;
     try{
       if(node.value!==text)throw Error('原稿の編集状態が変わりました。');
-      if(kind==='inline'&&theme?.paragraphDesign)throw Error('本文フレーム内の数式はまだ未対応です。標準本文で使用してください。');
       const start=node.selectionStart,end=node.selectionEnd,target=kind==='inline'?inspectInlineMath(text,start,end,deps):inspectDisplayMath(text,start,end,scanDocument);
       mathComposing.current=false;
       setMathDraft({kind,start,end,formula:target.formula,mode:target.mode,numbered:kind==='display'&&!!target.numbered,equationId:kind==='display'?target.equationId:undefined,source:text,fileId:file.id,revision:file.revision,job:generation.current});
@@ -109,7 +108,6 @@ function App(){
     if(!mathDraft||busy||working.current||!file?.editable||!node||composing.current||mathComposing.current)return;
     try{
       if(mathStale||node.value!==mathDraft.source)throw Error('原稿が変更されました。数式エディタを開き直してください。');
-      if(mathDraft.kind==='inline'&&theme?.paragraphDesign)throw Error('本文フレーム内の数式は未対応です。');
       const plan=mathDraft.kind==='inline'?planInlineMath(text,mathDraft.start,mathDraft.end,mathDraft.formula,deps):planDisplayMath(text,mathDraft.start,mathDraft.end,mathDraft.formula,scanDocument,parsePreviewMath,mathDraft.mode==='insert'&&mathDraft.numbered?mathDraft.equationId:undefined);
       const next=applyPatches(text,[plan.patch]);
       setMathDraft(null);edit(next);setStatus((mathDraft.kind==='inline'?'本文内数式':'独立数式')+'を'+(plan.action==='apply'?'挿入':'更新')+'しました（未保存）。');
@@ -266,7 +264,9 @@ function App(){
         bind(el,previewSourceRange(block,slice));
         for(const node of el.querySelectorAll('[data-inline-math]')){
           const textStart=Number(node.dataset.mathStart),textEnd=Number(node.dataset.mathEnd);
-          if(textStart>=slice.textStart&&textEnd<=slice.textEnd&&textEnd===textStart+1)bind(node,previewSourceRange(block,{textStart,textEnd}));
+          const name=node.closest('[data-named-slot]')?.dataset.namedSlot;
+          const local=name===undefined?slice:slice.namedSlots?.find(s=>s.name===name);
+          if(local&&textStart>=local.textStart&&textEnd<=local.textEnd&&textEnd===textStart+1)bind(node,previewSourceRange(block,{textStart,textEnd},name));
         }
         for(const node of el.querySelectorAll('[data-named-slot]')){
           const named=slice.namedSlots?.find(s=>s.name===node.dataset.namedSlot);
