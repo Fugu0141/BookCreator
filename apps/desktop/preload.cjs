@@ -1,6 +1,10 @@
 const {contextBridge,ipcRenderer}=require('electron');
 contextBridge.exposeInMainWorld('bookcreator',Object.freeze({
   open:()=>ipcRenderer.invoke('bookcreator:open'),
+  listProjects:()=>ipcRenderer.invoke('bookcreator:listProjects'),
+  openRegisteredProject:id=>ipcRenderer.invoke('bookcreator:openRegisteredProject',id),
+  favoriteProject:(id,value)=>ipcRenderer.invoke('bookcreator:favoriteProject',id,value),
+  forgetProject:id=>ipcRenderer.invoke('bookcreator:forgetProject',id),
   create:options=>ipcRenderer.invoke('bookcreator:create',options),
   readImage:id=>ipcRenderer.invoke('bookcreator:readImage',id),
   listImages:()=>ipcRenderer.invoke('bookcreator:listImages'),
