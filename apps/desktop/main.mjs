@@ -271,7 +271,11 @@ async function run(){
   }
   await win.loadURL(PAGE);
   if(SMOKE){
-    if(!PACKAGE_RESTART_SMOKE)await liveWritingSmoke();
+    if(!PACKAGE_RESTART_SMOKE){
+      await liveWritingSmoke();
+      // Legacy scenarios start with a fresh renderer, not a previously open book.
+      await win.loadURL(PAGE);
+    }
     await selectManualPreviewForRegression();
   }
   if(EXTRA_CRASH_MODE)await productionDataCrashSmoke(EXTRA_CRASH_MODE);
