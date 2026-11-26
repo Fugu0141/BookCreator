@@ -1121,7 +1121,7 @@ async function writingJourneySmoke(){
   await input('[data-study-value=content]',problem);
   await click('#structured-study-apply');
   await until('study committed',"document.querySelector('#source').value.includes("+JSON.stringify(problem)+")&&!document.querySelector('#structured-study-apply')");
-  const expected=await raw("document.querySelector('#source').value");
+  let expected=await raw("document.querySelector('#source').value");
   if(!expected.includes(paragraph)||!expected.includes('x^2-5x+6=0')||!expected.includes(problem)||await readFile(manuscript,'utf8')!==initial)throw Error('Writing journey: draft was lost or saved implicitly');
   await click('#mode-layout');
   await until('layout mode',mode('layout'));
@@ -1132,6 +1132,53 @@ async function writingJourneySmoke(){
   await click('#save');
   await until('saved',"document.querySelector('#workspace-save-state').textContent==='保存済み'");
   if(await readFile(manuscript,'utf8')!==expected)throw Error('Writing journey: saved manuscript differs');
+  // UX-10b: create a genuinely customized study design in this same book.
+  const themePath=join(smokeRoot,folder,'themes','default','theme.yaml');
+  const themeBefore=await readFile(themePath,'utf8');
+  const customName='二次方程式のポイント',customContent='積が6、和が5になる二つの数を探します。';
+  await click('#mode-design');
+  await click('#design-tab-components');
+  await click('#catalog-custom-new');
+  await until('custom editor',"!!document.querySelector('#lab-library-name')&&!document.querySelector('#lab-library-bind')");
+  await input('#lab-library-name',customName);
+  await click('[data-property-choice=layout]');
+  const padding=await raw("Number(document.querySelector('#lab-padding').value)===5?6:5");
+  await input('#lab-padding',String(padding));
+  await until('changed padding',"Number(document.querySelector('#lab-padding').value)==="+padding);
+  await click('#lab-measure');
+  await until('custom measured',"!document.querySelector('#lab-library-add').disabled&&[...document.querySelector('#lab-preview > div')?.shadowRoot?.querySelectorAll('[data-fixed-label]')??[]].some(e=>e.textContent==="+JSON.stringify(customName+'：サンプル')+")");
+  if(await readFile(themePath,'utf8')!==themeBefore||await readFile(manuscript,'utf8')!==expected)throw Error('Writing journey: unregistered component changed disk');
+  await click('#lab-library-add');
+  await until('custom registered',"[...document.querySelector('#lab-library-select')?.options??[]].some(e=>e.textContent==="+JSON.stringify(customName)+")&&!document.querySelector('#lab-cancel').disabled");
+  const customId=await raw("[...document.querySelector('#lab-library-select').options].find(e=>e.textContent==="+JSON.stringify(customName)+").value");
+  if(!/^component-[a-f0-9-]+$/.test(customId))throw Error('Writing journey: invalid registered component ID');
+  const themeRegistered=await readFile(themePath,'utf8');
+  if(themeRegistered===themeBefore||!themeRegistered.includes(customId)||await readFile(manuscript,'utf8')!==expected)throw Error('Writing journey: component registration did not preserve manuscript');
+  await click('#lab-cancel');
+  await until('catalog after registration',"!document.querySelector('#lab-measure')&&!!document.querySelector("+JSON.stringify('[data-catalog-edit=registered-'+customId+']')+")");
+  await click('#mode-writing');
+  await until('same manuscript after design',mode('writing')+"&&document.querySelector('#source').value==="+JSON.stringify(expected));
+  await click('#structured-insert-toggle');
+  await click('[data-insert-category=study]');
+  await until('registered choice visible',"!!document.querySelector('#structured-insert-kind')?.getClientRects().length&&[...document.querySelector('#structured-insert-kind').options].some(e=>e.value==="+JSON.stringify(customId)+")");
+  await raw("(()=>{const e=document.querySelector('#structured-insert-kind');e.value="+JSON.stringify(customId)+";e.dispatchEvent(new Event('change',{bubbles:true}));})()");
+  await until('registered choice selected',"document.querySelector('#structured-insert-kind').value==="+JSON.stringify(customId));
+  await click('#structured-append');
+  await until('custom inserted',"!!document.querySelector('[data-study-kind=custom]')&&document.querySelector('#source').value.includes("+JSON.stringify('name="'+customId+'"')+")");
+  await click('[data-study-kind=custom] [data-study-edit]');
+  await input('[data-study-value=content]',customContent);
+  await click('#structured-study-apply');
+  await until('custom content applied',"document.querySelector('#source').value.includes("+JSON.stringify(customContent)+")&&!document.querySelector('#structured-study-apply')");
+  if(await readFile(manuscript,'utf8')!==expected||await readFile(themePath,'utf8')!==themeRegistered)throw Error('Writing journey: custom instance edit saved implicitly or changed definition');
+  expected=await raw("document.querySelector('#source').value");
+  await click('#mode-layout');
+  await click('#preview-book');
+  const customOnPaper="[...document.querySelector('#preview > div')?.shadowRoot?.querySelectorAll('[data-fixed-label]')??[]].some(e=>e.textContent==="+JSON.stringify(customName)+")";
+  await until('custom measured in book',"document.querySelector('#workspace-layout-state').dataset.phase==='ready'&&document.querySelector('#workspace-layout-state').dataset.scope==='book'&&"+customOnPaper);
+  await click('#mode-writing');
+  await click('#save');
+  await until('custom instance saved',"document.querySelector('#workspace-save-state').textContent==='保存済み'");
+  if(await readFile(manuscript,'utf8')!==expected)throw Error('Writing journey: custom instance save mismatch');
   // Start a fresh renderer in the same isolated Electron process/profile.
   // This verifies catalog reload from disk; not a full OS/process restart.
   await win.loadURL(PAGE);
@@ -1141,11 +1188,20 @@ async function writingJourneySmoke(){
   await click('[data-section=chapter-01]');
   await until('reloaded exact source',"document.querySelector('#source').value==="+JSON.stringify(expected)+"&&document.querySelector('#workspace-save-state').textContent==='保存済み'&&document.querySelector('#workspace-layout-state').dataset.phase==='idle'");
   await click('#editor-view-structured');
-  await until('reloaded GUI',"!!document.querySelector('[data-structured-kind=math] math')&&!!document.querySelector('[data-study-kind=example]')&&document.querySelector('#structured-editor').textContent.includes("+JSON.stringify(paragraph)+")");
+  await until('reloaded GUI',"!!document.querySelector('[data-structured-kind=math] math')&&!!document.querySelector('[data-study-kind=example]')&&!!document.querySelector('[data-study-kind=custom]')&&document.querySelector('#structured-editor').textContent.includes("+JSON.stringify(paragraph)+")");
   await click('#mode-layout');
   await click('#preview-book');
   await until('recomposed book',"document.querySelector('#workspace-layout-state').dataset.phase==='ready'&&document.querySelector('#workspace-layout-state').dataset.scope==='book'&&!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-display-math] math')");
-  if(await readFile(manuscript,'utf8')!==expected)throw Error('Writing journey: reload or compose changed saved manuscript');
+  await until('custom on reloaded paper',customOnPaper);
+  await click('#mode-design');
+  await click('#design-tab-components');
+  await click('[data-catalog-edit=registered-'+customId+']');
+  await click('[data-property-choice=layout]');
+  await until('reloaded component geometry',"Number(document.querySelector('#lab-padding').value)==="+padding+"&&document.querySelector('#lab-library-name').value==="+JSON.stringify(customName));
+  await click('#lab-cancel');
+  await until('closed component editor',"!document.querySelector('#lab-measure')");
+  if(await readFile(manuscript,'utf8')!==expected||await readFile(themePath,'utf8')!==themeRegistered)throw Error('Writing journey: reload or compose changed saved files');
+  console.log('PASS UX-10b custom component design, registration, insertion, measured paper and persisted geometry');
   console.log('PASS UX-10a new A5 book, structured writing, math, study component, whole-book composition, explicit save and fresh renderer reopen');
 }
 async function smoke(){
