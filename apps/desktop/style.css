@@ -70,3 +70,18 @@ body{font-family:BCFont_NotoSansJP,system-ui,sans-serif}.font-control,.typograph
   .workspace-main.mode-writing.with-paper{grid-template-columns:120px minmax(0,1fr);grid-template-rows:minmax(200px,1fr) minmax(180px,1fr)}
   .workspace-main.mode-writing.with-paper>.paper{grid-column:1/-1}
 }
+
+
+/* UX-02b — independent save/layout indicators and next-action guidance. */
+.workspace-statusbar{flex:none;display:flex;align-items:center;min-height:34px;max-height:70px;background:white;border-top:1px solid #d7e0e7;gap:12px;padding:4px 16px}
+#workspace-layout-state{flex:none;color:#315b76;font-size:12px;font-weight:600}
+#workspace-layout-state[data-phase=stale],#workspace-layout-state[data-phase=failed]{color:#8b4b18}
+.workspace-statusbar>footer{flex:1;min-width:0;border:0;padding:3px 0;max-height:60px;font-size:12px;overflow:auto}
+.save-indicator[data-dirty=true]{color:#ffe0ac}
+.workspace-hint{border:1px solid #d7e0e7;background:white;color:#475569;border-radius:6px;margin:0 0 12px;padding:12px;font-size:13px}
+.publication-checks{display:grid;gap:12px;max-width:720px}
+.publication-checks>section{border:1px solid #d7e0e7;border-radius:8px;background:white;padding:16px}
+.publication-checks>section h2{margin:0 0 8px}
+.publication-checks>section p{margin:8px 0;color:#475569}
+.publication-checks>section button{margin:4px 8px 0 0}
+@media(max-width:720px){.workspace-statusbar{gap:8px;padding:4px 8px;flex-wrap:wrap}.workspace-statusbar>footer{flex-basis:100%}}
