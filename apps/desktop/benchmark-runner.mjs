@@ -2,6 +2,7 @@ import {mkdir,writeFile,readFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {benchmarkFixture} from './benchmark-fixture.mjs';
 import {cacheComparisonPlan,summarizeCacheComparison} from './benchmark-comparison.mjs';
+import {benchmarkPaperSignature} from './benchmark-paper-signature.mjs';
 import {phaseKeys} from './preview-phase-metrics.mjs';
 export async function prepareBenchmark(root){
   const fixture=benchmarkFixture();
@@ -45,7 +46,7 @@ export async function runBookBenchmark(win,app,root,fixture){
     samples.push(row);console.log('BENCH sample '+JSON.stringify(row));
   }
   const initialMemory=memory();
-  const paperSignature=()=>raw("JSON.stringify(Array.from(document.querySelector('#preview > div').shadowRoot.querySelectorAll('[data-page]')).map(p=>p.outerHTML))");
+  const paperSignature=()=>raw('('+benchmarkPaperSignature.toString()+")(document.querySelector('#preview > div').shadowRoot)");
   const cacheStats=()=>raw("(()=>{const e=document.querySelector('#performance-cache');return {hits:Number(e.dataset.hits),misses:Number(e.dataset.misses),entries:Number(e.dataset.entries)};})()");
   const mathStats=()=>raw("JSON.parse(document.querySelector('#performance-math-cache').dataset.stats)");
   const paragraphStats=()=>raw("JSON.parse(document.querySelector('#performance-paragraph-cache').dataset.stats)");
