@@ -165,7 +165,7 @@ function workspaceSmokeExec(){
     if(/\.(?:click|dispatchEvent|setSelectionRange|focus)\(/.test(js)){
       const selectors=[...js.matchAll(/document\.querySelector\((['"])(.*?)\1\)|document\.getElementById\((['"])(.*?)\3\)/g)].map(m=>m[2]??'#'+m[4]);
       const selector=selectors[0];
-      const mode=selector&&routeFor(selector);
+      const mode=selector&&/^#preview-(?:book|button)$/.test(selector)&&await raw("document.querySelector('.workspace-shell').dataset.workspaceMode==='layout'")?'layout':selector&&routeFor(selector);
       if(mode&&!await raw("document.querySelector('.workspace-shell').dataset.workspaceMode==="+JSON.stringify(mode))){
         await raw("document.querySelector('#mode-"+mode+"').click()");
         let visible=false;
@@ -317,6 +317,29 @@ async function packageSmoke(){
   await until("document.querySelector('#workspace-save-state').textContent==='保存済み'");
   await exec("document.querySelector('#mode-writing').click()");
   await until("document.querySelector('.workspace-shell').dataset.workspaceMode==='writing'");
+  const navigationSample=sample+'\n'+Array.from({length:10},()=>('ページ移動のための日本語本文を確認します。'.repeat(22))).join('\n\n')+'\n';
+  const setNavigationSource=value=>exec("(()=>{const e=document.querySelector('#source');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(e,"+JSON.stringify(value)+");e.dispatchEvent(new Event('input',{bubbles:true}));})()");
+  await setNavigationSource(navigationSample);
+  await exec("document.querySelector('#mode-layout').click()");
+  await until("document.querySelector('.workspace-shell').dataset.workspaceMode==='layout'&&!document.querySelector('#layout-pages')");
+  await exec("document.querySelector('#preview-book').click()");
+  await until("document.querySelector('#workspace-layout-state').dataset.phase==='ready'&&document.querySelector('#workspace-layout-state').dataset.scope==='book'&&document.querySelectorAll('[data-layout-page]').length>1");
+  if(!await exec("document.querySelectorAll('[data-layout-page]').length===document.querySelector('#preview > div').shadowRoot.querySelectorAll('[data-page]').length&&document.querySelector('#layout-page-scope').textContent.includes('書籍全体')&&document.querySelector('.layout-page-info').textContent.includes('chapter')&&document.querySelector('#layout-prev').disabled"))throw Error('Page list does not represent measured pages');
+  await exec("document.querySelector('#layout-next').click()");
+  await until("document.querySelector('[data-layout-page=2]').getAttribute('aria-current')==='page'&&document.querySelector('#preview').scrollTop>0&&document.querySelector('#layout-page-jump').value==='2'");
+  await exec("document.querySelector('[data-layout-page=1]').click()");
+  await until("document.querySelector('[data-layout-page=1]').getAttribute('aria-current')==='page'&&document.querySelector('#preview').scrollTop<20");
+  await exec("(()=>{const e=document.querySelector('#layout-page-jump');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,'2');e.dispatchEvent(new Event('input',{bubbles:true}));})()");
+  await exec("document.querySelector('#layout-jump').click()");
+  await until("document.querySelector('[data-layout-page=2]').getAttribute('aria-current')==='page'");
+  await exec("document.querySelector('#layout-prev').click()");
+  await until("document.querySelector('[data-layout-page=1]').getAttribute('aria-current')==='page'");
+  await exec("document.querySelector('#mode-writing').click()");
+  await setNavigationSource(sample);
+  await until("document.querySelector('#workspace-layout-state').dataset.phase==='stale'&&!document.querySelector('#layout-pages')&&!document.querySelector('#preview > div')");
+  await exec("document.querySelector('#preview-button').click()");
+  await until("document.querySelector('#workspace-layout-state').dataset.phase==='ready'&&document.querySelector('#workspace-layout-state').dataset.scope==='manuscript'");
+  if(await readFile(join(smokeRoot,'manuscript','chapter.md'),'utf8')!==sample)throw Error('Page navigation changed saved manuscript');
   await exec("(()=>{const e=document.querySelector('#source');e.dispatchEvent(new CompositionEvent('compositionstart',{bubbles:true,data:'あ'}));})()");
   await until("document.querySelector('#mode-design').disabled");
   await exec("(()=>{const e=document.querySelector('#source');e.dispatchEvent(new CompositionEvent('compositionend',{bubbles:true,data:'あ'}));})()");
