@@ -429,6 +429,23 @@ async function packageSmoke(){
   await until("!document.querySelector('#structured-value')&&document.querySelector('#source').value==="+JSON.stringify(inlineStructured.replace('$y^2$','$y^3$')));
   await exec("document.querySelector('[data-mixed-edit]').click()");
   await until("document.querySelectorAll('[data-mixed-math] math').length===2&&!!document.querySelector('[data-mixed-text]')");
+  // UX-08f-5b: mixed formula updates are staged, invalid formula and cancel are safe.
+  await exec("document.querySelectorAll('[data-mixed-math-edit]')[1].click()");
+  await until("document.querySelector('#mixed-math-formula')?.value==='y^3'&&document.querySelector('#structured-apply').disabled");
+  const setMixedFormula=value=>exec("(()=>{const e=document.querySelector('#mixed-math-formula');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,"+JSON.stringify(value)+");e.dispatchEvent(new Event('input',{bubbles:true}));})()");
+  await setMixedFormula('\\notacommand{x}');
+  await until("document.querySelector('#mixed-math-update').disabled");
+  await setMixedFormula('y^4');
+  await until("!document.querySelector('#mixed-math-update').disabled");
+  await exec("document.querySelector('#mixed-math-update').click()");
+  await until("!document.querySelector('#mixed-math-formula')&&!document.querySelector('#structured-apply').disabled&&document.querySelector('#source').value==="+JSON.stringify(inlineStructured.replace('$y^2$','$y^3$')));
+  await exec("document.querySelector('#structured-apply').click()");
+  await until("document.querySelector('#source').value==="+JSON.stringify(inlineStructured.replace('$y^2$','$y^4$')));
+  await exec("document.querySelector('#structured-undo').click()");
+  await until("document.querySelector('#source').value==="+JSON.stringify(inlineStructured.replace('$y^2$','$y^3$')));
+  await exec("document.querySelector('[data-mixed-edit]').click()");
+  await until("!!document.querySelector('[data-mixed-text]')");
+
   await exec("document.querySelector('#structured-cancel').click()");
   await until("!document.querySelector('[data-mixed-text]')&&document.querySelector('#source').value==="+JSON.stringify(inlineStructured.replace('$y^2$','$y^3$')));
 
@@ -635,6 +652,19 @@ async function packageSmoke(){
   await exec("document.querySelector('[data-mixed-edit]').click()");
   await until("document.querySelector('[data-mixed-text=\"0\"]')?.value==='本文'&&document.querySelector('#save').disabled");
   const setMixed=(i,value)=>exec("(()=>{const e=document.querySelector('[data-mixed-text=\""+i+"\"]');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(e,"+JSON.stringify(value)+");e.dispatchEvent(new Event('input',{bubbles:true}));})()");
+  await exec("(()=>{const e=document.querySelector('[data-mixed-text=\"0\"]');e.focus();e.setSelectionRange(1,1);document.querySelector('[data-mixed-math-insert=\"0\"]').click();})()");
+  await until("!!document.querySelector('#mixed-math-formula')");
+  await setMixedFormula('x^2');
+  await until("!document.querySelector('#mixed-math-update').disabled");
+  await exec("document.querySelector('#mixed-math-update').click()");
+  await until("!!document.querySelector('[data-mixed-math] math')&&!!document.querySelector('[data-mixed-reference]')&&document.querySelector('#source').value==="+JSON.stringify(referenceSource));
+  await exec("document.querySelector('#structured-apply').click()");
+  await until("document.querySelector('#source').value==="+JSON.stringify(referenceSource.replace('本文:ref','本$x^2$文:ref')));
+  await exec("document.querySelector('#structured-undo').click()");
+  await until("document.querySelector('#source').value==="+JSON.stringify(referenceSource));
+  await exec("document.querySelector('[data-mixed-edit]').click()");
+  await until("document.querySelector('[data-mixed-text=\"0\"]')?.value==='本文'");
+
   await setMixed(0,'本文*');
   await until("document.querySelector('#structured-apply').disabled");
   await setMixed(0,'新しい本文');
@@ -651,6 +681,34 @@ async function packageSmoke(){
   await until("document.querySelector('#preview > div')?.shadowRoot?.textContent.includes('式 (1.1)')&&!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-equation-number]')");
   await exec("document.querySelector('#structured-undo').click()");
   await until("document.querySelector('#source').value==="+JSON.stringify(formulaSource));
+  await exec("document.querySelector('#editor-view-source').click()");
+  // UX-08f-5c: select, cancel, retarget, insert and undo a reference in mixed text.
+  const twoRefs=referenceSource+'\n:::layout{#eq-mixed-second numbered="true"}\n$$\ny^2\n$$\n:::\n';
+  await setStructuredSource(twoRefs);
+  await exec("document.querySelector('#editor-view-structured').click()");
+  await exec("document.querySelector('[data-mixed-edit]').click()");
+  await exec("document.querySelector('[data-mixed-reference-edit]').click()");
+  await until("document.querySelector('#equation-reference-target')?.value==="+JSON.stringify(structuredEqId)+"&&Array.from(document.querySelector('#equation-reference-target').options).some(o=>o.value==='eq-mixed-second')");
+  await exec("document.querySelector('#equation-reference-cancel').click()");
+  await until("!document.querySelector('#equation-reference-editor')&&!!document.querySelector('[data-mixed-text]')&&document.querySelector('#source').value==="+JSON.stringify(twoRefs));
+  await setMixed(0,'新しい本文');
+  await exec("document.querySelector('[data-mixed-reference-edit]').click()");
+  await until("!!document.querySelector('#equation-reference-target')");
+  await exec("(()=>{const e=document.querySelector('#equation-reference-target');e.value='eq-mixed-second';e.dispatchEvent(new Event('change',{bubbles:true}));const f=document.querySelector('#equation-reference-format');f.value='number';f.dispatchEvent(new Event('change',{bubbles:true}));})()");
+  await until("document.querySelector('#equation-reference-target').value==='eq-mixed-second'&&document.querySelector('#equation-reference-format').value==='number'");
+  await exec("document.querySelector('#equation-reference-apply').click()");
+  const retargeted=twoRefs.replace('本文:ref{target="'+structuredEqId+'" format="label-number"}','新しい本文:ref{target="eq-mixed-second" format="number"}');
+  await until("!document.querySelector('#equation-reference-editor')&&!document.querySelector('[data-mixed-text]')&&document.querySelector('#source').value==="+JSON.stringify(retargeted));
+  await exec("document.querySelector('[data-mixed-edit]').click()");
+  await exec("(()=>{const e=document.querySelector('[data-mixed-text=\"0\"]');e.focus();e.setSelectionRange(1,1);document.querySelector('[data-mixed-reference-insert=\"0\"]').click();})()");
+  await until("!!document.querySelector('#equation-reference-target')");
+  await exec("document.querySelector('#equation-reference-apply').click()");
+  const insertedRef=retargeted.replace('新しい本文','新:ref{target="'+structuredEqId+'" format="label-number"}しい本文');
+  await until("!document.querySelector('#equation-reference-editor')&&document.querySelector('#source').value==="+JSON.stringify(insertedRef));
+  await exec("document.querySelector('#structured-undo').click()");
+  await until("document.querySelector('#source').value==="+JSON.stringify(retargeted));
+  await exec("document.querySelector('#structured-undo').click()");
+  await until("document.querySelector('#source').value==="+JSON.stringify(twoRefs));
   await exec("document.querySelector('#editor-view-source').click()");
   await setStructuredSource(sample);
   await until("document.querySelector('#source').value==="+JSON.stringify(sample));

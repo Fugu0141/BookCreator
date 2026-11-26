@@ -31,21 +31,82 @@ export function projectMixed(value){
     return {parts};
   }catch{return null;}
 }
+const fixedParts=parts=>parts.filter(p=>p.kind!=='text'&&p.kind!=='math').map(p=>[p.kind,p.raw]);
+export function mixedDraftParts(original,draft){
+  const staged=draft.mixedLayout===undefined?original:projectMixed(draft.mixedLayout);
+  if(!staged||JSON.stringify(fixedParts(staged.parts))!==JSON.stringify(fixedParts(original.parts)))throw Error('参照または書式が変化しました。');
+  return staged;
+}
+function composeMixed(parts,values){
+  if(!Array.isArray(values)||values.length!==parts.filter(p=>p.kind==='text').length||values.some(v=>typeof v!=='string'||v.includes('\r')))throw Error('文章入力が不正です。');
+  let index=0;
+  const value=parts.map(p=>p.kind==='text'?values[index++]:p.raw).join('');
+  const check=projectMixed(value);
+  index=0;
+  if(!check||check.parts.length!==parts.length||check.parts.some((p,i)=>p.kind!==parts[i].kind||(p.kind==='text'?p.value!==values[index++]:p.raw!==parts[i].raw)))throw Error('数式・参照・書式の構造が変化する入力は反映できません。');
+  return {value,parts:check.parts};
+}
+export function planMixedMath(draft,request){
+  if(!draft?.mixed||!draft.row?.mixed)throw Error('混在本文を開き直してください。');
+  const {formula}=request;
+  if(typeof formula!=='string'||!formula||formula.length>2048||formula.trim()!==formula||/[\r\n$]/.test(formula))throw Error('数式に改行・ドル記号・前後の空白は入力できません。');
+  parsePreviewMath(formula);
+  const current=composeMixed(mixedDraftParts(draft.row.mixed,draft).parts,draft.values);
+  const parts=current.parts.slice(),at=request.part;
+  if(!Number.isSafeInteger(at)||!parts[at])throw Error('数式の位置が変化しました。');
+  const atom={kind:'math',raw:'$'+formula+'$',formula};
+  if(request.mode==='edit'){
+    if(parts[at].kind!=='math'||parts[at].raw!==request.original)throw Error('元の数式が変化しました。');
+    parts[at]=atom;
+  }else if(request.mode==='insert'){
+    const part=parts[at],pos=request.start;
+    if(part.kind!=='text'||part.value!==request.original||request.end!==pos||!Number.isSafeInteger(pos)||pos<0||pos>part.value.length)throw Error('文章内のカーソル位置を指定してください。');
+    const boundaries=new Set([part.value.length,...Array.from(new Intl.Segmenter(undefined,{granularity:'grapheme'}).segment(part.value),g=>g.index)]);
+    if(!boundaries.has(pos))throw Error('文字の途中には挿入できません。');
+    parts.splice(at,1,{kind:'text',value:part.value.slice(0,pos)},atom,{kind:'text',value:part.value.slice(pos)});
+  }else throw Error('未対応の数式操作');
+  const values=parts.filter(p=>p.kind==='text').map(p=>p.value);
+  const next=composeMixed(parts,values);
+  return {...draft,mixedLayout:next.value,values,inlineEdit:null};
+}
 export function planMixedEdit(source,draft,{scan,parseInline,applyPatches,project}){
   if(draft.source!==source)throw Error('原稿が変更されました。');
   const before=project(source,scan,parseInline),at=before.rows.findIndex(r=>r.range.start===draft.row.range.start&&r.raw===draft.row.raw),row=before.rows[at];
   if(before.diagnostics.length||!row?.mixed||!Array.isArray(draft.values))throw Error('本文の構造が変更されました。');
-  const parts=row.mixed.parts;
-  if(draft.values.length!==parts.filter(p=>p.kind==='text').length||draft.values.some(v=>typeof v!=='string'||v.includes('\r')))throw Error('文章入力が不正です。');
-  let index=0;
-  const value=parts.map(p=>p.kind==='text'?draft.values[index++]:p.raw).join('');
-  const check=projectMixed(value);
-  index=0;
-  if(!check||check.parts.length!==parts.length||check.parts.some((p,i)=>p.kind!==parts[i].kind||(p.kind==='text'?p.value!==draft.values[index++]:p.raw!==parts[i].raw)))throw Error('数式・参照・書式の構造が変化する入力は反映できません。');
+  const parts=mixedDraftParts(row.mixed,draft).parts;
+  const {value}=composeMixed(parts,draft.values);
+  return replaceMixedParagraph(source,before,at,row,value,{scan,parseInline,applyPatches,project});
+}
+function replaceMixedParagraph(source,before,at,row,value,{scan,parseInline,applyPatches,project},allowReference=false){
   const body=row.raw.replace(/(?:\r\n|\n)$/,''),suffix=row.raw.slice(body.length);
   const crlf=row.raw.includes('\r\n')||(!row.raw.includes('\n')&&source.includes('\r\n'));
   const replacement=(crlf?value.replace(/\n/g,'\r\n'):value)+suffix;
   const next=applyPatches(source,[{range:row.range,expected:row.raw,replacement}]),after=project(next,scan,parseInline);
-  if(after.diagnostics.length||after.rows.length!==before.rows.length||after.rows.some((r,i)=>i!==at&&(r.raw!==before.rows[i].raw||r.kind!==before.rows[i].kind))||!after.rows[at]?.mixed||after.rows[at].raw!==replacement||after.rows[at].kind!==row.kind)throw Error('周囲の原稿構造が変化しました。');
+  if(after.diagnostics.length||after.rows.length!==before.rows.length||after.rows.some((r,i)=>i!==at&&(r.raw!==before.rows[i].raw||r.kind!==before.rows[i].kind))||!after.rows[at]?.mixed||after.rows[at].raw!==replacement||(!allowReference&&after.rows[at].kind!==row.kind))throw Error('周囲の原稿構造が変化しました。');
   return next;
+}
+
+// Return a candidate for the book-wide reference transaction. No reference changes
+// are permitted through the normal mixed-draft apply path.
+export function planMixedReference(source,draft,request,options){
+  const currentSource=planMixedEdit(source,draft,options);
+  const {scan,parseInline,project}=options,before=project(currentSource,scan,parseInline);
+  const at=before.rows.findIndex(r=>r.range.start===draft.row.range.start),row=before.rows[at];
+  if(!row?.mixed||before.diagnostics.length)throw Error('本文の構造が変化しました。');
+  const parts=row.mixed.parts.slice(),part=parts[request.part];
+  const {targetId,format}=request;
+  if(!part||!Number.isSafeInteger(request.part)||!['number','label-number'].includes(format)||typeof targetId!=='string'||!/^[A-Za-z][A-Za-z0-9_.-]{0,127}$/.test(targetId))throw Error('参照先が不正です。');
+  const atom={kind:'reference',raw:':ref{target="'+targetId+'" format="'+format+'"}',target:targetId,format};
+  if(request.mode==='edit'){
+    if(part.kind!=='reference'||part.raw!==request.original)throw Error('元の参照が変化しました。');
+    parts[request.part]=atom;
+  }else if(request.mode==='insert'){
+    const pos=request.start;
+    if(part.kind!=='text'||part.value!==request.original||!Number.isSafeInteger(pos)||pos!==request.end||pos<0||pos>part.value.length)throw Error('文章のカーソル位置を指定してください。');
+    const boundaries=new Set([part.value.length,...Array.from(new Intl.Segmenter(undefined,{granularity:'grapheme'}).segment(part.value),g=>g.index)]);
+    if(!boundaries.has(pos))throw Error('文字の途中には挿入できません。');
+    parts.splice(request.part,1,{kind:'text',value:part.value.slice(0,pos)},atom,{kind:'text',value:part.value.slice(pos)});
+  }else throw Error('未対応の参照操作');
+  const {value}=composeMixed(parts,parts.filter(p=>p.kind==='text').map(p=>p.value));
+  return replaceMixedParagraph(currentSource,before,at,row,value,options,true);
 }
