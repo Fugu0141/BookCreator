@@ -29,3 +29,10 @@ test('comparison rejects incomplete, duplicate or invalid samples',()=>{
   assert.throws(()=>summarizeCacheComparison([...rows,rows[0]]),/Duplicate/);
   assert.throws(()=>summarizeCacheComparison(rows.map(r=>r.label==='cache-pair-1-warm'?{...r,elapsedMs:NaN}:r)),/Missing or invalid/);
 });
+
+test('manuscript comparison does not mix book samples',()=>{
+  const rows=fixture().map(row=>({...row,scope:'manuscript'}));
+  assert.equal(summarizeCacheComparison(rows,'manuscript').medianWarmMs,200);
+  assert.throws(()=>summarizeCacheComparison(rows),/Missing or invalid/);
+  assert.throws(()=>summarizeCacheComparison(rows,'other'),/Invalid comparison scope/);
+});
