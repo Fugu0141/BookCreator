@@ -177,6 +177,10 @@ function App(){
       if(themeDirty||!validPaper(page)){setStatus('テーマの変更を保存または取り消してから部品の復旧候補を確認してください。');return;}
       void io(()=>route({...book,typography:theme,settings:{page}}));return;
     }
+    if(book?.projectId===item.projectId&&item.kind==='manuscript'){
+      if(!confirmDiscard())return;
+      void io(()=>withDiscard(async()=>{invalidate();setStructuredHistory(null);setMode('writing');setShowSettings(false);setWritingPanel(null);await route(book);}));return;
+    }
     if(!confirmProjectDiscard())return;
     void io(()=>withProjectDiscard(async()=>{const next=await unwrap(api.openRegisteredProject(item.projectId));await applyBook(next);await route(next);}));
   }
