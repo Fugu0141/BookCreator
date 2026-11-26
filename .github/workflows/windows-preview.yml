@@ -62,6 +62,7 @@ jobs:
           try {
             $stdout = Join-Path $env:RUNNER_TEMP 'bc-package-stdout.txt'
             $stderr = Join-Path $env:RUNNER_TEMP 'bc-package-stderr.txt'
+            $env:BC_PACKAGE_SMOKE_REPORT = Join-Path $env:RUNNER_TEMP 'bc-package-smoke-report.txt'
             $process = Start-Process -FilePath (Join-Path $isolated 'BookCreator.exe') -ArgumentList '--package-smoke' -WorkingDirectory $env:RUNNER_TEMP -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
             if (-not $process.WaitForExit(180000)) {
               taskkill /PID $process.Id /T /F
@@ -69,7 +70,8 @@ jobs:
             }
             Get-Content $stdout,$stderr -ErrorAction SilentlyContinue
             if ($process.ExitCode -ne 0) { throw "Packaged app failed: $($process.ExitCode)" }
-            if (-not (Select-String -Path $stdout -Pattern 'PASS portable Windows package' -Quiet)) { throw 'Missing packaged smoke completion marker' }
+            if (-not (Test-Path $env:BC_PACKAGE_SMOKE_REPORT) -or -not (Select-String -Path $env:BC_PACKAGE_SMOKE_REPORT -Pattern 'PASS portable Windows package' -Quiet)) { throw 'Missing packaged smoke completion marker' }
+            Get-Content $env:BC_PACKAGE_SMOKE_REPORT
           } finally {
             Move-Item -LiteralPath $isolated -Destination $package
           }
