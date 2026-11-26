@@ -333,6 +333,17 @@ async function packageSmoke(){
 
   await exec("document.querySelector('#structured-append').click()");
   await until("document.querySelector('#source').value==='新しい本文を入力してください。\\n'&&!document.querySelector('#structured-undo').disabled");
+  // UX-09c: insertion closes its panel and focuses the created paragraph's edit action.
+  await until("document.querySelector('#structured-insert-panel').hidden&&document.activeElement.matches('[data-rich-edit]')&&document.activeElement.closest('.structured-block').dataset.focused==='true'");
+  await exec("document.activeElement.click()");
+  await until("document.activeElement.id==='structured-rich-value'");
+  await exec("document.querySelector('#structured-cancel').click()");
+  await until("document.activeElement.matches('[data-rich-edit]')&&document.querySelector('#structured-editor').dataset.editing==='false'");
+  await openStructuredInsert();
+  await until("document.activeElement.id==='structured-insert-kind'");
+  await exec("document.activeElement.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))");
+  await until("document.querySelector('#structured-insert-panel').hidden&&document.activeElement.id==='structured-insert-toggle'");
+
   await exec("document.querySelector('#structured-undo').click()");
   await until("document.querySelector('#source').value===''&&!document.querySelector('#structured-redo').disabled");
   await exec("document.querySelector('#structured-redo').click()");
@@ -518,7 +529,7 @@ async function packageSmoke(){
   await exec("document.querySelector('#structured-apply').click()");
   const richExpected=richFixture.replace('な文章です。','な:style{text="文章" underline="true"}です。追加。');
   await until("!document.querySelector('#structured-rich-value')&&document.querySelector('#source').value==="+JSON.stringify(richExpected));
-  await until("document.querySelector('#structured-editor').dataset.editing==='false'&&document.querySelector('.structured-operation-toolbar').getClientRects().length>0");
+  await until("document.querySelector('#structured-editor').dataset.editing==='false'&&document.querySelector('.structured-operation-toolbar').getClientRects().length>0&&document.activeElement.matches('[data-rich-edit]')");
   if(!await exec("(()=>{const row=document.querySelector('[data-structured-kind=paragraph]'),m=row.querySelector('.structured-more-actions');return !m.open&&row.querySelector('[data-rich-edit]').getClientRects().length>0&&row.querySelector('[data-structured-edit]').getClientRects().length===0;})()"))throw Error('Secondary source controls are exposed by default');
   await exec("document.querySelector('[data-structured-kind=paragraph] .structured-more-actions summary').click()");
   await until("document.querySelector('[data-structured-kind=paragraph] [data-structured-edit]').getClientRects().length>0");
@@ -1825,10 +1836,13 @@ async function smoke(){
   await exec("document.querySelector('#structured-undo').click()");
   await until("document.querySelector('#source').value==="+JSON.stringify(beforeStructuredInsert));
   await exec("(()=>{const e=document.querySelector('#structured-insert-kind');e.value="+JSON.stringify(optionalId)+";e.dispatchEvent(new Event('change',{bubbles:true}));})()");
-  await until("!!document.querySelector('#structured-optional-slots')&&!document.querySelector('#structured-optional-slots').checked&&!document.querySelector('#structured-insertion-fields').textContent.includes('extra')");
+  await openStructuredInsert();
+  await until("!document.querySelector('#structured-insert-panel').hidden&&!!document.querySelector('#structured-optional-slots')&&!document.querySelector('#structured-optional-slots').checked&&!document.querySelector('#structured-insertion-fields').textContent.includes('extra')");
   await exec("document.querySelector('#structured-append').click()");
   await until("document.querySelector('#source').value.slice("+beforeOptional+").includes("+JSON.stringify(optionalId)+")");
   if(await exec("document.querySelector('#source').value.slice("+beforeOptional+").includes('name=\"extra\"')"))throw Error('Structured insert included optional slot by default');
+  await openStructuredInsert();
+  await until("!document.querySelector('#structured-insert-panel').hidden&&!!document.querySelector('#structured-optional-slots')");
   await exec("document.querySelector('#structured-optional-slots').click()");
   await until("document.querySelector('#structured-insertion-fields').textContent.includes('extra')");
   await exec("document.querySelector('#structured-append').click()");
