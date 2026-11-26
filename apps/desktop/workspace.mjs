@@ -223,6 +223,7 @@ export async function openWorkspace(manifestPath){
   function settingsView(){return {revision:manifestHash,page:summary.pageSettings,sections:structuredClone(summary.sections),message:summary.pageMessage};}
   return {
     get summary(){return structuredClone(summary);},
+    get manifestPath(){return manifest;},
     async bookSettings(){await checkManifest();return settingsView();},
     async readBook(){
       await checkManifest();
