@@ -537,6 +537,7 @@ async function packageSmoke(){
   await until("document.querySelectorAll('#component-catalog .catalog-card').length===7");
   await exec("(()=>{const e=document.querySelector('#component-search');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,'H3');e.dispatchEvent(new Event('input',{bubbles:true}));})()");
   await until("document.querySelectorAll('#component-catalog .catalog-card').length===1&&!!document.querySelector('[data-catalog-edit=heading-3]')");
+  await until("(()=>{const card=document.querySelector('[data-component-key=heading-3]'),sample=card?.querySelector('.catalog-measured-paper > div');return card?.querySelector('.catalog-measured')?.dataset.previewPhase==='ready'&&sample?.inert===true&&!!sample.shadowRoot?.querySelector('[data-page]')&&!!sample.shadowRoot?.querySelector('[data-start]');})()");
   await exec("(()=>{const e=document.querySelector('#component-search');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,'');e.dispatchEvent(new Event('input',{bubbles:true}));})()");
   await exec("(()=>{const e=document.querySelector('#component-filter');e.value='all';e.dispatchEvent(new Event('change',{bubbles:true}));})()");
   await until("document.querySelectorAll('#component-catalog .catalog-card').length>=15");
