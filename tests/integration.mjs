@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
-import {editDocument,compileMeasuredManuscript,canReviewLayout,prepareBrowserPreview,prepareBookBrowserPreview,defaultHeadingDesign,defaultParagraphDesign,previewSourceRange,planInlineFormat,planListFormat,planListIndent,planListBatch,inspectDisplayMath,planDisplayMath,inspectInlineMath,planInlineMath,inspectComponentDisplayMath,planComponentDisplayMath,previewSampleInline,equationReferenceTargets,planEquationReference,planEquationNumbering,planNumberedComponentDisplayMath,previewStudySamples} from '../dist/index.js';
+import {createManuscriptScanSession,editDocument,compileMeasuredManuscript,canReviewLayout,prepareBrowserPreview,prepareBookBrowserPreview,defaultHeadingDesign,defaultParagraphDesign,previewSourceRange,planInlineFormat,planListFormat,planListIndent,planListBatch,inspectDisplayMath,planDisplayMath,inspectInlineMath,planInlineMath,inspectComponentDisplayMath,planComponentDisplayMath,previewSampleInline,equationReferenceTargets,planEquationReference,planEquationNumbering,planNumberedComponentDisplayMath,previewStudySamples} from '../dist/index.js';
 const load = (variable, fallback) => import(pathToFileURL(resolve(process.env[variable] ?? fallback)).href);
 const bcm = await load('BCM_DIST', '../BookCreator_Markdown/dist/index.js');
 const engine = await load('ENGINE_DIST', '../BookCreator_LayoutEngine/dist/index.js');
@@ -1254,4 +1254,32 @@ test('three-manuscript textbook regression: numbering, reordering, font roles, s
     const duplicate=docs.map(d=>({...d,source:d.source.replace('#eq-matrix','#eq-factor')}));
     assert.equal(run(duplicate).options,undefined);
   }
+});
+
+test('retained manuscript preparation connects real BCM checkpoints and preserves complete preview',()=>{
+  const calls=[];
+  const scan=bcm.scanDocument;
+  const session=createManuscriptScanSession({scan,scanIncremental:(source,previous)=>{
+    const next=bcm.scanDocumentIncremental(source,previous);
+    calls.push({source,previous,scanned:next.scannedCharacters});
+    return next;
+  }});
+  const deps={scan,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds,validateDisplayMath:engine.parseDisplayMath,validateInlineMath:engine.parsePreviewMath,parseReference:bcm.parseReferenceToken};
+  const before=Array.from({length:100},(_,i)=>'段落'+i+'。本文です。\r\n\r\n').join('');
+  const other='別の原稿。\n';
+  const docs=(source,revision)=>[{documentId:'a',source,revision,startOn:'page'},{documentId:'b',source:other,revision,startOn:'page'}];
+  const run=(source,revision,services)=>prepareBookBrowserPreview(docs(source,revision),revision,'fixture',{width:100000,height:150000},services);
+  const retained={...deps,scanSession:session};
+  assert.ok(run(before,'1',retained).options);
+  const next=before.replace('段落40。','段落40の変更。');
+  const actual=run(next,'2',retained);
+  assert.ok(actual.options);assert.deepEqual(actual,run(next,'2',deps));
+  assert.equal(calls.length,3);
+  assert.ok(calls[2].previous);assert.ok(calls[2].scanned<50);
+  assert.equal(session.stats().hits,1);
+  const broken=next.replace('段落80。','$$\r\n段落80。');
+  assert.deepEqual(run(broken,'3',retained),run(broken,'3',deps));
+  assert.deepEqual(run(next,'4',retained),run(next,'4',deps));
+  session.clear();run(next,'5',retained);
+  assert.equal(calls.at(-2).previous,undefined);assert.equal(calls.at(-1).previous,undefined);
 });
