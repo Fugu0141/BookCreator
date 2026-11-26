@@ -1,5 +1,6 @@
 // Conservative projection of BCM scanner ranges, using the existing inline parser.
 import {projectList,isolatedListContext} from './structured-list.mjs';
+import {projectMixed} from './structured-mixed.mjs';
 const eol=/(?:\r\n|\r|\n)$/;
 const normalize=s=>s.replace(/\r\n/g,'\n');
 const supported=(s,parseInline)=>{
@@ -28,7 +29,8 @@ export function projectBlocks(source,scan,parseInline){
       const match=/^(\$\$[ \t]*(?:\r\n|\n))([\s\S]+?)((?:\r\n|\n)\$\$[ \t]*(?:\r\n|\n)?$)/.exec(raw);
       if(match){prefix=match[1];payload=normalize(match[2]);suffix=match[3];}
     }else if(kind==='directive'){label='部品・指示：'+block.header.name;}
-    rows.push({index,last,kind,label,range,raw,prefix,suffix,level:block.level,list:result.diagnostics.length?null:list,inline:result.diagnostics.length?null:inline,payload:result.diagnostics.length?null:payload});
+    const mixed=!result.diagnostics.length&&block.kind==='raw'&&['paragraph','raw'].includes(kind)&&(!blocks[index-1]||['blank','heading'].includes(blocks[index-1].kind))&&(!blocks[last+1]||blocks[last+1].kind==='blank')&&!/\r(?!\n)/.test(body)&&(!raw.includes('\r\n')||!raw.replace(/\r\n/g,'').includes('\n'))?projectMixed(normalize(body)):null;
+    rows.push({index,last,kind,label,range,raw,prefix,suffix,level:block.level,mixed,list:result.diagnostics.length?null:list,inline:result.diagnostics.length?null:inline,payload:result.diagnostics.length?null:payload});
     index=last;
   }
   return {rows,diagnostics:result.diagnostics};

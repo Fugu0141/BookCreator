@@ -427,6 +427,11 @@ async function packageSmoke(){
   if(!await exec("document.querySelector('#source').value==="+JSON.stringify(inlineStructured)))throw Error('Inline draft prematurely changed source');
   await exec("document.querySelector('#structured-apply').click()");
   await until("!document.querySelector('#structured-value')&&document.querySelector('#source').value==="+JSON.stringify(inlineStructured.replace('$y^2$','$y^3$')));
+  await exec("document.querySelector('[data-mixed-edit]').click()");
+  await until("document.querySelectorAll('[data-mixed-math] math').length===2&&!!document.querySelector('[data-mixed-text]')");
+  await exec("document.querySelector('#structured-cancel').click()");
+  await until("!document.querySelector('[data-mixed-text]')&&document.querySelector('#source').value==="+JSON.stringify(inlineStructured.replace('$y^2$','$y^3$')));
+
   // UX-08d: study content and slot transactions, immutable identities and fences.
   const studyFixture=inlineStructured.replace('$y^2$','$y^3$')+'\n::::component{name="example" #gui-example title="確認"}\n:::slot{name="content"}\n問題 $x^2$ を解く。\n:::\n\n:::slot{name="hint"}\nヒントです。\n\n$$\nx^2\n$$\n:::\n::::\n\n:::component{name="explanation" #gui-answer answer-to="gui-example"}\n解説です。\n:::\n\n:::callout{kind="note"}\n補足です。\n:::\n';
   await exec("document.querySelector('#editor-view-source').click()");
@@ -625,6 +630,20 @@ async function packageSmoke(){
   await exec("document.querySelector('#equation-reference-apply').click()");
   const referenceSource=formulaSource.replace('本文です。','本文:ref{target="'+structuredEqId+'" format="label-number"}です。');
   await until("!document.querySelector('#equation-reference-editor')&&!document.querySelector('#structured-value')&&document.querySelector('#source').hidden&&document.querySelector('#source').value==="+JSON.stringify(referenceSource));
+  // UX-08f-5a: edit text around a protected reference, preserving the token.
+  await until("!!document.querySelector('[data-mixed-reference]')&&!!document.querySelector('[data-mixed-edit]')");
+  await exec("document.querySelector('[data-mixed-edit]').click()");
+  await until("document.querySelector('[data-mixed-text=\"0\"]')?.value==='本文'&&document.querySelector('#save').disabled");
+  const setMixed=(i,value)=>exec("(()=>{const e=document.querySelector('[data-mixed-text=\""+i+"\"]');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(e,"+JSON.stringify(value)+");e.dispatchEvent(new Event('input',{bubbles:true}));})()");
+  await setMixed(0,'本文*');
+  await until("document.querySelector('#structured-apply').disabled");
+  await setMixed(0,'新しい本文');
+  await until("!document.querySelector('#structured-apply').disabled&&document.querySelector('#source').value==="+JSON.stringify(referenceSource));
+  await exec("document.querySelector('#structured-apply').click()");
+  await until("document.querySelector('#source').value==="+JSON.stringify(referenceSource.replace('本文:ref','新しい本文:ref'))+"&&!document.querySelector('[data-mixed-text]')");
+  await exec("document.querySelector('#structured-undo').click()");
+  await until("document.querySelector('#source').value==="+JSON.stringify(referenceSource));
+
   await exec("document.querySelector('[data-equation-wrapper] [data-structured-numbering]').click()");
   await until("!document.querySelector('#open').disabled&&document.querySelector('#status').textContent.includes('Book validation failed')");
   if(!await exec("document.querySelector('#source').value==="+JSON.stringify(referenceSource)))throw Error('Referenced equation numbering was removed');
