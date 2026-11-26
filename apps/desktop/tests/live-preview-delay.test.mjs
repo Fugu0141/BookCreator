@@ -18,3 +18,22 @@ test('cancellation prevents delayed rendering on IME or route change',()=>{
   delay.request(()=>calls.push('confirmed'));callbacks[1]();
   assert.deepEqual(calls,['confirmed']);
 });
+
+test('default coalescing delay is 100ms and custom timing remains injectable',()=>{
+  const scheduled=[],cancelled=[],calls=[];
+  const schedule=(fn,ms)=>{scheduled.push({fn,ms});return scheduled.length;};
+  const unschedule=id=>cancelled.push(id);
+  const delay=createLivePreviewDelay({schedule,unschedule});
+  delay.request(()=>calls.push('old'));
+  delay.request(()=>calls.push('latest'));
+  assert.deepEqual(scheduled.map(s=>s.ms),[100,100]);
+  assert.deepEqual(cancelled,[1]);
+  scheduled[0].fn();scheduled[1].fn();
+  assert.deepEqual(calls,['latest']);
+  const custom=createLivePreviewDelay({delay:200,schedule,unschedule});
+  custom.request(()=>calls.push('custom'));
+  assert.equal(scheduled[2].ms,200);
+  custom.cancel();scheduled[2].fn();
+  assert.deepEqual(cancelled,[1,3]);
+  assert.deepEqual(calls,['latest']);
+});
