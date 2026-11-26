@@ -977,6 +977,12 @@ async function smoke(){
   await until("document.querySelectorAll('#math-draft-preview math mo[fence=true]').length===2");
   await exec("Array.from(document.querySelectorAll('#math-editor button')).find(b=>b.textContent==='ベクトル').click()");
   await until("document.querySelectorAll('#math-draft-preview math mover[accent=true]').length===2");
+  await exec("Array.from(document.querySelectorAll('#math-editor button')).find(b=>b.textContent==='行列').click()");
+  await until("document.querySelectorAll('#math-draft-preview math mtable mtr').length===2");
+  await exec("Array.from(document.querySelectorAll('#math-editor button')).find(b=>b.textContent==='場合分け').click()");
+  await until("document.querySelectorAll('#math-draft-preview math mtable mtr').length===2 && document.querySelectorAll('#math-draft-preview math mo[fence=true]').length===1");
+  await exec("Array.from(document.querySelectorAll('#math-editor button')).find(b=>b.textContent==='途中式').click()");
+  await until("document.querySelectorAll('#math-draft-preview math mtd[columnalign=right]').length===2");
   await exec("Array.from(document.querySelectorAll('#math-editor button')).find(b=>b.textContent==='分数').click()");
   await until("!!document.querySelector('#math-draft-preview math mfrac')");
   const mathFormula='\\frac{a}{b}';
