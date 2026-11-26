@@ -185,6 +185,21 @@ async function run(){
   handle('readBook',async(...args)=>{checkArgs(args,0);return requireWorkspace().readBook();});
   // Preview reads do not acquire busy. Foreground IPC may proceed, but any
   // overlapping snapshot is rejected before it reaches the renderer.
+  // Read-only, numeric process working-set snapshot. Never acquires workspace lock.
+  ipcMain.handle('bookcreator:performanceMemory',async(event,...args)=>{
+    try{
+      sender(event);checkArgs(args,0);
+      const value={browserKiB:0,rendererKiB:0,otherKiB:0,processes:0};
+      for(const metric of app.getAppMetrics()){
+        const size=metric.memory?.workingSetSize;
+        if(!Number.isFinite(size)||size<0)continue;
+        value.processes++;
+        const key=metric.type==='Browser'?'browserKiB':metric.type==='Tab'?'rendererKiB':'otherKiB';
+        value[key]+=size;
+      }
+      return {ok:true,value};
+    }catch(e){return {ok:false,error:{code:'ERROR',message:'Memory metrics unavailable'}};}
+  });
   ipcMain.handle('bookcreator:readPreviewBook',async(event,...args)=>{
     try{
       sender(event);checkArgs(args,1);
@@ -370,6 +385,14 @@ async function liveWritingSmoke(){
   await click('#mode-writing');
   await until('return to manuscript',scopeReady('manuscript'));
   if(await readFile(path,'utf8')!==saved)throw Error('Settings preview wrote manuscript');
+  await click('#performance-toggle');
+  await until('performance samples',"['measurement','layout'].every(stage=>['manuscript','book'].every(category=>Number(document.querySelector('#performance-summary tr[data-stage='+stage+'][data-category='+category+']')?.dataset.success)>0))&&Number(document.querySelector('#performance-summary tr[data-stage=read][data-category=source]')?.dataset.success)>0");
+  await until('performance memory',"document.querySelector('#performance-memory')?.dataset.phase==='ready'&&document.querySelector('#performance-memory').textContent.includes('MiB')");
+  console.log('PERF sample '+await raw("JSON.stringify({rows:[...document.querySelectorAll('#performance-summary tbody tr')].map(tr=>({stage:tr.dataset.stage,category:tr.dataset.category,values:[...tr.querySelectorAll('td')].map(td=>td.textContent)})),memory:document.querySelector('#performance-memory').textContent})"));
+  await click('#performance-clear');
+  await until('performance cleared',"document.querySelectorAll('#performance-summary tbody tr').length===0");
+  await click('#performance-close');
+  await until('performance closed',"!document.querySelector('#performance-panel')");
   // Reopening through the normal discard path cleans any coalesced recovery draft.
   await click('#mode-home');await click('#open');
   await until('reopened book',"document.querySelector('.workspace-shell').dataset.workspaceMode==='writing'&&!document.querySelector('#open').disabled&&!document.querySelector('#source').value");

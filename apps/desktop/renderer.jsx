@@ -1,4 +1,6 @@
 import {measurementLane} from './measurement-lane.mjs';
+import {performanceMetrics} from './performance-metrics.mjs';
+import {PerformancePanel} from './performance-panel.jsx';
 import {retryPreviewRead,unwrapIpc} from './preview-read-retry.mjs';
 import {CatalogSpecimen} from './catalog-specimen.jsx';
 import React,{useState,useRef,useEffect} from 'react';
@@ -63,7 +65,7 @@ async function registerProjectFonts(fonts){
   }
   return result;
 }
-async function resolvePreviewImage(token,id,current){if(typeof token!=='string'||!/^[a-f0-9]{64}$/.test(id))throw Error('Invalid preview image request');const bytes=await retryPreviewRead(()=>unwrap(api.readPreviewImage(token,id)),{current});return new Blob([bytes],{type:'image/png'});}
+async function resolvePreviewImage(token,id,current){if(typeof token!=='string'||!/^[a-f0-9]{64}$/.test(id))throw Error('Invalid preview image request');const bytes=await retryPreviewRead(()=>unwrap(api.readPreviewImage(token,id)),{current,category:'image'});return new Blob([bytes],{type:'image/png'});}
 const unwrap=unwrapIpc;
 function validPaper(page){try{return page?paperGeometry(page):null;}catch{return null;}}
 function App(){
@@ -91,6 +93,7 @@ function App(){
   },[]);
   const [outlineOpen,setOutlineOpen]=useState(true),[pageListOpen,setPageListOpen]=useState(true),[pageInfoOpen,setPageInfoOpen]=useState(true),[shortcutHelp,setShortcutHelp]=useState(false);
   const [writingPanel,setWritingPanel]=useState(null);
+  const [showPerformance,setShowPerformance]=useState(false);
   const [editorView,setEditorView]=useState('source'),[structuredDraft,setStructuredDraft]=useState(null);
   const [structuredComposing,setStructuredComposing]=useState(false);
   const [studyLinkDraft,setStudyLinkDraft]=useState(null);
@@ -542,14 +545,16 @@ function App(){
     const scope=whole?'book':'manuscript';
     if(!automatic){if(mode==='writing'||mode==='layout')setPreviewScopeOverride({mode,scope});if(mode==='writing'&&compactWriting)setCompactPane('paper');else setShowPaper(true);}
     resetLayout(false,scope);setMeasuring(true);setLayoutState({phase:'running',scope,pages:0});if(!automatic)setStatus('実測組版中…');
-    return layoutScheduler.current.submit(job=>renderRequest(job,whole,scope,automatic));
+    const requestedAt=performance.now();
+    return layoutScheduler.current.submit(job=>renderRequest(job,whole,scope,automatic,requestedAt));
   }
-  async function renderRequest(job,whole,scope,automatic){
+  async function renderRequest(job,whole,scope,automatic,requestedAt){
+    const startedAt=performance.now();let outcome='cancelled';
     const raw=text;let diagnostics=[],documents=[];
     try{
       const input=describeLayoutInput({whole,file,raw,page,savedSettings,typography,theme,fonts,order,job,bundledFingerprint:__BUNDLED_FONT_FINGERPRINT__},{paperGeometry,hasDynamicLabels,hasStudyNumbering});
       const current=()=>layoutScheduler.current.isCurrent(job);
-      const snapshot=whole||input.needsContext?await retryPreviewRead(()=>unwrap(api.readPreviewBook(book.settingRecovery.token)),{current}):undefined;
+      const snapshot=whole||input.needsContext?await retryPreviewRead(()=>unwrap(api.readPreviewBook(book.settingRecovery.token)),{current,category:'source'}):undefined;
       if(!layoutScheduler.current.isCurrent(job))return;
       documents=collectLayoutDocuments(input,snapshot);
       const prepared=prepareLayoutOptions(input,documents,prepareBookBrowserPreview,deps);
@@ -558,7 +563,7 @@ function App(){
       const options=prepared.options;
       validateLayoutOptions(options,input.fonts);
       const geometry=input.geometry;
-      const result=await measurementLane.run(()=>createPlainTextPagePreview(document,{...options,paper:geometry.paper,resolveImage:id=>resolveImage(id,current)}),{current});
+      const result=await measurementLane.run(()=>createPlainTextPagePreview(document,{...options,paper:geometry.paper,resolveImage:id=>resolveImage(id,current)}),{current,category:scope});
       if(!result||!layoutScheduler.current.isCurrent(job))return;
       const pages=describeMeasuredPaper(result,options,{previewSourceRange,paperThumbnail,onNavigate:(documentId,range)=>{
         if(!layoutScheduler.current.isCurrent(job))return;
@@ -571,9 +576,10 @@ function App(){
       const pageNumber=retained?Math.max(1,Math.min(activePage,pages.length)):1;
       setLayoutPages(pages);setActivePage(pageNumber);setPageJump(String(pageNumber));
       setLayoutState({phase:'ready',scope,pages:result.plan.pages.length});
+      outcome='success';
       if(!automatic)setStatus(result.plan.pages.length+' ページ · '+(whole?'書籍全体':'選択原稿')+' · 実測プレビュー（出版不可）');
-    }catch(e){if(layoutScheduler.current.isCurrent(job)){setLayoutState({phase:'failed',scope,pages:0});setLayoutDiagnostics(diagnosticRecords(diagnostics,documents,e));if(!automatic)setStatus(String(e.message??e));}}
-    finally{if(layoutScheduler.current.isCurrent(job))setMeasuring(false);}
+    }catch(e){if(layoutScheduler.current.isCurrent(job)){outcome='failed';setLayoutState({phase:'failed',scope,pages:0});setLayoutDiagnostics(diagnosticRecords(diagnostics,documents,e));if(!automatic)setStatus(String(e.message??e));}}
+    finally{performanceMetrics.record({stage:'layout',category:scope,outcome,waitMs:startedAt-requestedAt,runMs:performance.now()-startedAt});if(layoutScheduler.current.isCurrent(job))setMeasuring(false);}
   }
   function navigatePage(number){
     if(layoutState.phase!=='ready'||!Number.isInteger(number)||number<1||number>layoutPages.length)return;
@@ -926,7 +932,8 @@ function App(){
     <PublicationPanel visible={mode==='publication'} saveLabel={saveLabel} dirty={dirty} themeDirty={themeDirty} settingsDirty={settingsDirty} layout={layoutState} diagnostics={layoutDiagnostics} canOpenDiagnostic={canOpenDiagnostic} onOpenDiagnostic={openDiagnostic} blocked={routeBlocked} canRender={!!book&&!!validPaper(page)} onNavigate={navigate} onRender={()=>{navigate('layout');void render(true);}}/>
   </main>
   <section id="workspace-diagnostics" className="workspace-diagnostics" hidden={!showDiagnostics||layoutState.phase!=='failed'} aria-label="組版診断"><div className="diagnostic-heading"><strong>組版診断 · {layoutDiagnostics.length}件</strong><button type="button" className="secondary-action" onClick={()=>setShowDiagnostics(false)}>閉じる</button></div><DiagnosticList id="workspace-diagnostic-list" diagnostics={layoutDiagnostics} blocked={routeBlocked} canOpen={canOpenDiagnostic} onOpen={openDiagnostic}/></section>
-   <div className="workspace-statusbar"><span id="workspace-layout-state" data-phase={layoutState.phase} data-scope={layoutState.scope??'none'}>{layoutLabel}</span><button id="toggle-diagnostics" type="button" hidden={layoutState.phase!=='failed'} className="secondary-action" aria-expanded={showDiagnostics} aria-controls="workspace-diagnostics" disabled={routeBlocked} onClick={()=>setShowDiagnostics(v=>!v)}>診断 {layoutDiagnostics.length}件</button><footer id="status" role="status">{status}</footer></div>{paragraphOpen&&page&&<ParagraphLab recovery={labRecovery('paragraph','default')} themeRevision={theme.revision} initialEntry={initialLibraryEntry} design={theme.paragraphDesign} library={theme.library} binding={theme.paragraphBinding} libraryEditable={theme.libraryEditable} libraryMessage={theme.libraryMessage??libraryNotice} onLibraryAction={changeLibrary} bodyFont={typography.body} mathFontFamily={typography.mathFontFamily} fontOptions={componentFonts} width={paperGeometry(page).content.width} height={paperGeometry(page).content.height} busy={busy} onCancel={()=>setParagraphOpen(false)} onApply={applyParagraph}/>}{studyOpen&&page&&<ComponentLab recovery={labRecovery('study',studyTarget)} themeRevision={theme.revision} initialEntry={initialLibraryEntry} key={'study-'+studyTarget} usage="study" customOnly={studyTarget==='custom'} level={studyTarget} studyName={studyTarget==='custom'?'独自部品ライブラリ':studyNames[studyTarget]} design={studyTarget==='custom'?defaultStudyDesign('note'):theme.studyDesigns?.[studyTarget]??defaultStudyDesign(studyTarget)} hasOverride={!!theme.studyDesigns?.[studyTarget]} fontOptions={componentFonts} library={theme.library} bindings={theme.studyBindings??{}} libraryEditable={theme.libraryEditable} libraryMessage={theme.libraryMessage??libraryNotice} onLibraryAction={changeLibrary} imageOptions={images} resolveImage={resolveImage} typography={typography} width={paperGeometry(page).content.width} height={paperGeometry(page).content.height} busy={busy} onCancel={()=>setStudyOpen(false)} onApply={applyStudy}/>}{labOpen&&page&&<ComponentLab recovery={labRecovery('heading',labLevel)} themeRevision={theme.revision} initialEntry={initialLibraryEntry} key={labLevel} level={labLevel} design={(labLevel==="default"?theme.headingDesign:theme.headingLevels?.[labLevel]??theme.headingDesign)} hasOverride={labLevel==="default"?!!theme.headingDesign:!!theme.headingLevels?.[labLevel]} fontOptions={componentFonts} library={theme.library} bindings={theme.bindings??{}} headingLevels={theme.headingLevels??{}} libraryEditable={theme.libraryEditable} libraryMessage={theme.libraryMessage??libraryNotice} onLibraryAction={changeLibrary} imageOptions={images} resolveImage={resolveImage} typography={typography} width={paperGeometry(page).content.width} height={paperGeometry(page).content.height} busy={busy} onCancel={()=>setLabOpen(false)} onApply={applyHeadingDesign}/>}<dialog id="close-dialog" ref={closeDialog} aria-labelledby="close-title" aria-describedby="close-description" onCancel={e=>{e.preventDefault();void finishClose('cancel');}}>
+   {showPerformance&&mode!=='home'&&!labOpen&&!paragraphOpen&&!studyOpen&&<PerformancePanel readMemory={()=>unwrap(api.performanceMemory())} onClose={()=>setShowPerformance(false)}/>}
+   <div className="workspace-statusbar"><span id="workspace-layout-state" data-phase={layoutState.phase} data-scope={layoutState.scope??'none'}>{layoutLabel}</span><button id="toggle-diagnostics" type="button" hidden={layoutState.phase!=='failed'} className="secondary-action" aria-expanded={showDiagnostics} aria-controls="workspace-diagnostics" disabled={routeBlocked} onClick={()=>setShowDiagnostics(v=>!v)}>診断 {layoutDiagnostics.length}件</button><footer id="status" role="status">{status}</footer><button id="performance-toggle" type="button" className="secondary-action" hidden={mode==='home'} disabled={routeBlocked} aria-expanded={showPerformance} onClick={()=>setShowPerformance(v=>!v)}>性能計測</button></div>{paragraphOpen&&page&&<ParagraphLab recovery={labRecovery('paragraph','default')} themeRevision={theme.revision} initialEntry={initialLibraryEntry} design={theme.paragraphDesign} library={theme.library} binding={theme.paragraphBinding} libraryEditable={theme.libraryEditable} libraryMessage={theme.libraryMessage??libraryNotice} onLibraryAction={changeLibrary} bodyFont={typography.body} mathFontFamily={typography.mathFontFamily} fontOptions={componentFonts} width={paperGeometry(page).content.width} height={paperGeometry(page).content.height} busy={busy} onCancel={()=>setParagraphOpen(false)} onApply={applyParagraph}/>}{studyOpen&&page&&<ComponentLab recovery={labRecovery('study',studyTarget)} themeRevision={theme.revision} initialEntry={initialLibraryEntry} key={'study-'+studyTarget} usage="study" customOnly={studyTarget==='custom'} level={studyTarget} studyName={studyTarget==='custom'?'独自部品ライブラリ':studyNames[studyTarget]} design={studyTarget==='custom'?defaultStudyDesign('note'):theme.studyDesigns?.[studyTarget]??defaultStudyDesign(studyTarget)} hasOverride={!!theme.studyDesigns?.[studyTarget]} fontOptions={componentFonts} library={theme.library} bindings={theme.studyBindings??{}} libraryEditable={theme.libraryEditable} libraryMessage={theme.libraryMessage??libraryNotice} onLibraryAction={changeLibrary} imageOptions={images} resolveImage={resolveImage} typography={typography} width={paperGeometry(page).content.width} height={paperGeometry(page).content.height} busy={busy} onCancel={()=>setStudyOpen(false)} onApply={applyStudy}/>}{labOpen&&page&&<ComponentLab recovery={labRecovery('heading',labLevel)} themeRevision={theme.revision} initialEntry={initialLibraryEntry} key={labLevel} level={labLevel} design={(labLevel==="default"?theme.headingDesign:theme.headingLevels?.[labLevel]??theme.headingDesign)} hasOverride={labLevel==="default"?!!theme.headingDesign:!!theme.headingLevels?.[labLevel]} fontOptions={componentFonts} library={theme.library} bindings={theme.bindings??{}} headingLevels={theme.headingLevels??{}} libraryEditable={theme.libraryEditable} libraryMessage={theme.libraryMessage??libraryNotice} onLibraryAction={changeLibrary} imageOptions={images} resolveImage={resolveImage} typography={typography} width={paperGeometry(page).content.width} height={paperGeometry(page).content.height} busy={busy} onCancel={()=>setLabOpen(false)} onApply={applyHeadingDesign}/>}<dialog id="close-dialog" ref={closeDialog} aria-labelledby="close-title" aria-describedby="close-description" onCancel={e=>{e.preventDefault();void finishClose('cancel');}}>
     <h2 id="close-title">BookCreatorを終了</h2>
     <p id="close-description">{closeRequest?.blocked?'現在の操作を完了または取り消してから、もう一度終了してください。':unsaved.length?'未保存の変更があります。保存対象を確認してください。':'保存済みです。終了しますか？'}</p>
     {unsaved.length>0&&<ul id="close-unsaved">{unsaved.map(name=><li key={name}>{name}</li>)}</ul>}

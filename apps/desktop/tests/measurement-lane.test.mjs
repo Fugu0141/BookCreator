@@ -26,3 +26,16 @@ test('error does not block subsequent jobs',async()=>{
   await assert.rejects(lane.run(()=>{throw Error('failed');}),/failed/);
   assert.equal(await lane.run(()=>42),42);
 });
+
+test('records queue waiting and execution time separately including cancelled work',async()=>{
+  let time=0;const rows=[],hold=deferred();
+  const lane=createMeasurementLane({now:()=>time,report:row=>rows.push(row)});
+  const a=lane.run(async()=>{await hold.promise;return 'a';},{category:'book'});
+  time=10;
+  const b=lane.run(()=>{time=80;return 'b';},{category:'catalog',priority:'catalog'});
+  time=20;let current=true;
+  const c=lane.run(()=>assert.fail('obsolete work must not run'),{category:'component',current:()=>current});
+  time=50;current=false;hold.resolve();
+  await Promise.all([a,b,c]);
+  assert.deepEqual(rows,[{stage:'measurement',category:'book',outcome:'success',waitMs:0,runMs:50},{stage:'measurement',category:'component',outcome:'cancelled',waitMs:30,runMs:0},{stage:'measurement',category:'catalog',outcome:'success',waitMs:40,runMs:30}]);
+});
