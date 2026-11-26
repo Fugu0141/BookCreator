@@ -520,6 +520,22 @@ async function packageSmoke(){
   await exec("document.querySelector('#structured-apply').click()");
   const richMathExpected=richFixture.replace('な文章です。','な$x^2$文章です。追加。');
   await until("document.querySelector('#source').value==="+JSON.stringify(richMathExpected));
+  // UX-08f-5e: remove the final math atom, preserving surrounding text and styles.
+  await exec("document.querySelector('[data-mixed-edit]').click()");
+  await exec("document.querySelector('[data-remove-kind=math]').click()");
+  await until("!!document.querySelector('#mixed-remove-confirm')&&document.querySelector('#structured-apply').disabled");
+  await exec("document.querySelector('#mixed-remove-cancel').click()");
+  await until("!document.querySelector('#mixed-remove-confirm')&&document.querySelector('#source').value==="+JSON.stringify(richMathExpected));
+  await exec("document.querySelector('[data-remove-kind=math]').click()");
+  await until("!document.querySelector('#mixed-remove-confirm').disabled");
+  await exec("document.querySelector('#mixed-remove-confirm').click()");
+  const mathRemoved=richMathExpected.replace('$x^2$','');
+  await until("document.querySelector('#source').value==="+JSON.stringify(mathRemoved)+"&&!!document.querySelector('[data-rich-edit]')&&!document.querySelector('[data-mixed-edit]')");
+  await exec("document.querySelector('[data-rich-edit]').click()");
+  await until("document.querySelector('#structured-rich-value')?.value==='重要な文章です。追加。'");
+  await exec("document.querySelector('#structured-cancel').click()");
+  await exec("document.querySelector('#structured-undo').click()");
+  await until("document.querySelector('#source').value==="+JSON.stringify(richMathExpected));
   await exec("document.querySelector('#structured-undo').click()");
   await until("document.querySelector('#source').value==="+JSON.stringify(richFixture));
   await exec("document.querySelector('#editor-view-source').click()");
@@ -741,6 +757,15 @@ async function packageSmoke(){
   await exec("document.querySelector('#equation-reference-apply').click()");
   const richRefExpected=formulaSource.replace('本文です。','新しい本文:ref{target="'+structuredEqId+'" format="label-number"}です。');
   await until("!document.querySelector('#equation-reference-editor')&&document.querySelector('#source').value==="+JSON.stringify(richRefExpected));
+  await exec("document.querySelector('[data-mixed-edit]').click()");
+  await setMixed(0,'修正した本文');
+  await exec("document.querySelector('[data-remove-kind=reference]').click()");
+  await until("!document.querySelector('#mixed-remove-confirm').disabled");
+  await exec("document.querySelector('#mixed-remove-confirm').click()");
+  const refRemoved=formulaSource.replace('本文です。','修正した本文です。');
+  await until("document.querySelector('#source').value==="+JSON.stringify(refRemoved)+"&&!!document.querySelector('[data-rich-edit]')&&!!document.querySelector('[data-equation-wrapper]')");
+  await exec("document.querySelector('#structured-undo').click()");
+  await until("document.querySelector('#source').value==="+JSON.stringify(richRefExpected));
   await exec("document.querySelector('#structured-undo').click()");
   await until("document.querySelector('#source').value==="+JSON.stringify(formulaSource));
   await exec("document.querySelector('#editor-view-source').click()");
