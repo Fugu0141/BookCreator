@@ -1,0 +1,40 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtemp,mkdir,rm,writeFile,readFile} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {recoveryStore,recoveryKey} from '../manuscript-recovery.mjs';
+import {listRecoveryCandidates} from '../recovery-hub.mjs';
+test('recovery hub joins only exact registered mappings and preserves unknown or damaged records',async t=>{
+  const root=await mkdtemp(join(tmpdir(),'bc-recovery-hub-'));
+  t.after(()=>rm(root,{recursive:true,force:true}));
+  const profile=join(root,'profile');await mkdir(profile);
+  const a=join(root,'A','book.yaml'),b=join(root,'B','book.yaml'),c=join(root,'C','book.yaml');
+  const section={id:'chapter',path:'manuscript/chapter.md'};
+  const key=path=>recoveryKey(path,section.id,section.path);
+  const store=recoveryStore(profile);
+  const draft={baseRevision:'a'.repeat(64),text:'秘密の復旧本文'};
+  await store.put(key(a),draft);await store.put(key(b),draft);await store.put(key(c),draft);
+  const damaged=recoveryKey(a,'damaged','manuscript/damaged.md');
+  await store.put(damaged,draft);
+  const damagedPath=join(profile,'manuscript-recovery-v1',damaged+'.json');
+  await writeFile(damagedPath,'invalid JSON');
+  const catalog={list:async()=>[{id:'a',title:'書籍A',path:a},{id:'b',title:'書籍B',path:b}]};
+  const result=await listRecoveryCandidates(catalog,store,async path=>{
+    if(path===b)throw Error('missing manifest');
+    return {manifestPath:path,sections:[section]};
+  });
+  assert.equal(result.items.length,1);
+  assert.deepEqual(Object.keys(result.items[0]).sort(),['projectId','sectionId','sectionPath','title','updatedAt'].sort());
+  assert.equal(result.items[0].projectId,'a');
+  assert.equal(result.items[0].sectionId,'chapter');
+  assert.equal(result.unmatched,2);assert.equal(result.unreadable,1);
+  assert.deepEqual(result.unavailable,[{projectId:'b',title:'書籍B'}]);
+  assert.equal(JSON.stringify(result).includes(draft.text),false);
+  assert.equal((await store.get(key(c))).text,draft.text);
+  assert.equal(await readFile(damagedPath,'utf8'),'invalid JSON');
+});
+test('empty store avoids scanning registered books',async()=>{
+  const result=await listRecoveryCandidates({list:async()=>{throw Error('unexpected catalog scan');}},{list:async()=>({records:[],unreadable:0})},async()=>{throw Error('unexpected manifest scan');});
+  assert.deepEqual(result,{items:[],unmatched:0,unreadable:0,unavailable:[]});
+});
