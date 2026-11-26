@@ -21,20 +21,31 @@ export function isolatedListContext(source,blocks,first,last){
   }
   return true;
 }
+// Resize only unambiguous, single-level lists with consistent markers and line endings.
+export function canResizeList(items){
+  if(!items?.length||items.some(i=>i.depth!==0||i.kind!==items[0].kind))return false;
+  const ending=items[0].suffix;
+  if(items.some((i,j)=>j<items.length-1?(!ending||i.suffix!==ending):!!i.suffix&&i.suffix!==ending))return false;
+  return items.every((i,j)=>i.kind==='ordered'?i.prefix===(j+1)+'. '&&i.number===j+1:/^[-+*] $/.test(i.prefix)&&i.prefix===items[0].prefix);
+}
 export function planListValues(source,row,values,{scan,parseInline,applyPatches,project}){
   const current=project(source,scan,parseInline).rows.find(r=>r.range.start===row.range.start&&r.raw===row.raw);
-  if(!current?.list||values.length!==current.list.length)throw Error('リストが変更されました。');
-  const replacement=current.list.map((item,i)=>{
-    const value=values[i];
-    if(!value||value.trim()!==value||/[\r\n]/.test(value))throw Error('項目には空でない1行の文章を入力してください。');
+  if(!current?.list||!Array.isArray(values)||!values.length)throw Error('リストが変更されました。');
+  const resizing=values.length!==current.list.length;
+  if(resizing&&(!canResizeList(current.list)||values.length>999))throw Error('このリストでは項目数を変更できません。');
+  const first=current.list[0],last=current.list.at(-1),newline=first.suffix||(source.includes('\r\n')?'\r\n':'\n');
+  const replacement=values.map((value,i)=>{
+    if(typeof value!=='string'||!value||value.trim()!==value||/[\r\n]/.test(value))throw Error('項目には空でない1行の文章を入力してください。');
     parseInline(value);
+    if(resizing)return (first.kind==='ordered'?(i+1)+'. ':first.prefix)+value+(i===values.length-1?last.suffix:newline);
+    const item=current.list[i];
     return item.prefix+value+item.suffix;
   }).join('');
   const next=applyPatches(source,[{range:current.range,expected:current.raw,replacement}]);
   const after=project(next,scan,parseInline),before=project(source,scan,parseInline),at=before.rows.findIndex(r=>r.range.start===current.range.start);
   if(after.diagnostics.length||after.rows.length!==before.rows.length||after.rows.some((r,i)=>i!==at&&(r.kind!==before.rows[i].kind||r.raw!==before.rows[i].raw)))throw Error('周囲の原稿が変化しました。');
   const changed=after.rows[at];
-  if(!changed.list||changed.raw!==replacement||changed.list.length!==values.length||changed.list.some((i,j)=>i.value!==values[j]||i.depth!==current.list[j].depth||i.kind!==current.list[j].kind||i.number!==current.list[j].number))throw Error('リストの構造が変化しました。');
+  if(!changed.list||changed.raw!==replacement||changed.list.length!==values.length||changed.list.some((i,j)=>i.value!==values[j]||(resizing?(i.depth!==0||i.kind!==first.kind||(first.kind==='ordered'&&i.number!==j+1)):(i.depth!==current.list[j].depth||i.kind!==current.list[j].kind||i.number!==current.list[j].number))))throw Error('リストの構造が変化しました。');
   return next;
 }
 export function planListAction(source,row,request,{scan,parseInline,applyPatches,project}){
