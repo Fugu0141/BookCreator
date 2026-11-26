@@ -33,10 +33,10 @@ export function ParagraphLab({design,bodyFont,mathFontFamily,fontOptions,width,h
     }catch(e){if(job===generation.current){setPreviewPhase('error');setMessage('プレビューを更新できません：'+String(e.message??e));}}
   }
   useEffect(()=>{
-    if(busy)return;
+    if(busy||previewPhase!=='pending')return;
     refreshTimer.current=setTimeout(()=>void measure(true),180);
     return ()=>clearTimeout(refreshTimer.current);
-  },[draft,sample,sampleBcm,width,height,busy]);
+  },[draft,sample,sampleBcm,width,height,busy,previewPhase]);
   function load(){if(!entry||busy)return;invalidate();setDraft(structuredClone(entry.design));setMessage('部品を作業案へコピーしました。再計測してください。');}
   function action(type){if(busy||!libraryEditable)return;if(type==='add'){if(ready&&libraryName.trim())onLibraryAction({type,usage:'paragraph',name:libraryName.trim(),design:draft});}else if(entry){if(type==='rename'&&libraryName.trim())onLibraryAction({type,id:entry.id,name:libraryName.trim()});else if(type==='replace'&&ready&&window.confirm(used?'共有本文全体のデザインを更新しますか？':'登録部品を上書きしますか？'))onLibraryAction({type,id:entry.id,design:draft});else if(type==='delete'&&!used&&window.confirm('登録部品を削除しますか？')){onLibraryAction({type,id:entry.id});setLibraryId('');}}}
   const weights=fontOptions.find(o=>o.id===draft.font?.id)?.weights??[];
