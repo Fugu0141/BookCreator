@@ -473,7 +473,7 @@ async function packageSmoke(){
   await until("document.querySelector('#structured-apply').disabled&&!!document.querySelector('.structured-rich-editor [role=alert]')");
   await setRichValue('重要な文章です。追加。');
   await until("!document.querySelector('#structured-apply').disabled");
-  await exec("(()=>{const e=document.querySelector('#structured-rich-value');e.focus();e.setSelectionRange(3,5);e.dispatchEvent(new Event('select',{bubbles:true}));})()");
+  await exec("(()=>{const e=document.querySelector('#structured-rich-value');e.focus();e.setSelectionRange(3,5);e.dispatchEvent(new KeyboardEvent('keyup',{key:'Shift',bubbles:true}));})()");
   await until("!!document.querySelector('[data-rich-format=underline]')&&!document.querySelector('[data-rich-format=underline]').disabled");
   await exec("document.querySelector('[data-rich-format=underline]').click()");
   await until("Array.from(document.querySelectorAll('.rich-text-preview span')).some(s=>s.textContent==='文章'&&s.style.textDecoration==='underline')");
