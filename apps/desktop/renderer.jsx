@@ -1,4 +1,5 @@
 import {measurementLane} from './measurement-lane.mjs';
+import {retryPreviewRead,unwrapIpc} from './preview-read-retry.mjs';
 import {CatalogSpecimen} from './catalog-specimen.jsx';
 import React,{useState,useRef,useEffect} from 'react';
 import {createRoot} from 'react-dom/client';
@@ -62,12 +63,12 @@ async function registerProjectFonts(fonts){
   }
   return result;
 }
-async function resolvePreviewImage(token,id){if(typeof token!=='string'||!/^[a-f0-9]{64}$/.test(id))throw Error('Invalid preview image request');const bytes=await unwrap(api.readPreviewImage(token,id));return new Blob([bytes],{type:'image/png'});}
-async function unwrap(p){const r=await p;if(!r.ok)throw Error(r.error.code+': '+r.error.message);return r.value;}
+async function resolvePreviewImage(token,id,current){if(typeof token!=='string'||!/^[a-f0-9]{64}$/.test(id))throw Error('Invalid preview image request');const bytes=await retryPreviewRead(()=>unwrap(api.readPreviewImage(token,id)),{current});return new Blob([bytes],{type:'image/png'});}
+const unwrap=unwrapIpc;
 function validPaper(page){try{return page?paperGeometry(page):null;}catch{return null;}}
 function App(){
   const [book,setBook]=useState(null),[file,setFile]=useState(null),[text,setText]=useState(''),[status,setStatus]=useState('book.yaml を開いてください。'),[busy,setBusy]=useState(true),[measuring,setMeasuring]=useState(false);
-  const resolveImage=id=>resolvePreviewImage(book?.settingRecovery?.token,id);
+  const resolveImage=(id,current)=>resolvePreviewImage(book?.settingRecovery?.token,id,current);
   const [mode,setMode]=useState('home'),[showPaper,setShowPaper]=useState(false),[livePreview,setLivePreview]=useState(true);
   // CSS viewport width, not physical pixels: reacts to window size and UI zoom.
   const [compactWriting,setCompactWriting]=useState(()=>window.innerWidth<=900);
@@ -547,7 +548,8 @@ function App(){
     const raw=text;let diagnostics=[],documents=[];
     try{
       const input=describeLayoutInput({whole,file,raw,page,savedSettings,typography,theme,fonts,order,job,bundledFingerprint:__BUNDLED_FONT_FINGERPRINT__},{paperGeometry,hasDynamicLabels,hasStudyNumbering});
-      const snapshot=whole||input.needsContext?await unwrap(api.readPreviewBook(book.settingRecovery.token)):undefined;
+      const current=()=>layoutScheduler.current.isCurrent(job);
+      const snapshot=whole||input.needsContext?await retryPreviewRead(()=>unwrap(api.readPreviewBook(book.settingRecovery.token)),{current}):undefined;
       if(!layoutScheduler.current.isCurrent(job))return;
       documents=collectLayoutDocuments(input,snapshot);
       const prepared=prepareLayoutOptions(input,documents,prepareBookBrowserPreview,deps);
@@ -556,7 +558,7 @@ function App(){
       const options=prepared.options;
       validateLayoutOptions(options,input.fonts);
       const geometry=input.geometry;
-      const result=await measurementLane.run(()=>createPlainTextPagePreview(document,{...options,paper:geometry.paper,resolveImage}),{current:()=>layoutScheduler.current.isCurrent(job)});
+      const result=await measurementLane.run(()=>createPlainTextPagePreview(document,{...options,paper:geometry.paper,resolveImage:id=>resolveImage(id,current)}),{current});
       if(!result||!layoutScheduler.current.isCurrent(job))return;
       const pages=describeMeasuredPaper(result,options,{previewSourceRange,paperThumbnail,onNavigate:(documentId,range)=>{
         if(!layoutScheduler.current.isCurrent(job))return;
