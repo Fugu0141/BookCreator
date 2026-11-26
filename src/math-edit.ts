@@ -86,22 +86,30 @@ export function planDisplayMath(source:string,start:number,end:number,formula:st
 }
 
 
-type InlineTarget={mode:'insert'|'edit';start:number;end:number;formula:string;logicalStart:number;paragraph:{start:number;end:number;text:string}};
+type InlineTarget={mode:'insert'|'edit';start:number;end:number;formula:string;logicalStart:number;paragraph:{start:number;end:number;text:string;ownerStart:number;ownerEnd:number;slot:string}};
 function inlineContext<S extends Scan>(source:string,start:number,end:number,deps:PreparationDependencies<S>){
   if(!Number.isSafeInteger(start)||!Number.isSafeInteger(end)||start<0||end<start||end>source.length||!deps.validateInlineMath)return fail('Invalid inline math selection or validator');
   const blocks=scanned(source,deps.scan);
   const result=prepareManuscript([{documentId:'math-edit',revision:'1',source,startOn:'page'}],'1','math-edit',{width:100000,height:100000},deps);
   if(!result.input)return fail('Resolve unsupported manuscript content before editing inline math');
-  const paragraph=result.items.find(p=>p.kind==='paragraph'&&start>=p.origin.range.start&&end<=p.origin.range.start+p.text.length);
-  if(!paragraph)return fail('Place the caret in ordinary body text or select one inline formula');
-  const p={start:paragraph.origin.range.start,end:paragraph.origin.range.end,text:paragraph.text};
+
+  const candidates=result.items.flatMap(item=>{
+    if(item.kind!=='paragraph'&&item.kind!=='study')return [];
+    const primary={start:item.sourceTextStart??item.origin.range.start,text:item.text,slot:'content'};
+    return [primary,...(item.namedSlots??[]).map(s=>({start:s.sourceTextStart!,text:s.text,slot:s.name}))].map(s=>({...s,end:s.start+s.text.length,ownerStart:item.origin.range.start,ownerEnd:item.origin.range.end}));
+  });
+  const p=candidates.find(s=>start>=s.start&&end<=s.end);
+  if(!p)return fail('Place the caret in ordinary body text or a study text slot, or select one inline formula');
   const parsed=parsePreviewInline(p.text,p.start,deps.validateInlineMath);
+  const rows:Scan['blocks'][number][]=[];
+  function collect(children:Scan['blocks']){for(const b of children){if(b.kind==='raw')rows.push(b);else if(b.kind==='directive')collect(b.children);}}
+  collect(blocks);
   const boundaries=new Set([...new Intl.Segmenter(undefined,{granularity:'grapheme'}).segment(source)].map(g=>g.index));boundaries.add(source.length);
   if(!boundaries.has(start)||!boundaries.has(end))return fail('Selection splits a grapheme');
   for(const atom of parsed.inlineMath){
     const seg=parsed.sourceMap.segments.find(s=>s.start===atom.start&&s.end===atom.start+1)!;
     if(start>=seg.outerStart&&end<=seg.outerEnd&&(start!==end||start>seg.outerStart&&start<seg.outerEnd)){
-      return {blocks,parsed,target:{mode:'edit',start:seg.outerStart+1,end:seg.outerEnd-1,formula:atom.formula,logicalStart:atom.start,paragraph:p} as InlineTarget};
+      return {blocks,rows,parsed,target:{mode:'edit',start:seg.outerStart+1,end:seg.outerEnd-1,formula:atom.formula,logicalStart:atom.start,paragraph:p} as InlineTarget};
     }
   }
   if(start!==end)return fail('Select only one existing formula, or use a caret to insert');
@@ -111,11 +119,11 @@ function inlineContext<S extends Scan>(source:string,start:number,end:number,dep
   if(!seg)return fail('No logical insertion boundary');
   const logicalStart=start===seg.outerStart?seg.start:start===seg.outerEnd?seg.end:seg.start+start-seg.rawStart;
   if(logicalStart<0||logicalStart>parsed.text.length||parsed.inlineStyles.some(s=>s.start<logicalStart&&logicalStart<s.end))return fail('Cannot insert inside an inline style');
-  const row=blocks.find(b=>b.kind==='raw'&&start>=b.range.start&&start<=b.range.end&&start<=b.range.start+source.slice(b.range.start,b.range.end).replace(/(?:\r\n|\r|\n)$/,'').length);
+  const row=rows.find(b=>b.kind==='raw'&&start>=b.range.start&&start<=b.range.end&&start<=b.range.start+source.slice(b.range.start,b.range.end).replace(/(?:\r\n|\r|\n)$/,'').length);
   if(!row)return fail('Insert on a nonblank body line, not a separator');
-  return {blocks,parsed,target:{mode:'insert',start,end,formula:'x^2',logicalStart,paragraph:p} as InlineTarget};
+  return {blocks,rows,parsed,target:{mode:'insert',start,end,formula:'x^2',logicalStart,paragraph:p} as InlineTarget};
 }
-/** Reuse actual manuscript preparation to exclude headings, lists and protected regions. */
+/** Reuse actual manuscript preparation to identify independent semantic text slots and exclude protected regions. */
 export function inspectInlineMath<S extends Scan>(source:string,start:number,end:number,deps:PreparationDependencies<S>){
   return inlineContext(source,start,end,deps).target;
 }
@@ -128,13 +136,17 @@ export function planInlineMath<S extends Scan>(source:string,start:number,end:nu
   const next=source.slice(0,t.start)+replacement+source.slice(t.end),delta=replacement.length-(t.end-t.start);
   const after=scanned(next,deps.scan);
   // Scanner ranges stay identical apart from the one local line's length and shifted following blocks.
-  const row=before.blocks.findIndex(b=>b.kind==='raw'&&t.start>=b.range.start&&t.end<=b.range.end&&t.start<=b.range.start+source.slice(b.range.start,b.range.end).replace(/(?:\r\n|\r|\n)$/,'').length);
-  if(row<0||after.length!==before.blocks.length||after.some((b,i)=>{
-    const old=before.blocks[i];return b.kind!==old.kind||b.range.start!==old.range.start+(i>row?delta:0)||b.range.end!==old.range.end+(i>=row?delta:0);
-  }))return fail('Inline math edit would change scanner structure');
+  const row=before.rows.find(b=>t.start>=b.range.start&&t.end<=b.range.end&&t.start<=b.range.start+source.slice(b.range.start,b.range.end).replace(/(?:\r\n|\r|\n)$/,'').length);
+  if(!row)return fail('Inline math edit must belong to a single raw line');
+  const signature=(blocks:Scan['blocks'],shift:boolean):unknown[]=>blocks.map(b=>{
+    const moveStart=shift&&b.range.start>=row.range.end;
+    const moveEnd=shift&&b.range.end>=row.range.end;
+    return [b.kind,b.range.start+(moveStart?delta:0),b.range.end+(moveEnd?delta:0),b.kind==='directive'?[b.closed,b.header.name,b.header.id,b.header.attributes.map(a=>[a.key,a.value]),signature(b.children,shift)]:b.level];
+  });
+  if(JSON.stringify(signature(before.blocks,true))!==JSON.stringify(signature(after,false)))return fail('Inline math edit would change scanner structure');
   const selectionStart=t.start+(t.mode==='insert'?1:0);
   const checked=inlineContext(next,selectionStart,selectionStart+formula.length,deps);
-  if(checked.target.mode!=='edit'||checked.target.start!==selectionStart||checked.target.formula!==formula||checked.target.paragraph.start!==t.paragraph.start||checked.target.paragraph.end!==t.paragraph.end+delta)return fail('Formula would change surrounding paragraph structure');
+  if(checked.target.mode!=='edit'||checked.target.start!==selectionStart||checked.target.formula!==formula||checked.target.paragraph.start!==t.paragraph.start||checked.target.paragraph.end!==t.paragraph.end+delta||checked.target.paragraph.ownerStart!==t.paragraph.ownerStart||checked.target.paragraph.ownerEnd!==t.paragraph.ownerEnd+delta||checked.target.paragraph.slot!==t.paragraph.slot)return fail('Formula would change surrounding paragraph structure');
   const expectedText=t.mode==='insert'?before.parsed.text.slice(0,logical)+'\uFFFC'+before.parsed.text.slice(logical):before.parsed.text;
   const expectedStyles=before.parsed.inlineStyles.map(s=>({...s,start:s.start+(t.mode==='insert'&&s.start>=logical?1:0),end:s.end+(t.mode==='insert'&&s.end>logical?1:0)}));
   const expectedAtoms=before.parsed.inlineMath.map(a=>({...a,start:a.start+(t.mode==='insert'&&a.start>=logical?1:0),formula:t.mode==='edit'&&a.start===logical?formula:a.formula}));
