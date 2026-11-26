@@ -64,7 +64,7 @@ async function resolveImage(id){if(!/^[a-f0-9]{64}$/.test(id))throw Error('Inval
 async function unwrap(p){const r=await p;if(!r.ok)throw Error(r.error.code+': '+r.error.message);return r.value;}
 function validPaper(page){try{return page?paperGeometry(page):null;}catch{return null;}}
 function App(){
-  const [book,setBook]=useState(null),[file,setFile]=useState(null),[text,setText]=useState(''),[status,setStatus]=useState('book.yaml を開いてください。'),[busy,setBusy]=useState(false),[measuring,setMeasuring]=useState(false);
+  const [book,setBook]=useState(null),[file,setFile]=useState(null),[text,setText]=useState(''),[status,setStatus]=useState('book.yaml を開いてください。'),[busy,setBusy]=useState(true),[measuring,setMeasuring]=useState(false);
   const [mode,setMode]=useState('home'),[showPaper,setShowPaper]=useState(false),[livePreview,setLivePreview]=useState(true);
   // CSS viewport width, not physical pixels: reacts to window size and UI zoom.
   const [compactWriting,setCompactWriting]=useState(()=>window.innerWidth<=900);
