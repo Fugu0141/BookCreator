@@ -398,10 +398,11 @@ async function liveWritingSmoke(){
   if(await readFile(path,'utf8')!==saved)throw Error('Settings preview wrote manuscript');
   await click('#performance-toggle');
   await until('performance samples',"['measurement','layout'].every(stage=>['manuscript','book'].every(category=>Number(document.querySelector('#performance-summary tr[data-stage='+stage+'][data-category='+category+']')?.dataset.success)>0))&&Number(document.querySelector('#performance-summary tr[data-stage=read][data-category=source]')?.dataset.success)>0");
+  await until('phase samples',"['manuscript','book'].every(scope=>{const e=document.querySelector('#performance-phase-summary tr[data-scope='+scope+'][data-cache-enabled=true]');if(!e||Number(e.dataset.count)<1)return false;const t=JSON.parse(e.dataset.latest);return ['validationMs','imagesMs','measurementMs','paginationMs','renderingMs','presentationMs'].every(k=>Number.isFinite(t[k])&&t[k]>=0);})");
   await until('performance memory',"document.querySelector('#performance-memory')?.dataset.phase==='ready'&&document.querySelector('#performance-memory').textContent.includes('MiB')");
   console.log('PERF sample '+await raw("JSON.stringify({rows:[...document.querySelectorAll('#performance-summary tbody tr')].map(tr=>({stage:tr.dataset.stage,category:tr.dataset.category,values:[...tr.querySelectorAll('td')].map(td=>td.textContent)})),memory:document.querySelector('#performance-memory').textContent})"));
   await click('#performance-clear');
-  await until('performance cleared',"document.querySelectorAll('#performance-summary tbody tr').length===0");
+  await until('performance cleared',"document.querySelectorAll('#performance-summary tbody tr').length===0&&document.querySelectorAll('#performance-phase-summary tbody tr').length===0");
   await click('#performance-close');
   await until('performance closed',"!document.querySelector('#performance-panel')");
   // Reopening through the normal discard path cleans any coalesced recovery draft.

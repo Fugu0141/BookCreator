@@ -1,5 +1,6 @@
 import {measurementLane} from './measurement-lane.mjs';
 import {performanceMetrics} from './performance-metrics.mjs';
+import {previewPhaseMetrics} from './preview-phase-metrics.mjs';
 import {PerformancePanel} from './performance-panel.jsx';
 import {retryPreviewRead,unwrapIpc} from './preview-read-retry.mjs';
 import {CatalogSpecimen} from './catalog-specimen.jsx';
@@ -571,8 +572,9 @@ function App(){
       const options=prepared.options;
       validateLayoutOptions(options,input.fonts);
       const geometry=input.geometry;
-      const result=await measurementLane.run(()=>createPlainTextPagePreview(document,{...options,paper:geometry.paper,measurementCache,resolveImage:id=>resolveImage(id,current)}),{current,category:scope});
+      const result=await measurementLane.run(()=>createPlainTextPagePreview(document,{...options,paper:geometry.paper,measurementCache,collectTimings:true,resolveImage:id=>resolveImage(id,current)}),{current,category:scope});
       if(!result||!layoutScheduler.current.isCurrent(job))return;
+      const presentationStarted=performance.now();
       const pages=describeMeasuredPaper(result,options,{previewSourceRange,paperThumbnail,onNavigate:(documentId,range)=>{
         if(!layoutScheduler.current.isCurrent(job))return;
         if(documentId!==file?.id){setStatus('この断片は '+documentId+' の原稿です。左の原稿一覧から開いてください。');return;}
@@ -585,6 +587,7 @@ function App(){
       setLayoutPages(pages);setActivePage(pageNumber);setPageJump(String(pageNumber));
       setLayoutState({phase:'ready',scope,pages:result.plan.pages.length});
       outcome='success';
+      previewPhaseMetrics.record(scope,!!measurementCache,{...result.timings,presentationMs:performance.now()-presentationStarted});
       if(!automatic)setStatus(result.plan.pages.length+' ページ · '+(whole?'書籍全体':'選択原稿')+' · 実測プレビュー（出版不可）');
     }catch(e){if(layoutScheduler.current.isCurrent(job)){outcome='failed';setLayoutState({phase:'failed',scope,pages:0});setLayoutDiagnostics(diagnosticRecords(diagnostics,documents,e));if(!automatic)setStatus(String(e.message??e));}}
     finally{performanceMetrics.record({stage:'layout',category:scope,outcome,waitMs:startedAt-requestedAt,runMs:performance.now()-startedAt});if(layoutScheduler.current.isCurrent(job))setMeasuring(false);}
