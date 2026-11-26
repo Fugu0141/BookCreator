@@ -668,14 +668,14 @@ test('BCM inline math refuses invalid delimiters, unsafe commands and unsupporte
   const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds,validateDisplayMath:engine.parsePreviewMath,validateInlineMath:engine.parsePreviewMath};
   const size={width:100000,height:70000};
   const run=(source,d=deps)=>prepareBrowserPreview({documentId:'bad',revision:'1',source,startOn:'page'},'1','inline',size,d);
-  for(const source of ['本文 $ x$','本文 $x $','本文 $x$2','本文 $$x$$','本文 $x','本文 $x\n+y$','本文 $\\input{secret}$','本文 $x^2^3$','本文 **$x$**','# 見出し $x$','- 項目 $x$',':::callout{kind="note"}\n本文 $x$\n:::\n','価格は $20 です。','本文 $x$'+ '$y$']){
+  for(const source of ['本文 $ x$','本文 $x $','本文 $x$2','本文 $$x$$','本文 $x','本文 $x\n+y$','本文 $\\input{secret}$','本文 $x^2^3$','本文 **$x$**','# 見出し $x$','- 項目 $x$','価格は $20 です。','本文 $x$'+ '$y$']){
     assert.equal(run(source).options,undefined,source);
   }
   assert.equal(run('本文 $x$',{...deps,validateInlineMath:undefined}).options,undefined);
   assert.ok(run('本文 $x$ です。').options);
   assert.ok(run('価格は \\$20。').options);
   const doc={documentId:'frame',revision:'1',source:'本文 $x$ です。',startOn:'page'};
-  assert.equal(prepareBookBrowserPreview([doc],'1','frame',size,deps,undefined,undefined,undefined,defaultParagraphDesign()).options,undefined);
+  assert.ok(prepareBookBrowserPreview([doc],'1','frame',size,deps,undefined,undefined,undefined,defaultParagraphDesign()).options);
 });
 
 
@@ -701,7 +701,7 @@ test('GUI inline math inserts and updates exact formula bodies, retaining CRLF a
 test('GUI inline math refuses protected ranges, text replacement, unsafe boundaries and invalid formulas',()=>{
   const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds,validateDisplayMath:engine.parsePreviewMath,validateInlineMath:engine.parsePreviewMath};
   for(const [source,start,end] of [
-    ['# 見出し',3,3],['- 項目',3,3],[':::callout{kind="note"}\n本文。\n:::\n',26,26],
+    ['# 見出し',3,3],['- 項目',3,3],[':::callout{kind="note"}\n本文。\n:::\n',5,5],
     ['本文。',0,2],['**係数** を使う。',3,3],['A\u0301B',1,1],['本文 20。',3,3],
     ['本文 $x$ です。',5,10],['本文 $x$ です。',3,3],['本文。\n\n結び。',4,4],['$$\nx\n$$\n',3,3],
     ['本文。\n~~~\nx\n~~~\n',1,1],['本文 \\$20。',4,4]
@@ -832,5 +832,46 @@ test('GUI equation numbering toggles preserve identity and refuse referenced tar
     const on=planEquationNumbering([{...doc,source:disabled},other],'a',off.selection.start,off.selection.end,true,undefined,deps);
     assert.equal(bcm.applyPatches(disabled,[on.patch]),numbered);
     assert.throws(()=>planEquationNumbering([doc,{...other,source:[':::layout{#eq-toggle numbered="true"}','$$','y','$$',':::',''].join(nl)}],'a',p,p+3,true,'eq-toggle',deps),RangeError);
+  }
+});
+
+
+test('component inline math keeps independent source envelopes in primary and named text slots',()=>{
+  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds,validateDisplayMath:engine.parsePreviewMath,validateInlineMath:engine.parsePreviewMath};
+  const size={width:100000,height:70000},id='study-math';
+  const design={...defaultHeadingDesign(),direction:'column',children:[{id:'content',type:'content'},{id:'hint',type:'slot',name:'hint',width:'fill',fontSize:3500,lineHeight:1.5,color:'#123456'}]};
+  const library={schemaVersion:1,entries:[{id,name:'数式部品',usage:'study',design}]};
+  for(const nl of ['\n','\r\n']){
+    const source=['::::component{name="'+id+'"}',':::slot{name="hint"}','ヒント $\\sqrt{x}$ です。',':::',':::slot{name="content"}','**係数** $\\frac{1}{2}$ です。',':::','::::',''].join(nl);
+    const doc={documentId:'slots',revision:'1',source,startOn:'page'};
+    for(const p of [prepareBrowserPreview(doc,'1','slots',size,deps,undefined,library),prepareBookBrowserPreview([doc],'1','slots',size,deps,undefined,undefined,undefined,defaultParagraphDesign(),undefined,library)]){
+      assert.deepEqual(p.diagnostics,[]);
+      const b=(p.options.blocks??p.options.sections[0].blocks)[0],slot=b.namedSlots[0];
+      assert.equal(b.request.text,'係数 \uFFFC です。');assert.equal(slot.request.text,'ヒント \uFFFC です。');
+      assert.deepEqual(b.request.inlineStyles,[{start:0,end:2,fontWeight:700}]);
+      assert.equal(b.sourceTextStart,undefined);assert.equal(slot.sourceTextStart,undefined);
+      for(const [req,name,formula] of [[b.request,undefined,'$\\frac{1}{2}$'],[slot.request,'hint','$\\sqrt{x}$']]){
+        const atom=req.inlineMath[0],range=previewSourceRange(b,{textStart:atom.start,textEnd:atom.start+1},name);
+        assert.equal(source.slice(range.start,range.end),formula);
+      }
+    }
+    const at=source.indexOf('です。')+3,plan=planInlineMath(source,at,at,'x^2',deps);
+    const next=bcm.applyPatches(source,[plan.patch]);
+    assert.equal(next,source.slice(0,at)+'$x^2
+  }
+});
++source.slice(at));
+    const old='$\\sqrt{x}
+  }
+});
+,start=next.indexOf(old);
+    const edit=planInlineMath(next,start,start+old.length,'\\frac{a}{b}',deps);
+    assert.equal(bcm.applyPatches(next,[edit.patch]),next.replace(old,()=>'$\\frac{a}{b}
+  }
+});
+));
+    assert.equal(inspectInlineMath(next,start,start+old.length,deps).paragraph.slot,'hint');
+    assert.throws(()=>planInlineMath(source,source.indexOf('name="hint"'),source.indexOf('name="hint"'),'x',deps));
+    assert.throws(()=>planInlineMath(source,source.indexOf('**係数**')+3,source.indexOf('**係数**')+3,'x',deps));
   }
 });
