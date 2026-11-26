@@ -1031,3 +1031,26 @@ test('numbered component equations share chapter order, source envelopes and ref
     }
   }
 });
+
+
+test('numbered component display editing preserves wrapper, ID and cross-document references',()=>{
+  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds,validateDisplayMath:engine.parseDisplayMath,validateInlineMath:engine.parsePreviewMath,parseReference:bcm.parseReferenceToken};
+  for(const nl of ['\n','\r\n']){
+    const wrap=[':::layout{#eq-nested numbered="true"}','$$','x^2','$$',':::'].join(nl);
+    const source=['# 第一章','','::::callout{kind="note"}','説明。','',wrap,'','結び。','::::','',':ref{target="eq-other" format="number"} を参照。',''].join(nl);
+    const doc={documentId:'a',revision:'1',source,startOn:'page'};
+    const other={documentId:'b',revision:'1',source:[':::layout{#eq-other numbered="true"}','$$','y^2','$$',':::','',':ref{target="eq-nested" format="label-number"} を参照。',''].join(nl),startOn:'page'};
+    const context={documents:[doc,other],documentId:'a'},at=source.indexOf(wrap),end=at+wrap.length;
+    assert.throws(()=>inspectComponentDisplayMath(source,at,end,deps),RangeError);
+    const target=inspectComponentDisplayMath(source,at,end,deps,context);
+    assert.equal(target.formula,'x^2');assert.equal(target.equationId,'eq-nested');assert.equal(target.numbered,true);
+    const plan=planComponentDisplayMath(source,at,end,'z^2',deps,context);
+    assert.equal(plan.patch.expected,'x^2');assert.equal(plan.patch.replacement,'z^2');
+    const next=bcm.applyPatches(source,[plan.patch]);
+    assert.equal(next,source.replace('x^2','z^2'));
+    assert.equal(next.slice(plan.selection.start,plan.selection.end),'z^2');
+    assert.deepEqual(equationReferenceTargets([{...doc,source:next},other],deps),[{id:'eq-nested',number:'1.1',documentId:'a',formula:'z^2'},{id:'eq-other',number:'2.1',documentId:'b',formula:'y^2'}]);
+    assert.throws(()=>planComponentDisplayMath(source,at,end,'\\input{secret}',deps,context),RangeError);
+    assert.throws(()=>planComponentDisplayMath(source,at,end,'z^2',deps,{...context,documents:[doc,{...other,source:other.source.replace('eq-other','eq-duplicate')}]}),RangeError);
+  }
+});

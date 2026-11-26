@@ -1,4 +1,4 @@
-import {prepareManuscript,type Scan,type PreparationDependencies} from './manuscript-poc.js';
+import {prepareManuscript,type Scan,type PreparationDependencies,type Manuscript} from './manuscript-poc.js';
 import {parsePreviewInline} from './inline-preview.js';
 import type {InlineEditPlan} from './inline-edit.js';
 
@@ -107,11 +107,11 @@ function inlineContext<S extends Scan>(source:string,start:number,end:number,dep
   const candidates=result.items.flatMap(item=>{
     if(item.kind!=='paragraph'&&item.kind!=='study')return [];
     const primary={start:item.sourceTextStart??item.origin.range.start,text:item.text,slot:'content'};
-    return [primary,...(item.namedSlots??[]).map(s=>({start:s.sourceTextStart!,text:s.text,slot:s.name}))].map(s=>({...s,end:s.start+s.text.length,ownerStart:item.origin.range.start,ownerEnd:item.origin.range.end}));
+    return [primary,...(item.namedSlots??[]).map(s=>({start:s.sourceTextStart!,text:s.text,slot:s.name}))].map(s=>({...s,end:s.start+s.text.length,ownerStart:item.origin.range.start,ownerEnd:item.origin.range.end,componentEquations:item.componentEquations}));
   });
   const p=candidates.find(s=>start>=s.start&&end<=s.end);
   if(!p)return fail('Place the caret in ordinary body text or a study text slot, or select one inline formula');
-  const parsed=parsePreviewInline(p.text,p.start,deps.validateInlineMath,undefined,true,deps.validateDisplayMath);
+  const parsed=parsePreviewInline(p.text,p.start,deps.validateInlineMath,undefined,true,deps.validateDisplayMath,p.componentEquations);
   const rows:Scan['blocks'][number][]=[];
   function collect(children:Scan['blocks']){for(const b of children){if(b.kind==='raw')rows.push(b);else if(b.kind==='directive')collect(b.children);}}
   collect(blocks);
@@ -169,27 +169,36 @@ export function planInlineMath<S extends Scan>(source:string,start:number,end:nu
 }
 
 
-type ComponentDisplayTarget={mode:'edit'|'insert';start:number;end:number;formula:string;component:true;slot:string;ownerStart:number;ownerEnd:number};
+type ComponentDisplayTarget={mode:'edit'|'insert';start:number;end:number;formula:string;component:true;slot:string;ownerStart:number;ownerEnd:number;numbered?:boolean;equationId?:string};
+export interface ComponentMathBookContext {documents:readonly Manuscript[];documentId:string}
+function componentMathDocuments(source:string,context?:ComponentMathBookContext):readonly Manuscript[]{
+  if(!context)return [{documentId:'math-edit',revision:'1',source,startOn:'page'}];
+  if(context.documents.filter(d=>d.documentId===context.documentId).length!==1)return fail('Expected current document in book context');
+  return context.documents.map(d=>d.documentId===context.documentId?{...d,source}:d);
+}
 /** A nested equation must belong to a semantic study slot, never a header or arbitrary directive. */
-export function inspectComponentDisplayMath<S extends Scan>(source:string,start:number,end:number,deps:PreparationDependencies<S>):ComponentDisplayTarget|undefined{
+export function inspectComponentDisplayMath<S extends Scan>(source:string,start:number,end:number,deps:PreparationDependencies<S>,context?:ComponentMathBookContext):ComponentDisplayTarget|undefined{
   if(!Number.isSafeInteger(start)||!Number.isSafeInteger(end)||start<0||end<start||end>source.length)return fail('Invalid math selection');
   const blocks=scanned(source,deps.scan);
   const owner=blocks.find(b=>b.kind==='directive'&&b.header.name!=='layout'&&start>=b.range.start&&start<b.range.end&&end<=b.range.end);
   if(!owner)return;
-  const result=prepareManuscript([{documentId:'math-edit',revision:'1',source,startOn:'page'}],'1','math-edit',{width:100000,height:100000},deps);
+  const result=prepareManuscript(componentMathDocuments(source,context),'1','math-edit',{width:100000,height:100000},deps);
   if(!result.input)return fail('Resolve unsupported manuscript content before editing component math');
-  const item=result.items.find(i=>i.kind==='study'&&i.origin.range.start===owner.range.start&&i.origin.range.end===owner.range.end);
+  const item=result.items.find(i=>i.kind==='study'&&i.origin.documentId===(context?.documentId??'math-edit')&&i.origin.range.start===owner.range.start&&i.origin.range.end===owner.range.end);
   if(!item)return fail('Expected a semantic study component');
   const slots=[{name:'content',text:item.text,sourceTextStart:item.sourceTextStart!},...(item.namedSlots??[])];
   const slot=slots.find(s=>s.sourceTextStart!==undefined&&start>=s.sourceTextStart&&end<=s.sourceTextStart+s.text.length);
   if(!slot||slot.sourceTextStart===undefined)return fail('Place the caret within a component text slot');
   const slotStart=slot.sourceTextStart;
   if(source.slice(slotStart,slotStart+slot.text.length)!==slot.text)return fail('Cannot establish exact component slot source');
-  const parsed=parsePreviewInline(slot.text,slot.sourceTextStart,deps.validateInlineMath,undefined,true,deps.validateDisplayMath);
+  const parsed=parsePreviewInline(slot.text,slot.sourceTextStart,deps.validateInlineMath,undefined,true,deps.validateDisplayMath,item.componentEquations);
   const base={component:true as const,slot:slot.name,ownerStart:owner.range.start,ownerEnd:owner.range.end};
   for(const atom of parsed.inlineMath.filter(a=>a.display)){
     const seg=parsed.sourceMap.segments.find(s=>s.start===atom.start)!;
-    if(start>=seg.outerStart&&start<seg.outerEnd&&end<=seg.outerEnd)return {...base,mode:'edit',start:seg.rawStart,end:seg.rawStart+atom.formula.length,formula:atom.formula};
+    if(start>=seg.outerStart&&start<seg.outerEnd&&end<=seg.outerEnd){
+      const eq=item.componentEquations?.find(e=>e.range.start===seg.outerStart&&e.range.end===seg.outerEnd);
+      return {...base,mode:'edit',start:seg.rawStart,end:seg.rawStart+atom.formula.length,formula:atom.formula,...(eq?{numbered:eq.numbered,equationId:eq.id}:{})};
+    }
   }
   if(start!==end)return fail('Select one independent formula or place the caret on an internal blank line');
   const blank:Scan['blocks'][number][]=[];
@@ -199,11 +208,11 @@ export function inspectComponentDisplayMath<S extends Scan>(source:string,start:
   if(!line)return fail('Place the caret on an internal blank line in the text slot');
   return {...base,mode:'insert',start:line.range.start,end:line.range.start,formula:'x^2'};
 }
-export function planComponentDisplayMath<S extends Scan>(source:string,start:number,end:number,formula:string,deps:PreparationDependencies<S>):InlineEditPlan{
+export function planComponentDisplayMath<S extends Scan>(source:string,start:number,end:number,formula:string,deps:PreparationDependencies<S>,context?:ComponentMathBookContext):InlineEditPlan{
   if(!deps.validateDisplayMath)return fail('Display math validator unavailable');
   formula=formulaForSource(source,formula);
   deps.validateDisplayMath(formula);
-  const target=inspectComponentDisplayMath(source,start,end,deps);
+  const target=inspectComponentDisplayMath(source,start,end,deps,context);
   if(!target)return fail('Expected a component display formula');
   const endings=new Set(source.match(/\r\n|\r|\n/g)??[]);
   if(endings.has('\r')||endings.size>1)return fail('Mixed or unsupported line endings');
@@ -211,8 +220,8 @@ export function planComponentDisplayMath<S extends Scan>(source:string,start:num
   const prefix=target.mode==='insert'?nl+'$$'+nl:'';
   const replacement=prefix+formula+(target.mode==='insert'?nl+'$$'+nl:'');
   const next=source.slice(0,target.start)+replacement+source.slice(target.end),delta=replacement.length-(target.end-target.start),p=target.start+prefix.length;
-  const checked=inspectComponentDisplayMath(next,p,p+formula.length,deps);
-  if(!checked||checked.mode!=='edit'||checked.start!==p||checked.formula!==formula||checked.slot!==target.slot||checked.ownerStart!==target.ownerStart||checked.ownerEnd!==target.ownerEnd+delta)return fail('Edit would change component or slot identity');
+  const checked=inspectComponentDisplayMath(next,p,p+formula.length,deps,context);
+  if(!checked||checked.mode!=='edit'||checked.start!==p||checked.formula!==formula||checked.numbered!==target.numbered||checked.equationId!==target.equationId||checked.slot!==target.slot||checked.ownerStart!==target.ownerStart||checked.ownerEnd!==target.ownerEnd+delta)return fail('Edit would change component or slot identity');
   // All unrelated top-level blocks retain their exact contents and ranges.
   const before=scanned(source,deps.scan),after=scanned(next,deps.scan);
   if(before.length!==after.length||before.some((b,i)=>{
