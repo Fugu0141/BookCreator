@@ -3,7 +3,7 @@ import {createServer} from 'node:http';
 import {readFile} from 'node:fs/promises';
 const entries=new Map();
 const add=(prefix,root,files)=>{for(const f of files)entries.set(prefix+f,new URL(root+f,import.meta.url));};
-add('/demo/','../demo/',['preview.html','preview.mjs']);
+add('/demo/','../demo/',['preview.html','preview.mjs','math-pdf.html','math-pdf.mjs']);
 add('/fixtures/','../tests/fixtures/',['math-textbook.mjs']);
 add('/app/dist/','../dist/',['index.js','manuscript-poc.js','browser-preview.js','preview-typography.js','preview-component.js','study-blocks.js','inline-preview.js','inline-edit.js','list-edit.js','math-edit.js','equation-reference-edit.js','equation-numbering-edit.js','study-sample.js']);
 add('/bcm/dist/','../../BookCreator_Markdown/dist/',['index.js','document.js','block-ids.js','validation.js']);
