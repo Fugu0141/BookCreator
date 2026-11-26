@@ -163,7 +163,7 @@ function workspaceSmokeExec(){
   return async js=>{
     // Read-only assertions must not navigate or change the current mode.
     if(/\.(?:click|dispatchEvent|setSelectionRange|focus)\(/.test(js)){
-      const selectors=[...js.matchAll(/document\.querySelector\('([^']+)'\)|document\.getElementById\('([^']+)'\)/g)].map(m=>m[1]??'#'+m[2]);
+      const selectors=[...js.matchAll(/document\.querySelector\((['"])(.*?)\1\)|document\.getElementById\((['"])(.*?)\3\)/g)].map(m=>m[2]??'#'+m[4]);
       const selector=selectors[0];
       const mode=selector&&routeFor(selector);
       if(mode&&!await raw("document.querySelector('.workspace-shell').dataset.workspaceMode==="+JSON.stringify(mode))){
@@ -202,6 +202,11 @@ function workspaceSmokeExec(){
       if(property&&!await raw("document.querySelector('[data-property-tab="+property+"]')?.hidden===false")){
         await raw("document.querySelector('[data-property-choice="+property+"]').click()");
         if(!await raw("document.querySelector('[data-property-tab="+property+"]')?.hidden===false"))throw Error('Cannot open property category '+property);
+      }
+      const samplePanel=await raw("(()=>{for(const selector of "+JSON.stringify(selectors)+"){const p=document.querySelector(selector)?.closest('[data-sample-fields]');if(p)return p.dataset.sampleFields;}return null;})()");
+      if(samplePanel&&await raw("document.querySelector('#"+samplePanel+"-sample-fields')?.hidden")){
+        await raw("document.querySelector('#"+samplePanel+"-sample-toggle').click()");
+        if(await raw("document.querySelector('#"+samplePanel+"-sample-fields')?.hidden"))throw Error('Cannot open sample settings');
       }
       const panel=selectors.map(panelFor).find(Boolean);
       if(panel&&!await raw("!!document.querySelector('#writing-tools-"+panel+"')?.getClientRects().length")){
@@ -544,7 +549,20 @@ async function smoke(){
   await until("document.querySelector('#lab-canvas-x')?.value==='3'");
   await exec("document.querySelector('#lab-measure').click()");
   await until("!document.querySelector('#lab-apply').disabled");
-  // Actual Electron mouse events against the measured shadow DOM.
+  // View settings must not invalidate the measured draft or alter source coordinates.
+  await until("document.querySelector('#lab-sample-fields').hidden&&document.querySelector('#lab-zoom').value==='100'");
+  const measuredElement=await exec("(()=>{const h=document.querySelector('#lab-preview > div');h.dataset.zoomProbe='same';return h.shadowRoot.querySelector('[data-component-canvas]').style.width;})()");
+  await exec("document.querySelector('#lab-sample-toggle').click()");
+  await until("!document.querySelector('#lab-sample-fields').hidden");
+  await exec("document.querySelector('#lab-sample-toggle').click()");
+  await until("document.querySelector('#lab-sample-fields').hidden&&!document.querySelector('#lab-apply').disabled");
+  const setZoom=value=>exec("(()=>{const e=document.querySelector('#lab-zoom');e.value="+JSON.stringify(value)+";e.dispatchEvent(new Event('change',{bubbles:true}));})()");
+  await setZoom('fit');
+  await until("(()=>{const v=document.querySelector('#lab-preview'),h=v.firstElementChild;return h?.dataset.zoomProbe==='same'&&Number(v.dataset.zoom)>0&&Number(v.dataset.zoom)<=1&&!document.querySelector('#lab-apply').disabled;})()");
+  await setZoom('75');
+  await until("(()=>{const v=document.querySelector('#lab-preview'),h=v.firstElementChild,c=h?.shadowRoot.querySelector('[data-component-canvas]');return h?.dataset.zoomProbe==='same'&&Number(v.dataset.zoom)===.75&&Math.abs(c.getBoundingClientRect().width/parseFloat(c.style.width)-.75)<.02;})()");
+  if(!await exec("document.querySelector('#lab-preview > div').shadowRoot.querySelector('[data-component-canvas]').style.width==="+JSON.stringify(measuredElement)+"&&document.querySelector('#lab-canvas-x').value==='3'&&!document.querySelector('#lab-apply').disabled&&document.querySelector('#lab-undo').disabled"))throw Error('Zoom changed draft or history');
+  // Actual Electron mouse events against the measured shadow DOM at 75% zoom.
   const point=await exec("(()=>{const el=document.querySelector('#lab-preview > div').shadowRoot.querySelector('[data-content-slot][data-lab-draggable]');el.scrollIntoView({block:'center',inline:'center'});const r=el.getBoundingClientRect();return {x:Math.round(r.left+8),y:Math.round(r.top+8)};})()");
   win.webContents.sendInputEvent({type:'mouseMove',...point});
   win.webContents.sendInputEvent({type:'mouseDown',...point,button:'left',clickCount:1});
@@ -574,6 +592,10 @@ async function smoke(){
   win.webContents.sendInputEvent({type:'mouseUp',x:handlePoint.x-8,y:handlePoint.y,button:'left',clickCount:1});
   await until("Number(document.querySelector('#lab-canvas-content-width')?.value)<"+originalWidth+" && !document.querySelector('#lab-apply').disabled");
   const resizedWidth=await exec("Number(document.querySelector('#lab-canvas-content-width').value)");
+  const expectedWidth=Math.round((originalWidth-8*25.4/96/.75)*10)/10;
+  if(Math.abs(resizedWidth-expectedWidth)>.2)throw Error('Scaled resize did not preserve physical dimensions: '+resizedWidth+' vs '+expectedWidth);
+  await setZoom('100');
+  await until("Number(document.querySelector('#lab-preview').dataset.zoom)===1&&Number(document.querySelector('#lab-canvas-content-width').value)==="+resizedWidth+"&&!document.querySelector('#lab-apply').disabled");
   await exec("document.querySelector('#lab-undo').click()");
   await until("Number(document.querySelector('#lab-canvas-content-width')?.value)==="+originalWidth+" && document.querySelector('#lab-apply').disabled");
   await exec("document.querySelector('#lab-redo').click()");
@@ -809,6 +831,11 @@ async function smoke(){
   await until("!document.querySelector('#paragraph-apply').disabled && document.querySelector('#paragraph-preview > div').shadowRoot.querySelectorAll('[data-page]').length>1");
   if(!await exec("(()=>{const root=document.querySelector('#paragraph-preview > div').shadowRoot;return Array.from(root.querySelectorAll('[data-fragmentable-frame]')).map(e=>e.querySelector('[data-content-slot]').textContent).join('')===document.querySelector('#paragraph-sample').value;})()"))throw Error('Paragraph frame lost source text');
   // Opt in to BCM math in a disposable paragraph sample; retain the literal mode by default.
+  await until("document.querySelector('#paragraph-sample-fields').hidden&&document.querySelector('#paragraph-zoom').value==='100'");
+  await exec("(()=>{const e=document.querySelector('#paragraph-zoom');e.value='50';e.dispatchEvent(new Event('change',{bubbles:true}));})()");
+  await until("Number(document.querySelector('#paragraph-preview').dataset.zoom)===.5");
+  await exec("(()=>{const e=document.querySelector('#paragraph-zoom');e.value='100';e.dispatchEvent(new Event('change',{bubbles:true}));})()");
+  await until("Number(document.querySelector('#paragraph-preview').dataset.zoom)===1");
   const plainParagraphSample=await exec("document.querySelector('#paragraph-sample').value");
   const setLabSample=(selector,value)=>exec("(()=>{const e=document.querySelector("+JSON.stringify(selector)+");Object.getOwnPropertyDescriptor(e instanceof HTMLTextAreaElement?HTMLTextAreaElement.prototype:HTMLInputElement.prototype,'value').set.call(e,"+JSON.stringify(value)+");e.dispatchEvent(new Event('input',{bubbles:true}));})()");
   await setLabSample('#paragraph-sample','係数 $\\frac{1}{2}$ です。');
