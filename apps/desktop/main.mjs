@@ -7,7 +7,8 @@ import {fileURLToPath} from 'node:url';
 import {openWorkspace,createProject} from './workspace.mjs';
 import {projectCatalog} from './project-catalog.mjs';
 import {STIX_FONT,verifyPinnedFontBlob} from './bundled-math-font.mjs';
-import {createHash} from 'node:crypto';
+import {createHash,randomUUID} from 'node:crypto';
+import {recoveryKey,recoveryStore,recoveryStatus} from './manuscript-recovery.mjs';
 const PACKAGE_RESTART_SMOKE=process.argv.includes('--package-restart-smoke');
 const PACKAGE_SMOKE=PACKAGE_RESTART_SMOKE||process.argv.includes('--package-smoke');
 const SMOKE=PACKAGE_SMOKE||process.argv.includes('--smoke');
@@ -48,9 +49,11 @@ function checkArgs(args,count){if(args.length!==count)throw Error('Invalid argum
 async function run(){
   await app.whenReady();
   const catalog=projectCatalog(app.getPath('userData'));
+  const recovery=recoveryStore(app.getPath('userData'));
+  const recoverySessions=new Map();
   async function activate(next){
     const typography=await next.typography(),settings=await next.bookSettings(),fonts=await loadProjectFonts(next);
-    workspace=next;
+    workspace=next;recoverySessions.clear();
     let recent, catalogWarning;
     try{recent=await catalog.remember(next.manifestPath,next.summary.title);}catch(e){catalogWarning='書籍一覧を更新できませんでした: '+String(e.message??e);}
     return {...next.summary,typography,fonts,settings,recent,catalogWarning};
@@ -101,7 +104,7 @@ async function run(){
     win.webContents.send('bookcreator:close-requested',pendingClose);
   });
   win.webContents.on('did-start-navigation',(_event,_url,isInPlace,isMainFrame)=>{
-    if(isMainFrame&&!isInPlace)pendingClose=null;
+    if(isMainFrame&&!isInPlace){pendingClose=null;recoverySessions.clear();}
   });
   ipcMain.handle('bookcreator:complete-close',async(event,token,decision)=>{
     sender(event);
@@ -148,8 +151,44 @@ async function run(){
   handle('saveTypography',async(...args)=>{checkArgs(args,2);return requireWorkspace().saveTypography(...args);});
   handle('readBook',async(...args)=>{checkArgs(args,0);return requireWorkspace().readBook();});
   handle('saveBookSettings',async(...args)=>{checkArgs(args,2);return requireWorkspace().saveBookSettings(...args);});
-  handle('read',async(...args)=>{checkArgs(args,1);if(typeof args[0]!=='string')throw Error('Invalid section');return requireWorkspace().read(args[0]);});
-  handle('save',async(...args)=>{checkArgs(args,3);if(typeof args[0]!=='string')throw Error('Invalid section');return requireWorkspace().save(...args);});
+  handle('read',async(...args)=>{
+    checkArgs(args,1);if(typeof args[0]!=='string')throw Error('Invalid section');
+    const current=requireWorkspace(),saved=await current.read(args[0]);
+    recoverySessions.delete(saved.id);
+    if(!saved.editable)return saved;
+    try{
+      const section=current.summary.sections.find(s=>s.id===saved.id&&s.editable);
+      const key=recoveryKey(current.manifestPath,saved.id,section.path);
+      let candidate=await recovery.get(key),status=recoveryStatus(candidate,saved);
+      if(status==='already-saved'){
+        await recovery.remove(key,candidate.version);candidate=null;status='none';
+      }
+      const token=randomUUID();
+      recoverySessions.set(saved.id,{token,key,baseRevision:saved.revision,workspace:current});
+      return {...saved,recovery:{token,status,candidate}};
+    }catch(e){return {...saved,recoveryError:String(e.message??e)};}
+  });
+  // A narrow separate queue in recoveryStore avoids blocking ordinary preview
+  // or project reads. Identity and baseline are derived from a real read.
+  ipcMain.handle('bookcreator:recovery',async(event,request)=>{
+    try{
+      sender(event);
+      if(!request||typeof request!=='object'||typeof request.id!=='string')throw Error('Invalid recovery request');
+      const session=recoverySessions.get(request.id);
+      if(!session||session.workspace!==workspace||request.token!==session.token||request.baseRevision!==session.baseRevision)throw Error('Stale recovery session');
+      let value;
+      if(request.action==='put')value=await recovery.put(session.key,{baseRevision:session.baseRevision,text:request.text},request.version);
+      else if(request.action==='remove')value=await recovery.remove(session.key,request.version);
+      else throw Error('Invalid recovery action');
+      return {ok:true,value};
+    }catch(e){return {ok:false,error:{code:e.code??'ERROR',message:String(e.message??e)}};}
+  });
+  handle('save',async(...args)=>{
+    checkArgs(args,3);if(typeof args[0]!=='string')throw Error('Invalid section');
+    const current=requireWorkspace(),saved=await current.save(...args),session=recoverySessions.get(args[0]);
+    if(session?.workspace===current&&session.baseRevision===args[1])session.baseRevision=saved.revision;
+    return saved;
+  });
   if(SMOKE&&!PACKAGE_RESTART_SMOKE){
     await mkdir(join(smokeRoot,'manuscript'));
     await mkdir(join(smokeRoot,'themes','default'),{recursive:true});
@@ -1091,6 +1130,7 @@ async function packageSmoke(){
   await exec("document.querySelector('[data-section=chapter]').click()");
   await until("document.querySelector('#source').value==="+JSON.stringify(sample+'\n追記。\n'));
   await writingJourneySmoke();
+  await recoveryJourneySmoke();
   await nativeCloseSmoke('discard');
   const report='PASS portable Windows package: isolated renderer, workspace, math, bundled fonts, numbering, save, new-book writing journey and renderer reload';
   if(process.env.BC_PACKAGE_SMOKE_REPORT)await writeFile(process.env.BC_PACKAGE_SMOKE_REPORT,report+'\n',{flag:'wx'});
@@ -1331,6 +1371,42 @@ async function packageRestartSmoke(){
   await writeFile(process.env.BC_PACKAGE_SMOKE_REPORT,report+'\n',{flag:'wx'});
   console.log(report);
   app.exit(0);
+}
+// Exercise the real packaged recovery IPC and editor, using only the isolated
+// fixture. Renderer reload is not yet a forced process crash.
+async function recoveryJourneySmoke(){
+  const raw=js=>win.webContents.executeJavaScript(js);
+  const until=async(label,js)=>{for(let i=0;i<150;i++){if(await raw(js))return;await new Promise(r=>setTimeout(r,100));}throw Error('Recovery journey: '+label+'; '+await raw("document.querySelector('#status')?.textContent"));};
+  const click=async selector=>{
+    await until('reachable '+selector,"(()=>{const e=document.querySelector("+JSON.stringify(selector)+");return !!e?.getClientRects().length&&!e.disabled;})()");
+    await raw("document.querySelector("+JSON.stringify(selector)+").click()");
+  };
+  const path=join(smokeRoot,'writing-journey','manuscript','chapter-01.md');
+  const saved=await readFile(path,'utf8'),draft=saved+'\n復旧テストの未保存原稿。\n';
+  const key=recoveryKey(join(smokeRoot,'writing-journey','book.yaml'),'chapter-01','manuscript/chapter-01.md');
+  const store=recoveryStore(smokeRoot);
+  await click('#mode-writing');await click('#editor-view-source');
+  await raw("(()=>{const e=document.querySelector('#source');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(e,"+JSON.stringify(draft)+");e.dispatchEvent(new Event('input',{bubbles:true}));})()");
+  await until('snapshot recorded',"document.querySelector('#recovery-state')?.dataset.phase==='recorded'");
+  if((await store.get(key))?.text!==draft||await readFile(path,'utf8')!==saved)throw Error('Recovery checkpoint changed original or lost draft');
+  async function reopen(){
+    await win.loadURL(PAGE);
+    await until('home catalog',"[...document.querySelectorAll('.hub-project-open')].some(e=>e.querySelector('strong')?.textContent==='執筆フロー検証書籍')");
+    await raw("(()=>{const e=[...document.querySelectorAll('.hub-project-open')].find(e=>e.querySelector('strong')?.textContent==='執筆フロー検証書籍');if(!e?.getClientRects().length||e.disabled)throw Error('Fixture unavailable');e.click();})()");
+    await click('[data-section=chapter-01]');
+    await until('recovery review',"document.querySelector('#recovery-dialog').open&&document.querySelector('#recovery-draft-text').value==="+JSON.stringify(draft)+"&&document.querySelector('#source').value==="+JSON.stringify(saved));
+  }
+  await reopen();
+  await click('#recovery-later');
+  await until('deferred is read-only',"!document.querySelector('#recovery-dialog').open&&document.querySelector('#source').readOnly");
+  await click('#recovery-review');await click('#recovery-restore');
+  await until('restored in memory',"!document.querySelector('#recovery-dialog').open&&document.querySelector('#source').value==="+JSON.stringify(draft)+"&&document.querySelector('#workspace-save-state').textContent==='未保存：原稿'");
+  if(await readFile(path,'utf8')!==saved)throw Error('Restore overwrote original');
+  await until('restored checkpoint',"document.querySelector('#recovery-state')?.dataset.phase==='recorded'");
+  await reopen();await click('#recovery-discard');
+  await until('explicit discard',"!document.querySelector('#recovery-dialog').open&&!document.querySelector('#source').readOnly&&document.querySelector('#workspace-save-state').textContent==='保存済み'");
+  if(await store.get(key)||await readFile(path,'utf8')!==saved)throw Error('Discard changed original or kept recovery');
+  console.log('PASS UX-10f-2 packaged checkpoint, deferred review, restore without overwriting and explicit discard');
 }
 async function nativeCloseSmoke(decision){
   const raw=js=>win.webContents.executeJavaScript(js);

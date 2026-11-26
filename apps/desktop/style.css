@@ -510,3 +510,11 @@ body{font-family:BCFont_NotoSansJP,system-ui,sans-serif}.font-control,.typograph
 #close-dialog #close-error{color:#9a251c;overflow-wrap:anywhere}
 #close-dialog .close-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px}
 #close-dialog .close-actions button{min-height:36px}
+
+#recovery-dialog{box-sizing:border-box;width:min(52rem,calc(100vw - 24px));max-height:calc(100vh - 24px);overflow:auto;padding:20px;border:1px solid #aebdcb;border-radius:8px;background:#fff;color:#24384b;box-shadow:0 8px 30px #0003}
+#recovery-dialog::backdrop{background:#15253680}
+#recovery-dialog h2{margin:0 0 12px;font-size:1.2rem}
+#recovery-dialog label{display:block;margin:12px 0}
+#recovery-dialog textarea{box-sizing:border-box;width:100%;resize:vertical;font-family:inherit}
+#recovery-dialog .close-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px}
+#recovery-state[data-phase=error]{color:#9a251c}

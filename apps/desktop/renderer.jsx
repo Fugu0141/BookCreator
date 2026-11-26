@@ -19,6 +19,7 @@ import {planStructuredEquation,structuredReferenceOffset} from './structured-equ
 import {planBlockOperation} from './structured-operations.mjs';
 const parseStructuredInline=value=>parsePreviewInline(value,0,parsePreviewMath);
 const deps={scan:scanDocument,validate:validateScannedBlocks,index:indexBlockIds,validateDisplayMath:parseDisplayMath,validateInlineMath:parsePreviewMath,parseReference:parseReferenceToken};
+import {recoverySession} from './recovery-session.mjs';
 const api=window.bookcreator;
 const studyNames={note:'補足',tip:'ポイント',warning:'注意',important:'重要',example:'例題',exercise:'練習問題',explanation:'解説'};
 const noto='BCFont_NotoSansJP',stix='BCFont_STIXTwoMath';
@@ -122,13 +123,13 @@ function App(){
   const componentFonts=fontChoices.map(c=>({id:idsByFamily[c.id]??('font-'+c.id.slice(7)),label:c.label,weights:weightsFor(c.id),disabled:c.disabled}));
   function applyHeadingDesign(design){void io(async()=>{const next=await unwrap(api.saveHeadingDesign(theme.revision,design,labLevel));setTheme(next);setLabOpen(false);invalidate();setStatus(design?.componentId?'共有部品を見出しに割り当てました。':'見出し部品をテーマに保存しました。');});}
   const themeDirty=!!theme&&JSON.stringify(typography)!==JSON.stringify(fromRoles(theme.roles));
-  async function applyBook(next){invalidate();setLayoutState({phase:'idle',scope:null,pages:0});setImages([]);setImageManager(false);setImageAllowed(false);setFonts(await registerProjectFonts(next.fonts??[]));setEditorFont(noto);setRights({license:'',licenseText:'',copyAllowed:false,embedAllowed:false});setBook(next);if(next.recent)setProjects(next.recent);setCatalogError(next.catalogWarning??'');setMode('writing');setWritingPanel(null);setEditorView('source');setStructuredDraft(null);setStudyLinkDraft(null);setStructuredHistory(null);setStructuredComposing(false);setOutlineOpen(true);setCompactPane('editor');setPageListOpen(true);setPageInfoOpen(true);setShortcutHelp(false);setDesignTab('styles');setComponentSearch('');setComponentFilter('all');setInitialLibraryEntry(null);setShowPaper(false);setFontManager(false);setStudyInstanceId('');setAnswerTo('');setStudyChoice('example');applySettings(next.settings);setShowSettings(false);setFile(null);setText('');setTheme(next.typography);setTypography(fromRoles(next.typography.roles));setCreating(false);setLabOpen(false);setParagraphOpen(false);setStudyOpen(false);setLabLevel("default");setStatus(next.typography.message??'原稿を選択してください。');}
+  async function applyBook(next){resetRecovery();invalidate();setLayoutState({phase:'idle',scope:null,pages:0});setImages([]);setImageManager(false);setImageAllowed(false);setFonts(await registerProjectFonts(next.fonts??[]));setEditorFont(noto);setRights({license:'',licenseText:'',copyAllowed:false,embedAllowed:false});setBook(next);if(next.recent)setProjects(next.recent);setCatalogError(next.catalogWarning??'');setMode('writing');setWritingPanel(null);setEditorView('source');setStructuredDraft(null);setStudyLinkDraft(null);setStructuredHistory(null);setStructuredComposing(false);setOutlineOpen(true);setCompactPane('editor');setPageListOpen(true);setPageInfoOpen(true);setShortcutHelp(false);setDesignTab('styles');setComponentSearch('');setComponentFilter('all');setInitialLibraryEntry(null);setShowPaper(false);setFontManager(false);setStudyInstanceId('');setAnswerTo('');setStudyChoice('example');applySettings(next.settings);setShowSettings(false);setFile(null);setText('');setTheme(next.typography);setTypography(fromRoles(next.typography.roles));setCreating(false);setLabOpen(false);setParagraphOpen(false);setStudyOpen(false);setLabLevel("default");setStatus(next.typography.message??'原稿を選択してください。');}
   useEffect(()=>{void refreshProjects();},[]);
   async function refreshProjects(){await io(async()=>{try{setProjects(await unwrap(api.listProjects()));setCatalogError('');}catch(e){setCatalogError(String(e.message??e));}});}
-  function openRegistered(id){if(!confirmProjectDiscard())return;void io(async()=>{const next=await unwrap(api.openRegisteredProject(id));await applyBook(next);});}
+  function openRegistered(id){if(!confirmProjectDiscard())return;void io(()=>withDiscard(async()=>{const next=await unwrap(api.openRegisteredProject(id));await applyBook(next);}));}
   function favoriteProject(id,value){void io(async()=>{setProjects(await unwrap(api.favoriteProject(id,value)));});}
   function forgetProject(id){if(!window.confirm('一覧から登録を解除しますか？ 書籍ファイルは削除されません。'))return;void io(async()=>{setProjects(await unwrap(api.forgetProject(id)));});}
-  function create(){if(!confirmProjectDiscard())return;void io(async()=>{const next=await unwrap(api.create(newBook));if(next)await applyBook(next);});}
+  function create(){if(!confirmProjectDiscard())return;void io(()=>withDiscard(async()=>{const next=await unwrap(api.create(newBook));if(next)await applyBook(next);}));}
   function saveTheme(){if(!theme?.editable||!themeDirty)return;void io(async()=>{const next=await unwrap(api.saveTypography(theme.revision,toRoles(typography)));setTheme(next);setStatus('テーマを保存しました。');});}
   function setRole(role,key,value){setTypography(t=>({...t,[role]:{...t[role],[key]:value,...(key==='fontFamily'&&fonts.some(f=>f.alias===value)?{fontWeight:weightsFor(value)[0]}:key==='fontFamily'&&![400,500,600,700].includes(t[role].fontWeight)?{fontWeight:400}:{})}}));invalidate();setStatus('書籍プレビューのフォント設定を変更しました（未保存）。');}
   const textarea=useRef(null),preview=useRef(null),generation=useRef(0),working=useRef(false);
@@ -146,18 +147,78 @@ function App(){
   useEffect(()=>{textarea.current?.setSelectionRange(0,0);setHasSelection(false);},[file?.id]);
   useEffect(()=>{syncSelection();},[text,mode]);
   const dirty=!!file&&text!==file.text;
+  const recoveryRef=useRef(null),recoveryDialog=useRef(null);
+  const [recoveryCandidate,setRecoveryCandidate]=useState(null),[recoveryOpen,setRecoveryOpen]=useState(false),[recoveryState,setRecoveryState]=useState({phase:'idle',message:''}),[recoveryResolving,setRecoveryResolving]=useState(false);
+  function resetRecovery(){
+    recoveryRef.current?.close();recoveryRef.current=null;setRecoveryCandidate(null);setRecoveryOpen(false);setRecoveryState({phase:'idle',message:''});
+  }
+  function installRead(next){
+    resetRecovery();
+    let controller;
+    controller=recoverySession(next,request=>unwrap(api.recovery(request)),(phase,message='')=>{if(recoveryRef.current===controller)setRecoveryState({phase,message});});
+    recoveryRef.current=controller;
+    const candidate=next.recovery?.candidate;
+    if(candidate){
+      setRecoveryCandidate({record:candidate,status:next.recovery.status,editable:next.editable});
+      setRecoveryOpen(true);setRecoveryState({phase:'candidate',message:''});
+    }else if(next.recoveryError)setRecoveryState({phase:'error',message:next.recoveryError});
+    setFile({...next,editable:next.editable&&!candidate});setText(next.text);
+  }
+  useEffect(()=>{
+    const node=recoveryDialog.current;
+    if(recoveryOpen&&node&&!node.open)node.showModal();
+    else if(!recoveryOpen&&node?.open)node.close();
+  },[recoveryOpen]);
+  async function resolveRecovery(action){
+    if(recoveryResolving||!recoveryCandidate||!recoveryRef.current)return;
+    if(action==='later'){setRecoveryOpen(false);return;}
+    if(action==='restore'&&recoveryCandidate.status!=='recoverable')return;
+    setRecoveryResolving(true);
+    try{
+      if(action==='restore'){
+        const value=recoveryRef.current.restore();setText(value);setStructuredHistory(null);invalidate();setStatus('復旧した原稿は未保存です。内容を確認して保存してください。');
+      }else{await recoveryRef.current.discardCandidate();setStatus('復旧候補を破棄しました。保存原稿は変更していません。');}
+      setFile(f=>({...f,editable:recoveryCandidate.editable}));setRecoveryCandidate(null);setRecoveryOpen(false);
+    }catch(e){setRecoveryState({phase:'error',message:String(e.message??e)});}
+    finally{setRecoveryResolving(false);}
+  }
+  async function withDiscard(fn){
+    const controller=recoveryRef.current;
+    if(!controller||recoveryCandidate)return fn();
+    await controller.pause();
+    try{await controller.discard();return await fn();}
+    finally{if(recoveryRef.current===controller)controller.resume(text);}
+  }
+  async function persistManuscript(){
+    const controller=recoveryRef.current;
+    await controller?.pause();
+    let saved;
+    try{
+      saved=await unwrap(api.save(file.id,file.revision,text));
+      setFile({...file,text,revision:saved.revision});
+      try{await controller?.saved(saved.revision,text);}
+      catch(e){setRecoveryState({phase:'error',message:'原稿は保存済みですが復旧データを整理できません：'+String(e.message??e)});}
+      return saved;
+    }finally{controller?.resume(text);}
+  }
   const invalidate=()=>{generation.current++;pendingDiagnostic.current=null;pendingSource.current=null;preview.current?.replaceChildren();setLayoutDiagnostics([]);setShowDiagnostics(false);setLayoutPages([]);setActivePage(1);setPageJump('1');setMeasuring(false);setLayoutState(previous=>previous.phase==='idle'?previous:{...previous,phase:'stale',pages:0});};
   const confirmDiscard=()=>!dirty||window.confirm('未保存の変更を破棄しますか？');
   const confirmProjectDiscard=()=>!(dirty||themeDirty||settingsDirty)||window.confirm('未保存の原稿・テーマ・書籍設定を破棄しますか？');
   async function io(fn){if(working.current)return;working.current=true;setBusy(true);try{await fn();}catch(e){setStatus(String(e.message??e));}finally{working.current=false;setBusy(false);}}
-  function open(){if(!confirmProjectDiscard())return;void io(async()=>{const next=await unwrap(api.open());if(next)await applyBook(next);});}
-  function select(id){if(routeBlockRef.current||composing.current){setStatus('現在の操作を完了または取り消してから原稿を切り替えてください。');return;}if(file?.id===id){setCompactPane('editor');if(compactWidthRef.current)setCompactFocusRequest({pane:'editor',id});return;}if(!confirmDiscard())return;void io(async()=>{const next=await unwrap(api.read(id));invalidate();setStructuredHistory(null);setFile(next);setText(next.text);setWritingPanel(null);setCompactPane('editor');if(compactWidthRef.current)setCompactFocusRequest({pane:'editor',id:next.id});setStatus(next.editable?'原稿を読み込みました。':'混在改行のため読み取り専用です。');});}
-  function save(){if(composing.current||routeBlockRef.current||!file?.editable||!dirty)return;void io(async()=>{const saved=await unwrap(api.save(file.id,file.revision,text));setFile({...file,text,revision:saved.revision});setStatus('保存しました。');});}
+  function open(){if(!confirmProjectDiscard())return;void io(()=>withDiscard(async()=>{const next=await unwrap(api.open());if(next)await applyBook(next);}));}
+  function select(id){if(routeBlockRef.current||composing.current){setStatus('現在の操作を完了または取り消してから原稿を切り替えてください。');return;}if(file?.id===id){setCompactPane('editor');if(compactWidthRef.current)setCompactFocusRequest({pane:'editor',id});return;}if(!confirmDiscard())return;void io(()=>withDiscard(async()=>{const next=await unwrap(api.read(id));invalidate();setStructuredHistory(null);installRead(next);setWritingPanel(null);setCompactPane('editor');if(compactWidthRef.current)setCompactFocusRequest({pane:'editor',id:next.id});setStatus(next.editable?'原稿を読み込みました。':'混在改行のため読み取り専用です。');}));}
+  function save(){if(composing.current||routeBlockRef.current||!file?.editable||!dirty)return;void io(async()=>{await persistManuscript();setStatus('保存しました。');});}
   const [includeOptionalSlots,setIncludeOptionalSlots]=useState(false);
   const [studyChoice,setStudyChoice]=useState('example'),[studyInstanceId,setStudyInstanceId]=useState(''),[answerTo,setAnswerTo]=useState('');
   const canLink=studyChoice==='explanation'||isCustomComponentId(studyChoice);
   function edit(value,fromStructured=false){if(!fromStructured)setStructuredHistory(null);setText(value);invalidate();setStatus('未保存の変更があります。');}
   const composing=useRef(false),[isComposing,setIsComposing]=useState(false);
+  // Only confirmed source changes are recorded; IME intermediate text and
+  // uncommitted structured/math/component drafts are excluded.
+  useEffect(()=>{
+    if(file?.editable&&!isComposing&&!structuredComposing&&recoveryRef.current&&!recoveryCandidate)recoveryRef.current.update(text);
+  },[file?.id,file?.revision,file?.editable,text,isComposing,structuredComposing,recoveryCandidate]);
+
   const [mathDraft,setMathDraft]=useState(null),mathPreview=useRef(null),mathComposing=useRef(false);
   const MathField=mathDraft?.kind==='display'?'textarea':'input';
   const mathStale=!!mathDraft&&(mathDraft.fileId!==file?.id||mathDraft.revision!==file?.revision||mathDraft.job!==generation.current||mathDraft.source!==text);
@@ -420,7 +481,7 @@ function App(){
   }
   useEffect(()=>{if(mode==='layout'&&layoutState.phase==='ready'){const frame=requestAnimationFrame(trackPage);return ()=>cancelAnimationFrame(frame);}},[mode,layoutState.phase]);
   const selectedPage=layoutPages[activePage-1];
-  const routeBlocked=busy||isComposing||structuredComposing||!!structuredDraft||!!studyLinkDraft||!!mathDraft||!!referenceDraft||labOpen||paragraphOpen||studyOpen;
+  const routeBlocked=busy||recoveryOpen||isComposing||structuredComposing||!!structuredDraft||!!studyLinkDraft||!!mathDraft||!!referenceDraft||labOpen||paragraphOpen||studyOpen;
   const routeBlockRef=useRef(false);routeBlockRef.current=routeBlocked;
   const formatDisabled=routeBlocked||!file?.editable||!hasSelection;
   const unsaved=[dirty&&'原稿',themeDirty&&'テーマ',settingsDirty&&'書籍設定'].filter(Boolean);
@@ -431,13 +492,14 @@ function App(){
   const closeSaveAllowed=(!dirty||file?.editable)&&(!themeDirty||theme?.editable)&&(!settingsDirty||(!!validPaper(page)&&order.every(s=>['page','continuous'].includes(s.startOn))));
   closeHandler.current=token=>{
     // Never move focus away from an active IME composition to show a dialog.
-    if(composing.current||mathComposing.current||structuredComposing||isComposing){
-      setStatus('文字入力を確定してから終了してください。');
+    if(recoveryOpen||composing.current||mathComposing.current||structuredComposing||isComposing){
+      setStatus(recoveryOpen?'復旧候補を確認または保留してから終了してください。':'文字入力を確定してから終了してください。');
       void api.completeClose(token,'cancel').catch(e=>setStatus(String(e.message??e)));
       return;
     }
     if(!closeBlocked&&!unsaved.length){
-      void api.completeClose(token,'exit').catch(e=>{setCloseError(String(e.message??e));setCloseRequest({token,blocked:false});});
+      working.current=true;setBusy(true);
+      void withDiscard(()=>api.completeClose(token,'exit')).catch(e=>{setCloseError(String(e.message??e));setCloseRequest({token,blocked:false});}).finally(()=>{working.current=false;setBusy(false);});
       return;
     }
     setCloseError('');setCloseRequest({token,blocked:closeBlocked});
@@ -457,15 +519,17 @@ function App(){
     try{
       if(decision==='save'){
         saving=true;working.current=true;setBusy(true);
-        if(dirty){const saved=await unwrap(api.save(file.id,file.revision,text));setFile({...file,text,revision:saved.revision});completed.push('原稿');}
+        if(dirty){await persistManuscript();completed.push('原稿');}
         if(themeDirty){const saved=await unwrap(api.saveTypography(theme.revision,toRoles(typography)));setTheme(saved);completed.push('テーマ');}
         if(settingsDirty){const saved=await unwrap(api.saveBookSettings(savedSettings.revision,{page,sections:order}));applySettings(saved);completed.push('書籍設定');}
       }
+      if(decision==='discard'){await recoveryRef.current?.pause();await recoveryRef.current?.discard();}
+      else if(decision==='save'){await recoveryRef.current?.pause();}
       await api.completeClose(closeRequest.token,decision==='cancel'?'cancel':'exit');
       if(decision==='cancel')setCloseRequest(null);
     }catch(e){
       const message=(completed.length?completed.join('・')+'は保存済み。':'')+'終了できませんでした：'+String(e.message??e);
-      setCloseError(message);setStatus(message);
+      recoveryRef.current?.resume(text);setCloseError(message);setStatus(message);
     }finally{
       if(saving){working.current=false;setBusy(false);}
       closeAction.current=false;setCloseSaving(false);
@@ -475,7 +539,7 @@ function App(){
   const layoutLabel=layoutState.phase==='ready'?(layoutState.scope==='book'?'全冊':'選択原稿')+' '+layoutState.pages+'ページ（試作）':({idle:'未組版',stale:'組版の更新が必要',running:'組版中…',failed:'組版できませんでした'})[layoutState.phase];
   function navigate(next){
     if(next===mode)return;
-    if(busy||composing.current||structuredComposing||structuredDraft||studyLinkDraft||mathDraft||referenceDraft||labOpen||paragraphOpen||studyOpen){setStatus('現在の操作を完了または取り消してから画面を切り替えてください。');return;}
+    if(busy||recoveryOpen||composing.current||structuredComposing||structuredDraft||studyLinkDraft||mathDraft||referenceDraft||labOpen||paragraphOpen||studyOpen){setStatus('現在の操作を完了または取り消してから画面を切り替えてください。');return;}
     if(next!=='home'&&!book)return;
     setCreating(false);setMode(next);setCompactPane('editor');setCompactFocusRequest(null);setWritingPanel(null);if(next==='home')setHomeTab('projects');setShowSettings(next==='settings');
   }
@@ -512,12 +576,12 @@ function App(){
       reveal();return;
     }
     if(!confirmDiscard())return;
-    void io(async()=>{
+    void io(()=>withDiscard(async()=>{
       const next=await unwrap(api.read(d.documentId));
       if(job!==generation.current)return;
       if(next.text!==d.source){setStatus('診断後に対象原稿が変更されました。再組版してください。');return;}
-      invalidate();setStructuredHistory(null);setFile(next);setText(next.text);reveal();
-    });
+      invalidate();setStructuredHistory(null);installRead(next);reveal();
+    }));
   }
   useEffect(()=>{
     const p=pendingDiagnostic.current;
@@ -709,7 +773,7 @@ function App(){
     setCompactPane(pane);
     setCompactFocusRequest({pane,id:file?.id});
   }
-  return <div className="workspace-shell" data-workspace-mode={mode} onKeyDown={workspaceKey}><header className="workspace-header"><div><strong>BookCreator</strong><span> / {book?.title??'開発プレビュー'}</span></div><div className="workspace-actions"><span id="workspace-save-state" className="save-indicator" data-dirty={unsaved.length>0} title={saveLabel}>{saveLabel}</span><button id="save" hidden={!book||mode==='home'} disabled={routeBlocked||!dirty||!file?.editable} title="選択原稿のみ保存（Ctrl / Cmd + S）。テーマと書籍設定は各画面で保存してください。" aria-keyshortcuts="Control+S Meta+S" onClick={save}>原稿を保存</button><button id="book-settings" hidden={!book||mode==='home'} disabled={routeBlocked} onClick={()=>navigate(mode==='settings'?'writing':'settings')} aria-pressed={mode==='settings'}>書籍設定</button><button id="shortcut-help-toggle" type="button" disabled={routeBlocked} aria-expanded={shortcutHelp} aria-controls="shortcut-help" onClick={()=>setShortcutHelp(v=>!v)}>キー操作</button></div></header>
+  return <div className="workspace-shell" data-workspace-mode={mode} onKeyDown={workspaceKey}><header className="workspace-header"><div><strong>BookCreator</strong><span> / {book?.title??'開発プレビュー'}</span></div><div className="workspace-actions"><span id="workspace-save-state" className="save-indicator" data-dirty={unsaved.length>0} title={saveLabel}>{saveLabel}</span>{file&&recoveryCandidate&&<button id="recovery-review" type="button" onClick={()=>setRecoveryOpen(true)}>復旧候補を確認（原稿は読取専用）</button>}{file&&!recoveryCandidate&&(dirty||recoveryState.phase==='error')&&<span id="recovery-state" className="muted" data-phase={recoveryState.phase} title={recoveryState.message||'通常保存とは別の復旧用記録'}>{recoveryState.phase==='error'?'復旧記録エラー':recoveryState.phase==='recorded'?'復旧用記録済み':'復旧用記録待ち'}</span>}<button id="save" hidden={!book||mode==='home'} disabled={routeBlocked||!dirty||!file?.editable} title="選択原稿のみ保存（Ctrl / Cmd + S）。テーマと書籍設定は各画面で保存してください。" aria-keyshortcuts="Control+S Meta+S" onClick={save}>原稿を保存</button><button id="book-settings" hidden={!book||mode==='home'} disabled={routeBlocked} onClick={()=>navigate(mode==='settings'?'writing':'settings')} aria-pressed={mode==='settings'}>書籍設定</button><button id="shortcut-help-toggle" type="button" disabled={routeBlocked} aria-expanded={shortcutHelp} aria-controls="shortcut-help" onClick={()=>setShortcutHelp(v=>!v)}>キー操作</button></div></header>
   <nav className="workspace-nav" aria-label="制作工程" hidden={mode==='home'}>{[['home','ホーム'],['writing','執筆'],['design','デザイン'],['layout','レイアウト'],['publication','出版']].map(([id,label])=><button key={id} id={'mode-'+id} type="button" aria-current={mode===id?'page':undefined} disabled={routeBlocked||(id!=='home'&&!book)} onClick={()=>navigate(id)}>{label}</button>)}</nav>
   <section id="shortcut-help" className="workspace-shortcuts" hidden={!shortcutHelp} aria-label="キーボードショートカット"><div><strong>キーボード操作</strong><button type="button" className="secondary-action" onClick={()=>setShortcutHelp(false)}>閉じる</button></div><dl><dt>Ctrl / Cmd + S</dt><dd>選択原稿を保存（テーマ・書籍設定は各画面で保存）</dd><dt>Ctrl / Cmd + 1 / 2 / 3 / 4</dt><dd>執筆 / デザイン / レイアウト / 出版</dd><dt>Ctrl / Cmd + B / I / U</dt><dd>執筆の選択文字を太字 / 斜体 / 下線</dd><dt>Esc</dt><dd>キー操作案内・執筆ツールを閉じる</dd></dl></section>
   <section className="workspace-home project-hub" hidden={mode!=='home'}><nav className="hub-sidebar" aria-label="書籍管理"><strong>BookCreator</strong><button id="hub-projects" aria-current={homeTab==='projects'?'page':undefined} disabled={busy} onClick={()=>{setHomeTab('projects');setCreating(false);}}>プロジェクト</button><button id="new-project" aria-current={homeTab==='new'?'page':undefined} disabled={busy} onClick={()=>{setHomeTab('new');setCreating(true);}}>新規書籍</button><button id="open" disabled={busy} onClick={open}>既存の書籍を開く</button>{book&&<button disabled={routeBlocked} onClick={()=>navigate('writing')}>編集中の書籍に戻る</button>}<small>開発プレビュー</small></nav>
@@ -744,6 +808,14 @@ function App(){
     <div className="close-actions"><button id="close-cancel" type="button" autoFocus disabled={closeSaving} onClick={()=>void finishClose('cancel')}>編集に戻る</button>
     {!closeRequest?.blocked&&<><button id="close-discard" type="button" className="secondary-action" disabled={closeSaving||routeBlocked} onClick={()=>void finishClose('discard')}>{unsaved.length?'保存せず終了':'終了'}</button>{unsaved.length>0&&<button id="close-save" type="button" disabled={closeSaving||routeBlocked||!closeSaveAllowed} onClick={()=>void finishClose('save')}>{closeSaving?'保存中…':'保存して終了'}</button>}</>}</div>
     {closeSaving&&<p role="status">処理中です。</p>}
+  </dialog><dialog id="recovery-dialog" ref={recoveryDialog} aria-labelledby="recovery-title" onCancel={e=>{e.preventDefault();void resolveRecovery('later');}}>
+    <h2 id="recovery-title">未保存の原稿が見つかりました</h2>
+    <p>{recoveryCandidate?.status==='diverged'?'保存原稿が記録後に変更されています。復旧候補を自動適用できません。必要な本文をコピーして別途保存してください。':'復旧候補を編集画面に戻せます。復旧しても、通常の保存を行うまでは元の原稿を変更しません。'}</p>
+    <p className="muted">記録時刻：{recoveryCandidate?.record.updatedAt&&new Date(recoveryCandidate.record.updatedAt).toLocaleString()}</p>
+    <label>保存済み原稿<textarea id="recovery-saved-text" readOnly rows={6} value={file?.text??''}/></label>
+    <label>復旧候補<textarea id="recovery-draft-text" readOnly rows={8} value={recoveryCandidate?.record.text??''}/></label>
+    {recoveryState.phase==='error'&&<p role="alert">{recoveryState.message}</p>}
+    <div className="close-actions"><button id="recovery-later" type="button" autoFocus disabled={recoveryResolving} onClick={()=>void resolveRecovery('later')}>保持して後で確認</button><button id="recovery-discard" type="button" disabled={recoveryResolving} onClick={()=>void resolveRecovery('discard')}>復旧候補を破棄</button>{recoveryCandidate?.status==='recoverable'&&<button id="recovery-restore" type="button" disabled={recoveryResolving} onClick={()=>void resolveRecovery('restore')}>編集画面へ復旧</button>}</div>
   </dialog></div>;
 }
 createRoot(document.getElementById('root')).render(<App/>);
