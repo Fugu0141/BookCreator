@@ -164,3 +164,14 @@ body{font-family:BCFont_NotoSansJP,system-ui,sans-serif}.font-control,.typograph
 .design-component-card label{display:flex;flex-direction:column;gap:5px;max-width:100%}
 .design-component-card select{max-width:100%}
 .design-component-card button{margin-top:auto}
+
+/* UX-04b component catalog */
+.component-catalog-toolbar{display:flex;align-items:end;flex-wrap:wrap;gap:12px;margin:12px 0}
+.component-catalog-toolbar label{display:flex;flex-direction:column;gap:4px;min-width:0;max-width:100%}
+.component-catalog-toolbar input,.component-catalog-toolbar select{padding:7px 9px;max-width:100%}
+.catalog-card{align-items:stretch;overflow-wrap:anywhere}
+.catalog-card button{align-self:flex-end}
+.catalog-specimen{min-height:82px;padding:12px;border-radius:4px;border:1px solid #c9d2da;display:flex;flex-direction:column;justify-content:center;gap:5px;overflow-wrap:anywhere}
+.catalog-specimen span{font-size:14px;line-height:1.5}
+#component-quick-select{margin-top:16px}
+#component-quick-select[open]>.design-component-grid{margin-top:10px}
