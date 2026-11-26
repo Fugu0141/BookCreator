@@ -122,10 +122,39 @@ async function run(){
   else if(SMOKE)await smoke();
 }
 // Short distribution smoke test: no installed fonts, user projects or native dialogs required.
+// Existing regression scenarios still use the real controls, but reach them through
+// the appropriate workflow surface rather than invoking hidden DOM controls.
+function workspaceSmokeExec(){
+  const raw=js=>win.webContents.executeJavaScript(js);
+  const routeFor=selector=>{
+    if(/^#(?:open|new-project|new-title|new-folder|new-size|create-project)$/.test(selector))return 'home';
+    if(/^#(?:font-manager|font-license|font-license-text|font-copy|import-font|image-manager|image-copy|import-image|lab-level|component-lab|paragraph-lab|study-design-kind|study-design-lab|body-font|body-weight|heading-font|heading-weight|math-font|save-theme)$/.test(selector))return 'design';
+    if(/^#(?:source(?:-.*)?|editor-font|study-(?!design).+|preview-button|preview-book)$/.test(selector)||selector.startsWith('[data-section='))return 'writing';
+    return null;
+  };
+  return async js=>{
+    // Read-only assertions must not navigate or change the current mode.
+    if(/\.(?:click|dispatchEvent|setSelectionRange|focus)\(/.test(js)){
+      const selector=/document\.querySelector\('([^']+)'\)/.exec(js)?.[1];
+      const mode=selector&&routeFor(selector);
+      if(mode&&!await raw("!!document.querySelector("+JSON.stringify(selector)+")?.getClientRects().length")){
+        await raw("document.querySelector('#mode-"+mode+"').click()");
+        let visible=false;
+        for(let i=0;i<100;i++){
+          if(await raw("!!document.querySelector("+JSON.stringify(selector)+")?.getClientRects().length")){visible=true;break;}
+          await new Promise(r=>setTimeout(r,50));
+        }
+        if(!visible)throw Error('Cannot reach visible '+selector+' in '+mode);
+      }
+    }
+    return raw(js);
+  };
+}
 async function packageSmoke(){
-  const exec=js=>win.webContents.executeJavaScript(js);
+  const exec=workspaceSmokeExec();
   const until=async js=>{for(let i=0;i<150;i++){if(await exec(js))return;await new Promise(r=>setTimeout(r,100));}throw Error('Package smoke timeout: '+js+'; '+await exec("document.querySelector('#status')?.textContent"));};
-  await until("!!document.querySelector('#open')");
+  await until("!!document.querySelector('#open')?.getClientRects().length");
+  if(!await exec("document.querySelector('.workspace-shell').dataset.workspaceMode==='home'&&!document.querySelector('#source').getClientRects().length&&!document.querySelector('#body-font').getClientRects().length"))throw Error('Initial home exposes unrelated controls');
   if(!await exec("typeof require==='undefined'&&typeof process==='undefined'&&!!window.bookcreator"))throw Error('Renderer isolation failed');
   await exec("document.querySelector('#open').click()");
   await until("!!document.querySelector('[data-section=chapter]')");
@@ -137,6 +166,15 @@ async function packageSmoke(){
   const sample='# 二次方程式\n\n本文 $x^2$ です。\n\n:::layout{#eq-test numbered="true"}\n$$\n\\frac{1}{2}\n$$\n:::\n';
   await exec("(()=>{const el=document.querySelector('#source');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(el,"+JSON.stringify(sample)+");el.dispatchEvent(new Event('input',{bubbles:true}));})()");
   await until("document.querySelector('#source').value==="+JSON.stringify(sample));
+  if(!await exec("document.querySelector('.workspace-shell').dataset.workspaceMode==='writing'&&!document.querySelector('#body-font').getClientRects().length&&!document.querySelector('#preview').getClientRects().length"))throw Error('Writing does not isolate design and paper controls');
+  await exec("document.querySelector('#mode-design').click()");
+  await until("document.querySelector('.workspace-shell').dataset.workspaceMode==='design'&&!!document.querySelector('#body-font').getClientRects().length&&!document.querySelector('#source').getClientRects().length");
+  await exec("document.querySelector('#mode-layout').click()");
+  await until("document.querySelector('.workspace-shell').dataset.workspaceMode==='layout'&&!!document.querySelector('#preview').getClientRects().length&&!document.querySelector('#source').getClientRects().length");
+  await exec("document.querySelector('#mode-publication').click()");
+  await until("document.querySelector('.workspace-shell').dataset.workspaceMode==='publication'&&!document.querySelector('#preview').getClientRects().length");
+  await exec("document.querySelector('#mode-writing').click()");
+  await until("document.querySelector('.workspace-shell').dataset.workspaceMode==='writing'&&!!document.querySelector('#source').getClientRects().length&&document.querySelector('#source').value==="+JSON.stringify(sample));
   await exec("document.querySelector('#preview-button').click()");
   await until("!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-inline-math] math msup')&&!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-display-math] math mfrac')&&document.querySelector('#preview > div').shadowRoot.querySelector('[data-equation-number]')?.textContent==='(1.1)'");
   await exec("document.fonts.ready.then(()=>true)");
@@ -152,7 +190,7 @@ async function packageSmoke(){
   closing=true;win.destroy();app.exit(0);
 }
 async function smoke(){
-  const exec=js=>win.webContents.executeJavaScript(js);
+  const exec=workspaceSmokeExec();
   const until=async js=>{for(let i=0;i<100;i++){if(await exec(js))return;await new Promise(r=>setTimeout(r,100));}throw Error('Timed out: '+js+'; renderer status: '+await exec("document.querySelector('#status')?.textContent")+'; inline nodes: '+await exec("JSON.stringify([...document.querySelector('#preview > div')?.shadowRoot?.querySelectorAll('[data-named-slot=extra] [data-inline-style]')??[]].map(s=>({text:s.textContent,style:s.getAttribute('style')})))"));};
   await until("!!document.querySelector('#open')");
   if(!await exec("typeof require==='undefined' && typeof process==='undefined' && !!window.bookcreator"))throw Error('Renderer isolation failed');
