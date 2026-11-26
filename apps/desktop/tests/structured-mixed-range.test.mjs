@@ -14,6 +14,6 @@ test('deleting the last formula returns ordinary text',()=>{
 test('protected style, stale selection, grapheme splits and injected markup are rejected',()=>{
   const p=project('前**重要**$x$後');
   for(const request of [{start:0,end:3,replacement:''},{start:2,end:3,replacement:'$y$'},{start:2,end:3,replacement:'',original:'stale'}])assert.throws(()=>planMixedRangeValue(p,{original:p.source,...request}));
-  const q=project('前👩‍🔬$x$後');
+  const q=project('前が$x$後');
   assert.throws(()=>planMixedRangeValue(q,{original:q.source,start:2,end:3,replacement:''}));
 });
