@@ -28,12 +28,13 @@ function validateRecord(value,key){
 }
 function validateKey(key){if(!validHash(key))fail('RECOVERY_INPUT','Invalid recovery key');}
 function validateVersion(version){if(version!==null&&!validHash(version))fail('RECOVERY_INPUT','Invalid recovery version');}
-export function recoveryStore(userData){
+export function recoveryStore(userData,namespace='manuscript'){
+  if(!['manuscript','settings'].includes(namespace))fail('RECOVERY_INPUT','Unsupported recovery namespace');
   // Serialize compare-and-swap operations within the single main process.
   let tail=Promise.resolve();
   function serial(fn){const next=tail.then(fn);tail=next.catch(()=>{});return next;}
   async function directory(){
-    const parent=await realpath(userData),dir=join(parent,'manuscript-recovery-v1');
+    const parent=await realpath(userData),dir=join(parent,namespace+'-recovery-v1');
     await mkdir(dir,{mode:0o700}).catch(e=>{if(e.code!=='EEXIST')throw e;});
     const st=await lstat(dir);
     if(!st.isDirectory()||st.isSymbolicLink()||await realpath(dir)!==dir)fail('RECOVERY_PATH','Unsafe recovery directory');

@@ -231,10 +231,42 @@ export async function openWorkspace(manifestPath){
   }
   function publicTheme(t){return {editable:t.editable,roles:t.roles,revision:t.revision,studyResourceErrors:t.studyResourceErrors??{},studyDesigns:t.studyDesigns??{},studyBindings:t.studyBindings??{},studyEditable:t.studyEditable===true,studyMessage:t.studyMessage,paragraphDesign:t.paragraphDesign??null,paragraphBinding:t.paragraphBinding??null,paragraphEditable:t.paragraphEditable===true,paragraphMessage:t.paragraphMessage,headingDesign:t.headingDesign??null,headingLevels:t.headingLevels??{},componentMessage:t.componentMessage,componentEditable:t.componentEditable===true,bindings:t.bindings??{},library:t.library??emptyComponentLibrary(),libraryEditable:t.libraryEditable===true,libraryMessage:t.libraryMessage,...(t.message?{message:t.message}:{})};}
   function settingsView(){return {revision:manifestHash,page:summary.pageSettings,sections:structuredClone(summary.sections),message:summary.pageMessage};}
+  function validateSettingsValue(value){
+    if(!record(value)||Object.keys(value).some(k=>!['page','sections'].includes(k))||!record(value.page)||Object.keys(value.page).some(k=>!['size','firstSide','margin'].includes(k))||!Array.isArray(value.sections))fail('PAGE','Invalid book settings');
+    paperGeometry(value.page);
+    const manuscript=summary.sections.filter(s=>s.editable),byId=new Map(manuscript.map(s=>[s.id,s]));
+    if(value.sections.length!==manuscript.length||new Set(value.sections.map(s=>s?.id)).size!==manuscript.length||
+      value.sections.some(s=>!record(s)||Object.keys(s).some(k=>!['id','startOn'].includes(k))||!byId.has(s.id)||!['page','continuous'].includes(s.startOn))||
+      manuscript.some(s=>!['page','continuous'].includes(s.startOn)))fail('PAGE','Unsupported section order or start');
+    const {size,firstSide,margin}=value.page;
+    return {page:{size,firstSide,margin:{top:margin.top,bottom:margin.bottom,inner:margin.inner,outer:margin.outer}},sections:value.sections.map(s=>({id:s.id,startOn:s.startOn}))};
+  }
   return {
     get summary(){return structuredClone(summary);},
     get manifestPath(){return manifest;},
     async bookSettings(){await checkManifest();return settingsView();},
+    // Only the main process uses these typed recovery snapshots. No disk writes.
+    async recoverySettings(kind){
+      const manifestFile=await checkManifest();
+      if(kind==='typography'){
+        const t=await readTheme();
+        if(!t.editable||!sourceInfo(t.bytes).editable)fail('THEME','Theme cannot be edited');
+        const value=t.roles??{body:{font:'noto-sans-jp',weight:400},heading:{font:'noto-sans-jp',weight:700}};
+        return {revision:t.revision,identity:summary.themePath,value};
+      }
+      if(kind==='book-settings'){
+        if(!summary.pageSettings||!sourceInfo(manifestFile.bytes).editable)fail('PAGE','Book settings cannot be edited');
+        const value=validateSettingsValue({page:summary.pageSettings,sections:summary.sections.filter(s=>s.editable).map(s=>({id:s.id,startOn:s.startOn}))});
+        return {revision:manifestHash,identity:'book.yaml',value};
+      }
+      fail('INPUT','Unsupported settings recovery kind');
+    },
+    async validateRecoverySettings(kind,value){
+      await checkManifest();
+      if(kind==='typography')return checkedRoles(value,await fontStore.list());
+      if(kind==='book-settings')return validateSettingsValue(value);
+      fail('INPUT','Unsupported settings recovery kind');
+    },
     async readBook(){
       await checkManifest();
       if(summary.sections.some(s=>!s.editable||!['page','continuous'].includes(s.startOn)))fail('PREVIEW','Whole-book preview does not support cover, blank or physical-side sections yet');
@@ -247,16 +279,13 @@ export async function openWorkspace(manifestPath){
     },
     async saveBookSettings(expectedRevision,value){
       if(busy)fail('BUSY','Another write is in progress');
-      if(!record(value)||!record(value.page)||!Array.isArray(value.sections))fail('PAGE','Invalid book settings');
-      paperGeometry(value.page);busy=true;let temp;
+      value=validateSettingsValue(value);busy=true;let temp;
       try{
         const old=await checkManifest();
         if(expectedRevision!==manifestHash||!summary.pageSettings)fail('CONFLICT','Book settings changed or are unsupported');
         const doc=safeYaml(decode(old.bytes)),seq=doc.get('sections',true);
         const manuscript=summary.sections.filter(s=>s.editable),byId=new Map(manuscript.map(s=>[s.id,s]));
-        if(value.sections.length!==manuscript.length||new Set(value.sections.map(s=>s?.id)).size!==manuscript.length||
-          value.sections.some(s=>!record(s)||!byId.has(s.id)||!['page','continuous'].includes(s.startOn))||
-          manuscript.some(s=>!['page','continuous'].includes(s.startOn)))fail('PAGE','Unsupported section order or start');
+
         const originalNodes=new Map(summary.sections.map((s,i)=>[s.id,seq.items[i]]));
         let i=0;
         seq.items=summary.sections.map(s=>{
