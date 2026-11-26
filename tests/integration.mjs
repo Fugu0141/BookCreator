@@ -857,19 +857,10 @@ test('component inline math keeps independent source envelopes in primary and na
     }
     const at=source.indexOf('です。')+3,plan=planInlineMath(source,at,at,'x^2',deps);
     const next=bcm.applyPatches(source,[plan.patch]);
-    assert.equal(next,source.slice(0,at)+'$x^2
-  }
-});
-+source.slice(at));
-    const old='$\\sqrt{x}
-  }
-});
-,start=next.indexOf(old);
+    assert.equal(next,source.slice(0,at)+'$x^2$'+source.slice(at));
+    const old='$\\sqrt{x}$',start=next.indexOf(old);
     const edit=planInlineMath(next,start,start+old.length,'\\frac{a}{b}',deps);
-    assert.equal(bcm.applyPatches(next,[edit.patch]),next.replace(old,()=>'$\\frac{a}{b}
-  }
-});
-));
+    assert.equal(bcm.applyPatches(next,[edit.patch]),next.replace(old,()=>'$\\frac{a}{b}$'));
     assert.equal(inspectInlineMath(next,start,start+old.length,deps).paragraph.slot,'hint');
     assert.throws(()=>planInlineMath(source,source.indexOf('name="hint"'),source.indexOf('name="hint"'),'x',deps));
     assert.throws(()=>planInlineMath(source,source.indexOf('**係数**')+3,source.indexOf('**係数**')+3,'x',deps));
