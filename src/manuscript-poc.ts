@@ -1,3 +1,4 @@
+import type {ManuscriptScanSession} from './manuscript-scan-session.js';
 import {parsePreviewInline,type ComponentEquation} from './inline-preview.js';
 import {validNamedSlot,type NamedSlotSource} from './preview-component.js';
 import {studyKind,customStudyId,type StudyKind} from './study-blocks.js';
@@ -16,6 +17,8 @@ interface Input {schemaVersion:1;revision:string;fingerprint:string;content:{wid
 export interface Issue {code:string;message:string;documentId:string;range:Range}
 export interface PreparationDependencies<S extends Scan> {
   scan:(source:string)=>S;
+  /** Optional book-owned session for deterministic scan/validate services. */
+  scanSession?:ManuscriptScanSession<S>;
   /** Host supplies the Engine's bounded formula parser; no duplicate TeX grammar here. */
   validateDisplayMath?:(formula:string)=>unknown;
   /** Explicit opt-in for ordinary paragraphs and semantic study text slots. */
@@ -43,8 +46,13 @@ export function prepareManuscript<S extends Scan>(documents:readonly Manuscript[
     seen.add(doc.documentId);
   }
   if(!revision||!fingerprint||!Number.isSafeInteger(content.width)||content.width<=0||!Number.isSafeInteger(content.height)||content.height<=0)throw new Error('Invalid fixture input');
-  const parsed=documents.map(doc=>({documentId:doc.documentId,revision:doc.revision,parsed:deps.scan(doc.source)}));
-  for(const doc of parsed)for(const d of deps.validate(doc.parsed).diagnostics)diagnostics.push({...d,documentId:doc.documentId});
+  const session=deps.scanSession;
+  const parsed=documents.map(doc=>{
+    const result=session?.read(doc.documentId,doc.source,deps.scan,deps.validate);
+    if(result)for(const d of result.diagnostics)diagnostics.push({...d,documentId:doc.documentId});
+    return {documentId:doc.documentId,revision:doc.revision,parsed:result?result.parsed:deps.scan(doc.source)};
+  });
+  if(!session)for(const doc of parsed)for(const d of deps.validate(doc.parsed).diagnostics)diagnostics.push({...d,documentId:doc.documentId});
   if(diagnostics.length)return failed();
   for(const d of deps.index(parsed).diagnostics)diagnostics.push({code:d.code,message:'Duplicate block ID',...d.occurrence});
   if(diagnostics.length)return failed();
