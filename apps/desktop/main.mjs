@@ -406,6 +406,30 @@ async function liveWritingSmoke(){
   await until('performance cleared',"document.querySelectorAll('#performance-summary tbody tr').length===0&&document.querySelectorAll('#performance-phase-summary tbody tr').length===0");
   await click('#performance-close');
   await until('performance closed',"!document.querySelector('#performance-panel')");
+  // Exercise the experimental in-place publication on a multi-page plain
+  // manuscript. Use the same synthetic source with full replacement as oracle.
+  const longSource=saved+'\n\n'+Array.from({length:32},(_,i)=>('差分確認 '+(i+1)+'。 '+('日本語の文章と配置を確認します。'.repeat(12)))).join('\n\n')+'\n';
+  const editedLong=longSource.replace('見出し','目次例');
+  await setSource(longSource);
+  await until('multi-page paper',scopeReady('manuscript')+"&&document.querySelector('#preview > div').shadowRoot.querySelectorAll('[data-page]').length>=3&&document.querySelector('#preview > div').shadowRoot.textContent.includes('差分確認 32')");
+  await click('#performance-toggle');
+  if(await raw("document.querySelector('#performance-reuse-paper-pages').checked"))throw Error('Partial paper publication must default off');
+  await click('#performance-reuse-paper-pages');await click('#performance-close');
+  await raw("(()=>{const h=document.querySelector('#preview > div');window.__bcPaperProbe={host:h,pages:[...h.shadowRoot.querySelectorAll('[data-page]')]};document.querySelector('#source').focus();})()");
+  await setSource(editedLong);
+  await until('partial paper published',scopeReady('manuscript')+"&&document.querySelector('#preview > div').shadowRoot.textContent.includes('目次例')");
+  if(!await raw("(()=>{const h=document.querySelector('#preview > div'),p=[...h.shadowRoot.querySelectorAll('[data-page]')],old=window.__bcPaperProbe;return h===old.host&&p[0]!==old.pages[0]&&p.slice(1).some((n,i)=>n===old.pages[i+1])&&Number(h.dataset.reusedPages)>0&&document.activeElement.id==='source';})()"))throw Error('Partial paper must retain equal pages and replace changed page');
+  if(!await raw("(()=>{const h=document.querySelector('#preview > div'),p=[...h.shadowRoot.querySelectorAll('[data-page]')],old=window.__bcPaperProbe;const page=p.find((n,i)=>i>0&&n===old.pages[i]);const block=page?.querySelector('[data-block][tabindex]');if(!block)return false;block.click();const e=document.querySelector('#source');return document.activeElement===e&&e.selectionEnd>e.selectionStart;})()"))throw Error('Retained page navigation failed');
+  await raw("window.__bcPaperProbe.expected=[...document.querySelector('#preview > div').shadowRoot.querySelectorAll('[data-page]')].map(p=>p.cloneNode(true))");
+  await click('#performance-toggle');await click('#performance-reuse-paper-pages');await click('#performance-close');
+  await click('#preview-button');
+  await until('full replacement oracle',scopeReady('manuscript')+"&&document.querySelector('#preview > div')!==window.__bcPaperProbe.host");
+  if(!await raw("(()=>{const p=[...document.querySelector('#preview > div').shadowRoot.querySelectorAll('[data-page]')],expected=window.__bcPaperProbe.expected;return p.length===expected.length&&p.every((n,i)=>n.isEqualNode(expected[i]));})()"))throw Error('Partial paper differs from full replacement');
+  await raw("delete window.__bcPaperProbe");
+  await setSource(saved);
+  await until('partial test source restored',scopeReady('manuscript')+"&&document.querySelector('#workspace-save-state').textContent==='保存済み'&&!document.querySelector('#preview > div').shadowRoot.textContent.includes('目次例')");
+  if(await readFile(path,'utf8')!==saved)throw Error('Partial paper test changed saved manuscript');
+  console.log('PASS partial paper identity, current navigation, full replacement parity and disk safety');
   // Reopening through the normal discard path cleans any coalesced recovery draft.
   await click('#mode-home');await click('#open');
   await until('reopened book',"document.querySelector('.workspace-shell').dataset.workspaceMode==='writing'&&!document.querySelector('#open').disabled&&!document.querySelector('#source').value");
