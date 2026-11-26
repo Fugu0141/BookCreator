@@ -8,7 +8,7 @@ export const formulas={
   factor:'(x-2)(x-3)=0',
   discriminant:'D=b^2-4ac',
   derivative:'\\lim_{h\\to0}\\frac{f(x+h)-f(x)}{h}',
-  aligned:['\\begin{aligned}','f(x)&=x^2 \\\\','f\'(x)&=2x','\\end{aligned}'],
+  aligned:['\\begin{aligned}','f(x)&=x^2 \\\\','\\frac{df}{dx}&=2x','\\end{aligned}'],
   cases:'\\begin{cases}x&x\\geq0\\\\-x&x<0\\end{cases}',
   matrix:'\\begin{pmatrix}1&2\\\\3&4\\end{pmatrix}',
 };
