@@ -321,7 +321,16 @@ async function packageSmoke(){
   // UX-08e: creation, move, duplication, deletion and history on a real draft.
   await setStructuredSource('');
   await exec("document.querySelector('#editor-view-structured').click()");
-  await until("!document.querySelector('#structured-append').disabled&&document.querySelector('#structured-undo').disabled");
+  // UX-09b: insertion choices are hidden until explicitly requested.
+  await until("document.querySelector('#structured-insert-panel')?.hidden&&document.querySelector('#structured-undo').disabled");
+  const openStructuredInsert=()=>exec("(()=>{const e=document.querySelector('#structured-insert-toggle');if(e.getAttribute('aria-expanded')==='false')e.click();})()");
+  await openStructuredInsert();
+  await until("!document.querySelector('#structured-insert-panel').hidden&&!document.querySelector('#structured-append').disabled");
+  await exec("document.querySelector('[data-insert-category=math]').click()");
+  await until("document.querySelector('#structured-insert-kind').value==='math'&&document.querySelector('[data-insert-category=math]').getAttribute('aria-pressed')==='true'");
+  await exec("document.querySelector('[data-insert-category=text]').click()");
+  await until("document.querySelector('#structured-insert-kind').value==='paragraph'");
+
   await exec("document.querySelector('#structured-append').click()");
   await until("document.querySelector('#source').value==='新しい本文を入力してください。\\n'&&!document.querySelector('#structured-undo').disabled");
   await exec("document.querySelector('#structured-undo').click()");
@@ -349,8 +358,11 @@ async function packageSmoke(){
   await until("document.querySelector('#source').value==="+JSON.stringify(movedFixture));
   await exec("document.querySelector('#structured-undo').click()");
   await until("document.querySelector('#source').value==="+JSON.stringify(structuredFixture));
-  await exec("(()=>{const e=document.querySelector('#structured-insert-kind');e.value='example';e.dispatchEvent(new Event('change',{bubbles:true}));})()");
-  await exec("document.querySelector('[data-structured-kind=directive] [data-block-insert]').click()");
+  await exec("(()=>{const e=document.querySelector('[data-structured-kind=directive] .structured-block-menu');if(!e.open)e.querySelector('summary').click();e.querySelector('[data-block-insert]').click();})()");
+  await until("!document.querySelector('#structured-insert-panel').hidden&&document.querySelector('#structured-insert-position').value!==String(document.querySelectorAll('.structured-block').length)");
+  await exec("document.querySelector('[data-insert-category=study]').click()");
+  await until("document.querySelector('#structured-insert-kind').value==='example'&&document.querySelector('#source').value==="+JSON.stringify(structuredFixture));
+  await exec("document.querySelector('#structured-append').click()");
   await until("!!document.querySelector('[data-study-kind=example]')&&document.querySelector('#source').value.includes(':::component{name=\"example\"}')&&document.querySelector('#source').value.includes('eq-test')&&document.querySelector('#structured-redo').disabled");
   await exec("document.querySelector('#structured-undo').click()");
   await until("document.querySelector('#source').value==="+JSON.stringify(structuredFixture));
@@ -1802,10 +1814,13 @@ async function smoke(){
   const beforeOptional=await exec("document.querySelector('#source').value.length");
   const beforeStructuredInsert=await exec("document.querySelector('#source').value");
   await exec("document.querySelector('#editor-view-structured').click()");
-  await until("!!document.querySelector('#structured-insert-kind optgroup[label=登録教材部品]')&&[...document.querySelector('#structured-insert-kind').options].some(o=>o.value==="+JSON.stringify(optionalId)+")");
+  await openStructuredInsert();
+  await until("!document.querySelector('#structured-insert-panel').hidden&&!!document.querySelector('#structured-insert-kind optgroup[label=登録教材部品]')&&[...document.querySelector('#structured-insert-kind').options].some(o=>o.value==="+JSON.stringify(optionalId)+")");
   await exec("(()=>{const e=document.querySelector('#structured-insert-kind');e.value="+JSON.stringify(multiId)+";e.dispatchEvent(new Event('change',{bubbles:true}));})()");
   await until("document.querySelector('#structured-insertion-fields')?.textContent.includes('hint')");
-  await exec("document.querySelector('[data-block-insert]').click()");
+  await exec("(()=>{const e=document.querySelector('.structured-block .structured-block-menu');if(!e.open)e.querySelector('summary').click();e.querySelector('[data-block-insert]').click();})()");
+  await until("document.querySelector('#structured-insert-position').value==='0'&&document.querySelector('#source').value==="+JSON.stringify(beforeStructuredInsert));
+  await exec("document.querySelector('#structured-append').click()");
   await until("document.querySelector('#source').value.trimStart().startsWith("+JSON.stringify('::::component{name="'+multiId+'"')+")&&!!document.querySelector('.structured-block:first-child [data-study-field=hint]')");
   await exec("document.querySelector('#structured-undo').click()");
   await until("document.querySelector('#source').value==="+JSON.stringify(beforeStructuredInsert));
