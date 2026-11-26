@@ -831,7 +831,9 @@ async function smoke(){
   await until("!document.querySelector('#paragraph-apply').disabled && document.querySelector('#paragraph-preview > div').shadowRoot.querySelectorAll('[data-page]').length>1");
   if(!await exec("(()=>{const root=document.querySelector('#paragraph-preview > div').shadowRoot;return Array.from(root.querySelectorAll('[data-fragmentable-frame]')).map(e=>e.querySelector('[data-content-slot]').textContent).join('')===document.querySelector('#paragraph-sample').value;})()"))throw Error('Paragraph frame lost source text');
   // Opt in to BCM math in a disposable paragraph sample; retain the literal mode by default.
-  await until("document.querySelector('#paragraph-sample-fields').hidden&&document.querySelector('#paragraph-zoom').value==='100'");
+  await until("!document.querySelector('#paragraph-sample-fields').hidden&&document.querySelector('#paragraph-zoom').value==='100'");
+  await exec("document.querySelector('#paragraph-sample-toggle').click()");
+  await until("document.querySelector('#paragraph-sample-fields').hidden&&!document.querySelector('#paragraph-apply').disabled");
   await exec("(()=>{const e=document.querySelector('#paragraph-zoom');e.value='50';e.dispatchEvent(new Event('change',{bubbles:true}));})()");
   await until("Number(document.querySelector('#paragraph-preview').dataset.zoom)===.5");
   await exec("(()=>{const e=document.querySelector('#paragraph-zoom');e.value='100';e.dispatchEvent(new Event('change',{bubbles:true}));})()");
