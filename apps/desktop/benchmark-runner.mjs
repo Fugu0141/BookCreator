@@ -47,6 +47,8 @@ export async function runBookBenchmark(win,app,root,fixture){
   const initialMemory=memory();
   const paperSignature=()=>raw("JSON.stringify(Array.from(document.querySelector('#preview > div').shadowRoot.querySelectorAll('[data-page]')).map(p=>p.outerHTML))");
   const cacheStats=()=>raw("(()=>{const e=document.querySelector('#performance-cache');return {hits:Number(e.dataset.hits),misses:Number(e.dataset.misses),entries:Number(e.dataset.entries)};})()");
+  const mathStats=()=>raw("JSON.parse(document.querySelector('#performance-math-cache').dataset.stats)");
+  const mathEmpty=s=>Object.values(s).every(v=>v.entries===0&&v.hits===0&&v.misses===0);
   await click('#open');
   await until('open',"document.querySelector('.workspace-shell').dataset.workspaceMode==='writing'&&!document.querySelector('#open').disabled");
   for(const c of fixture.chapters){
@@ -72,18 +74,18 @@ export async function runBookBenchmark(win,app,root,fixture){
   if(await readFile(join(root,'book.yaml'),'utf8')!==fixture.manifest)throw Error('Benchmark changed manifest');
   await click('#performance-toggle');
   await until('metrics',"document.querySelector('#performance-summary tbody tr[data-stage=layout][data-category=book]')?.dataset.success>0&&document.querySelector('#performance-memory')?.dataset.phase==='ready'");
-  async function readPhaseSample(scope,enabled){
-    const selector='#performance-phase-summary tr[data-scope='+scope+'][data-cache-enabled='+String(enabled)+']';
+  async function readPhaseSample(scope,enabled,mathEnabled=false){
+    const selector='#performance-phase-summary tr[data-scope='+scope+'][data-cache-enabled='+String(enabled)+'][data-math-cache-enabled='+String(mathEnabled)+']';
     const sample=await raw("(()=>{const e=document.querySelector("+JSON.stringify(selector)+");return e?{count:Number(e.dataset.count),timings:JSON.parse(e.dataset.latest)}:null;})()");
     if(!sample||!Number.isSafeInteger(sample.count)||sample.count<1||
       Object.keys(sample.timings).length!==phaseKeys.length||!phaseKeys.every(k=>Number.isFinite(sample.timings[k])&&sample.timings[k]>=0))
       throw Error('Missing or invalid phase metrics: '+scope+' '+enabled);
     return sample;
   }
-  await readPhaseSample('manuscript',true);
-  await readPhaseSample('book',true);
-  const cachedStats=await cacheStats();
-  if(cachedStats.hits<=0||cachedStats.entries<=0)throw Error('Benchmark expected reuse of unchanged uniform text');
+  await readPhaseSample('manuscript',false,false);
+  await readPhaseSample('book',false,false);
+  const baselineCache=await cacheStats(),baselineMath=await mathStats();
+  if(await raw("document.querySelector('#performance-cache-enabled').checked||document.querySelector('#performance-math-cache-enabled').checked")||Object.values(baselineCache).some(n=>n!==0)||!mathEmpty(baselineMath))throw Error('Both experimental caches must start disabled and empty');
   const cachedPaper=await paperSignature();
   await click('#performance-close');
   // Reset the cache before each warm arm; prime both arms symmetrically.
@@ -103,9 +105,9 @@ export async function runBookBenchmark(win,app,root,fixture){
     await measure(label,'book',()=>click('#preview-book'),"document.querySelector('#preview > div').dataset.paperProbe!=='old'");
     if(await paperSignature()!==cachedPaper)throw Error('Cache comparison page DOM differs: '+label);
   }
-  async function readComparisonStats(enabled){
+  async function readComparisonStats(enabled,mathEnabled=false){
     await click('#performance-toggle');
-    const stats=await cacheStats(),phase=await readPhaseSample('book',enabled);
+    const stats=await cacheStats(),phase=await readPhaseSample('book',enabled,mathEnabled);
     await click('#performance-close');
     return {stats,phase};
   }
@@ -131,16 +133,55 @@ export async function runBookBenchmark(win,app,root,fixture){
     }
   }
   const cacheComparison=summarizeCacheComparison(samples);
+  // Hold text caching off to isolate the math cache contribution.
+  await setComparisonCache(false);
+  async function setMathComparison(enabled){
+    await click('#performance-toggle');
+    const checked=()=>raw("document.querySelector('#performance-math-cache-enabled').checked");
+    if(await checked())await click('#performance-math-cache-enabled');
+    if(enabled)await click('#performance-math-cache-enabled');
+    if(await checked()!==enabled||!mathEmpty(await mathStats()))throw Error('Math cache toggle/reset failed');
+    await click('#performance-close');
+  }
+  async function readMathComparison(enabled){
+    await click('#performance-toggle');
+    const stats=await mathStats(),phase=await readPhaseSample('book',false,enabled);
+    await click('#performance-close');return {stats,phase};
+  }
+  const mathComparisons=[];
+  for(const {pair,order} of cacheComparisonPlan()){
+    for(const arm of order){
+      const enabled=arm==='warm';
+      await setMathComparison(enabled);
+      await repeat('math-prime-'+pair+'-'+arm);
+      const prime=await readMathComparison(enabled);
+      const label='math-pair-'+pair+'-'+arm;
+      await repeat(label);
+      const after=await readMathComparison(enabled);
+      if(after.phase.count!==prime.phase.count+1)throw Error('Expected one math phase sample');
+      if(enabled){
+        if(prime.stats.inlineMathCache.entries<=0||after.stats.inlineMathCache.hits<=prime.stats.inlineMathCache.hits||after.stats.mathCache.hits<=prime.stats.mathCache.hits)
+          throw Error('Expected warm math cache reuse');
+      }else if(!mathEmpty(prime.stats)||!mathEmpty(after.stats))throw Error('Disabled math cache accumulated data');
+      mathComparisons.push({pair,arm,elapsedMs:samples.find(s=>s.label===label).elapsedMs,timings:after.phase.timings,prime:prime.stats,after:after.stats});
+    }
+  }
+  const mathComparison=summarizeCacheComparison(mathComparisons.map(s=>({label:'cache-pair-'+s.pair+'-'+s.arm,scope:'book',elapsedMs:s.elapsedMs})));
+  await setMathComparison(true);
   // Restore and populate the cache so the session-release assertion is not vacuous.
   await setComparisonCache(true);
   await repeat('cache-session-release-prime');
-  const releasePrime=await readComparisonStats(true);
+  const releasePrime=await readComparisonStats(true,true);
   if(releasePrime.stats.entries<=0)throw Error('Expected populated cache before book session release');
   await click('#performance-toggle');
+  const releaseMath=await mathStats();
+  if(releaseMath.inlineMathCache.entries<=0||releaseMath.mathCache.entries<=0)throw Error('Expected populated math cache before session release');
   const summary=await raw("Array.from(document.querySelectorAll('#performance-summary tbody tr')).map(tr=>({stage:tr.dataset.stage,category:tr.dataset.category,values:Array.from(tr.querySelectorAll('td')).map(td=>td.textContent)}))");
   await click('#performance-close');await click('#mode-home');await click('#open');
   await until('cache session reopened',"document.querySelector('.workspace-shell').dataset.workspaceMode==='writing'&&!document.querySelector('#open').disabled&&!document.querySelector('#source').value");
   await click('#performance-toggle');
-  if((await cacheStats()).entries!==0)throw Error('Cache entries survived book reopen');
-  console.log('BENCH report '+JSON.stringify({version:4,fixtureVersion:2,cacheComparison,phaseComparisons,chapters:fixture.chapters.map(c=>({id:c.id,characters:c.source.length,sections:c.sections,blocks:c.blocks})),initialMemory,finalMemory:memory(),samples,summary,cachedStats,finalCache}));
+  if((await cacheStats()).entries!==0||!mathEmpty(await mathStats()))throw Error('Cache entries survived book reopen');
+  await click('#performance-close');
+  await setComparisonCache(false);await setMathComparison(false);
+  console.log('BENCH report '+JSON.stringify({version:6,fixtureVersion:2,cacheComparison,phaseComparisons,mathComparison,mathComparisons,chapters:fixture.chapters.map(c=>({id:c.id,characters:c.source.length,sections:c.sections,blocks:c.blocks})),initialMemory,finalMemory:memory(),samples,summary,baselineCache,baselineMath,finalCache}));
 }
