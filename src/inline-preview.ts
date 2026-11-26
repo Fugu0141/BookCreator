@@ -150,3 +150,10 @@ export function inlineSourceRange(map:InlineSourceMap,start:number,end:number){
   if(!first||!last)throw RangeError('Incomplete inline source map');
   return {start:first.derived||start===first.start?first.outerStart:first.rawStart+start-first.start,end:last.derived||end===last.end?last.outerEnd:last.rawStart+end-last.start};
 }
+
+/** Lab sample text is disposable and has no raw source mapping. Explicit opt-in preserves literal samples. */
+export function previewSampleInline(text:string,bcm:boolean,validateMath:(formula:string)=>unknown){
+  if(!bcm)return {text};
+  const parsed=parsePreviewInline(text,0,validateMath);
+  return {text:parsed.text,...(parsed.inlineStyles.length?{inlineStyles:parsed.inlineStyles}:{}),...(parsed.inlineMath.length?{inlineMath:parsed.inlineMath}:{})};
+}
