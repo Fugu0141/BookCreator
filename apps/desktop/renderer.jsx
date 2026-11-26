@@ -22,6 +22,8 @@ const deps={scan:scanDocument,validate:validateScannedBlocks,index:indexBlockIds
 import {recoverySession} from './recovery-session.mjs';
 import {settingsDraftSession} from './settings-draft-session.mjs';
 import {createLayoutScheduler} from './layout-scheduler.mjs';
+import {describeLayoutInput,collectLayoutDocuments,prepareLayoutOptions,validateLayoutOptions} from './layout-input.mjs';
+import {describeMeasuredPaper} from './measured-paper.mjs';
 const api=window.bookcreator;
 const studyNames={note:'補足',tip:'ポイント',warning:'注意',important:'重要',example:'例題',exercise:'練習問題',explanation:'解説'};
 const noto='BCFont_NotoSansJP',stix='BCFont_STIXTwoMath';
@@ -527,66 +529,26 @@ function App(){
   async function renderRequest(job,whole,scope){
     const raw=text;let diagnostics=[],documents=[];
     try{
-      if(theme?.componentMessage||theme?.paragraphMessage||theme?.studyMessage)throw Error('部品定義が未対応です: '+(theme.componentMessage??theme.paragraphMessage??theme.studyMessage));
-      if(!page)throw Error(savedSettings?.message??'用紙設定が未対応です。');
-      const geometry=paperGeometry(page);
-      if([typography.body,typography.heading].some(v=>v.fontFamily.startsWith('BCFont_')&&v.fontFamily!==noto&&!fonts.some(f=>f.alias===v.fontFamily&&f.loaded)))throw Error('登録フォントを読み込めません。');
-      if(typography.mathFontFamily&&typography.mathFontFamily!==stix&&!fonts.some(f=>f.alias===typography.mathFontFamily&&f.loaded&&f.hasMathTable&&f.weight===400))throw Error('登録数式フォントを読み込めません。');
-      const rev=String(job),fingerprint='desktop-poc-'+job+'-'+__BUNDLED_FONT_FINGERPRINT__+'-'+JSON.stringify(typography)+'-'+fonts.map(f=>f.sha256).join(',')+'-'+JSON.stringify({page,order,headingDesign:theme?.headingDesign,headingLevels:theme?.headingLevels,paragraphDesign:theme?.paragraphDesign,studyDesigns:theme?.studyDesigns,library:theme?.library});
-      const needsContext=raw.includes(':ref{')||/:::layout\{/.test(raw)||raw.includes('answer-to')||hasDynamicLabels(theme?.headingDesign)||Object.values(theme?.headingLevels??{}).some(hasDynamicLabels)||Object.values(theme?.studyDesigns??{}).some(hasStudyNumbering)||(theme?.library?.entries??[]).some(e=>e.usage==='study'&&hasStudyNumbering(e.design));
-      if(whole||needsContext){
-        const snapshot=await unwrap(api.readPreviewBook(book.settingRecovery.token));
-        if(!layoutScheduler.current.isCurrent(job))return;
-        const byId=new Map(snapshot.map(d=>[d.documentId,d]));
-        documents=order.map(s=>{
-          const d=byId.get(s.id);if(!d)throw Error('原稿構成が変わりました。');
-          if(file?.id===s.id&&file.revision!==d.revision)throw Error('原稿が外部変更されました。再読込してください。');
-          return {...d,startOn:s.startOn,...(file?.id===s.id?{source:raw,revision:rev}:{})};
-        });
-      }else{
-        const section=order.find(s=>s.id===file.id);
-        if(!section||!['page','continuous'].includes(section.startOn))throw Error('このセクションの開始面はプレビュー未対応です。');
-        documents=[{documentId:file.id,revision:rev,source:raw,startOn:section.startOn}];
-      }
-      for(const [id,message] of Object.entries(theme?.studyResourceErrors??{}))if(documents.some(d=>d.source.includes(id)))throw Error('登録部品の素材が利用できません: '+message);
-      const prepared=prepareBookBrowserPreview(documents,rev,fingerprint,geometry.content,deps,typography,theme?.headingDesign,theme?.headingLevels,theme?.paragraphDesign,theme?.studyDesigns,theme?.library);
+      const input=describeLayoutInput({whole,file,raw,page,savedSettings,typography,theme,fonts,order,job,bundledFingerprint:__BUNDLED_FONT_FINGERPRINT__},{paperGeometry,hasDynamicLabels,hasStudyNumbering});
+      const snapshot=whole||input.needsContext?await unwrap(api.readPreviewBook(book.settingRecovery.token)):undefined;
+      if(!layoutScheduler.current.isCurrent(job))return;
+      documents=collectLayoutDocuments(input,snapshot);
+      const prepared=prepareLayoutOptions(input,documents,prepareBookBrowserPreview,deps);
       diagnostics=prepared.diagnostics;
-      if(!prepared.options)throw Error(prepared.diagnostics.map(d=>d.code+' '+d.message).join('\n'));
-      const options=!whole&&needsContext?{...prepared.options,sections:prepared.options.sections.filter(s=>s.id===file.id)}:prepared.options;
-      for(const section of options.sections)for(const block of section.blocks){
-        if('kind' in block)continue;
-        for(const request of [block.request,...(block.namedSlots??[]).map(s=>s.request)])for(const run of request.inlineStyles??[]){
-          const family=run.fontFamily??request.fontFamily,weight=run.fontWeight??request.fontWeight;
-          if(family.startsWith('BCFont_')&&family!==noto&&!fonts.some(f=>f.alias===family&&f.loaded&&f.weight===weight))throw Error('インライン書式の登録フォントまたは指定ウェイトを利用できません。');
-        }
-      }
+      if(!prepared.options)throw Error(diagnostics.map(d=>d.code+' '+d.message).join('\n'));
+      const options=prepared.options;
+      validateLayoutOptions(options,input.fonts);
+      const geometry=input.geometry;
       const result=await createPlainTextPagePreview(document,{...options,paper:geometry.paper,resolveImage});
       if(!layoutScheduler.current.isCurrent(job))return;
       preview.current.append(result.element);
-      const pageNodes=[...result.element.shadowRoot.querySelectorAll('[data-page]')];
-      const sourceIds=new Map(pageNodes.map(node=>[node,new Set()]));
-      const sourceBlocks=new Map(options.sections.flatMap(s=>s.blocks.filter(b=>!('kind' in b)).map(b=>[JSON.stringify([b.origin.documentId,b.origin.blockKey]),b])));
-      [...result.element.shadowRoot.querySelectorAll('[data-block]')].forEach((el,i)=>{
-        const slice=result.slices[i];if(!slice)return;
-        sourceIds.get(el.closest('[data-page]'))?.add(slice.origin.documentId);
-        const bind=(node,range)=>{if(!range)return;node.tabIndex=0;node.style.cursor='pointer';
-          const focus=()=>{if(!layoutScheduler.current.isCurrent(job))return;if(slice.origin.documentId!==file?.id){setStatus('この断片は '+slice.origin.documentId+' の原稿です。左の原稿一覧から開いてください。');return;}const reveal=()=>{if(!layoutScheduler.current.isCurrent(job))return;textarea.current.focus();textarea.current.setSelectionRange(range.start,range.end);};if(!textarea.current.getClientRects().length){if(routeBlockRef.current||composing.current){setStatus('編集中の操作を完了してから原稿に戻ってください。');return;}setMode('writing');setEditorView('source');setShowSettings(false);setShowPaper(true);setCompactPane('editor');requestAnimationFrame(reveal);}else reveal();};
-          node.addEventListener('click',e=>{e.stopPropagation();focus();});node.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();e.stopPropagation();focus();}});
-        };
-        const block=sourceBlocks.get(JSON.stringify([slice.origin.documentId,slice.origin.blockKey]));
-        bind(el,previewSourceRange(block,slice));
-        for(const node of el.querySelectorAll('[data-inline-math],[data-slot-display-math]')){
-          const textStart=Number(node.dataset.mathStart),textEnd=Number(node.dataset.mathEnd);
-          const name=node.closest('[data-named-slot]')?.dataset.namedSlot;
-          const local=name===undefined?slice:slice.namedSlots?.find(s=>s.name===name);
-          if(local&&textStart>=local.textStart&&textEnd<=local.textEnd&&textEnd===textStart+1)bind(node,previewSourceRange(block,{textStart,textEnd},name));
-        }
-        for(const node of el.querySelectorAll('[data-named-slot]')){
-          const named=slice.namedSlots?.find(s=>s.name===node.dataset.namedSlot);
-          if(named)bind(node,previewSourceRange(block,named,named.name));
-        }
-      });
-      setLayoutPages(pageNodes.map((node,index)=>({number:index+1,documents:[...sourceIds.get(node)],blocks:node.querySelectorAll('[data-block]').length,thumbnail:paperThumbnail(node)})));
+      const pages=describeMeasuredPaper(result,options,{previewSourceRange,paperThumbnail,onNavigate:(documentId,range)=>{
+        if(!layoutScheduler.current.isCurrent(job))return;
+        if(documentId!==file?.id){setStatus('この断片は '+documentId+' の原稿です。左の原稿一覧から開いてください。');return;}
+        const reveal=()=>{if(!layoutScheduler.current.isCurrent(job)||!textarea.current)return;textarea.current.focus();textarea.current.setSelectionRange(range.start,range.end);};
+        if(!textarea.current?.getClientRects().length){if(routeBlockRef.current||composing.current){setStatus('編集中の操作を完了してから原稿に戻ってください。');return;}setMode('writing');setEditorView('source');setShowSettings(false);setShowPaper(true);setCompactPane('editor');requestAnimationFrame(reveal);}else reveal();
+      }});
+      setLayoutPages(pages);
       setActivePage(1);setPageJump('1');preview.current.scrollTop=0;preview.current.scrollLeft=0;
       setLayoutState({phase:'ready',scope,pages:result.plan.pages.length});
       setStatus(result.plan.pages.length+' ページ · '+(whole?'書籍全体':'選択原稿')+' · 実測プレビュー（出版不可）');
