@@ -59,12 +59,22 @@ function App(){
   const [book,setBook]=useState(null),[file,setFile]=useState(null),[text,setText]=useState(''),[status,setStatus]=useState('book.yaml を開いてください。'),[busy,setBusy]=useState(false),[measuring,setMeasuring]=useState(false);
   const [mode,setMode]=useState('home'),[showPaper,setShowPaper]=useState(false);
   // CSS viewport width, not physical pixels: reacts to window size and UI zoom.
-  const [compactWriting,setCompactWriting]=useState(()=>window.matchMedia('(max-width: 900px)').matches);
+  const [compactWriting,setCompactWriting]=useState(()=>window.innerWidth<=900);
   const [compactPane,setCompactPane]=useState('editor');
+  const compactWidthRef=useRef(compactWriting);
   useEffect(()=>{
     const media=window.matchMedia('(max-width: 900px)');
-    const update=()=>{setCompactWriting(media.matches);setCompactPane('editor');};
-    media.addEventListener('change',update);return ()=>media.removeEventListener('change',update);
+    // Electron zoom and resize notifications may arrive separately. Read the
+    // current CSS viewport and reset the pane only when crossing the breakpoint.
+    const update=()=>{
+      const next=window.innerWidth<=900;
+      if(next===compactWidthRef.current)return;
+      compactWidthRef.current=next;setCompactWriting(next);setCompactPane('editor');
+    };
+    window.addEventListener('resize',update);
+    media.addEventListener('change',update);
+    update();
+    return ()=>{window.removeEventListener('resize',update);media.removeEventListener('change',update);};
   },[]);
   const [outlineOpen,setOutlineOpen]=useState(true),[pageListOpen,setPageListOpen]=useState(true),[pageInfoOpen,setPageInfoOpen]=useState(true),[shortcutHelp,setShortcutHelp]=useState(false);
   const [writingPanel,setWritingPanel]=useState(null);
@@ -321,7 +331,7 @@ function App(){
     }catch(e){setStatus(String(e.message??e));}
   }
   async function render(whole=false){
-    if(!book||(!whole&&!file)||busy)return;setShowPaper(true);if(mode==='writing'&&compactWriting)setCompactPane('paper');invalidate();const job=generation.current,scope=whole?'book':'manuscript';setMeasuring(true);setLayoutState({phase:'running',scope,pages:0});setStatus('実測組版中…');
+    if(!book||(!whole&&!file)||busy)return;if(mode==='writing'&&compactWriting)setCompactPane('paper');else setShowPaper(true);invalidate();const job=generation.current,scope=whole?'book':'manuscript';setMeasuring(true);setLayoutState({phase:'running',scope,pages:0});setStatus('実測組版中…');
     const raw=text;let diagnostics=[],documents=[];
     try{
       if(theme?.componentMessage||theme?.paragraphMessage||theme?.studyMessage)throw Error('部品定義が未対応です: '+(theme.componentMessage??theme.paragraphMessage??theme.studyMessage));
@@ -631,7 +641,7 @@ function App(){
   const paperVisible=compactActive?activePane==='paper':showPaper;
   function changeWritingPane(pane){
     if(routeBlocked||composing.current)return;
-    if(pane==='paper')setShowPaper(true);
+    // Compact navigation must not overwrite the independent wide-mode preference.
     setCompactPane(pane);
   }
   return <div className="workspace-shell" data-workspace-mode={mode} onKeyDown={workspaceKey}><header className="workspace-header"><div><strong>BookCreator</strong><span> / {book?.title??'開発プレビュー'}</span></div><div className="workspace-actions"><span id="workspace-save-state" className="save-indicator" data-dirty={unsaved.length>0} title={saveLabel}>{saveLabel}</span><button id="save" hidden={!book||mode==='home'} disabled={routeBlocked||!dirty||!file?.editable} title="選択原稿のみ保存（Ctrl / Cmd + S）。テーマと書籍設定は各画面で保存してください。" aria-keyshortcuts="Control+S Meta+S" onClick={save}>原稿を保存</button><button id="book-settings" hidden={!book||mode==='home'} disabled={routeBlocked} onClick={()=>navigate(mode==='settings'?'writing':'settings')} aria-pressed={mode==='settings'}>書籍設定</button><button id="shortcut-help-toggle" type="button" disabled={routeBlocked} aria-expanded={shortcutHelp} aria-controls="shortcut-help" onClick={()=>setShortcutHelp(v=>!v)}>キー操作</button></div></header>
