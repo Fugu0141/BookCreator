@@ -1402,12 +1402,14 @@ async function smoke(){
   const beforeStructuredInsert=await exec("document.querySelector('#source').value");
   await exec("document.querySelector('#editor-view-structured').click()");
   await until("!!document.querySelector('#structured-insert-kind optgroup[label=登録教材部品]')&&[...document.querySelector('#structured-insert-kind').options].some(o=>o.value==="+JSON.stringify(optionalId)+")");
-  await exec("(()=>{const e=document.querySelector('#structured-insert-kind');e.value="+JSON.stringify(optionalId)+";e.dispatchEvent(new Event('change',{bubbles:true}));})()");
-  await until("!!document.querySelector('#structured-optional-slots')&&!document.querySelector('#structured-optional-slots').checked&&document.querySelector('#structured-insertion-fields').textContent.includes('hint')&&!document.querySelector('#structured-insertion-fields').textContent.includes('extra')");
+  await exec("(()=>{const e=document.querySelector('#structured-insert-kind');e.value="+JSON.stringify(multiId)+";e.dispatchEvent(new Event('change',{bubbles:true}));})()");
+  await until("document.querySelector('#structured-insertion-fields')?.textContent.includes('hint')");
   await exec("document.querySelector('[data-block-insert]').click()");
-  await until("document.querySelector('#source').value.startsWith("+JSON.stringify('::::component{name="'+optionalId+'"')+")&&!!document.querySelector('[data-study-kind=custom] [data-study-field=hint]')");
+  await until("document.querySelector('#source').value.trimStart().startsWith("+JSON.stringify('::::component{name="'+multiId+'"')+")&&!!document.querySelector('.structured-block:first-child [data-study-field=hint]')");
   await exec("document.querySelector('#structured-undo').click()");
   await until("document.querySelector('#source').value==="+JSON.stringify(beforeStructuredInsert));
+  await exec("(()=>{const e=document.querySelector('#structured-insert-kind');e.value="+JSON.stringify(optionalId)+";e.dispatchEvent(new Event('change',{bubbles:true}));})()");
+  await until("!!document.querySelector('#structured-optional-slots')&&!document.querySelector('#structured-optional-slots').checked&&!document.querySelector('#structured-insertion-fields').textContent.includes('extra')");
   await exec("document.querySelector('#structured-append').click()");
   await until("document.querySelector('#source').value.slice("+beforeOptional+").includes("+JSON.stringify(optionalId)+")");
   if(await exec("document.querySelector('#source').value.slice("+beforeOptional+").includes('name=\"extra\"')"))throw Error('Structured insert included optional slot by default');
