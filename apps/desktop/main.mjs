@@ -11,6 +11,7 @@ import {createHash,randomUUID} from 'node:crypto';
 import {recoveryKey,recoveryStore,recoveryStatus} from './manuscript-recovery.mjs';
 import {listRecoveryCandidates} from './recovery-hub.mjs';
 import {settingsRecovery} from './settings-recovery.mjs';
+import {componentRecovery} from './component-recovery.mjs';
 const PACKAGE_CRASH_PREPARE=process.argv.includes('--package-crash-prepare');
 const PACKAGE_CRASH_VERIFY=process.argv.includes('--package-crash-verify');
 const PACKAGE_RESTART_SMOKE=PACKAGE_CRASH_PREPARE||PACKAGE_CRASH_VERIFY||process.argv.includes('--package-restart-smoke');
@@ -56,6 +57,7 @@ async function run(){
   const recovery=recoveryStore(app.getPath('userData'));
   const recoverySessions=new Map();
   const settingsDrafts=settingsRecovery(app.getPath('userData'));
+  const componentDrafts=componentRecovery(app.getPath('userData'));
   let settingsToken=null;
   let settingsTail=Promise.resolve();
   function settingsSerial(fn){const result=settingsTail.then(fn);settingsTail=result.catch(()=>{});return result;}
@@ -186,6 +188,21 @@ async function run(){
       return {ok:true,value};
     }catch(e){return {ok:false,error:{code:e.code??'ERROR',message:String(e.message??e)}};}
   });
+  ipcMain.handle('bookcreator:component-recovery',async(event,request)=>{
+    try{
+      sender(event);
+      if(!request||typeof request!=='object'||typeof request.token!=='string'||request.token!==settingsToken)throw Error('Invalid component recovery session');
+      const current=requireWorkspace(),token=settingsToken;
+      const value=await settingsSerial(async()=>{
+        if(workspace!==current||settingsToken!==token)throw Error('Stale component recovery session');
+        if(request.action==='inspect')return componentDrafts.inspect(current,request.target);
+        if(request.action==='put')return componentDrafts.put(current,request.target,request.baseRevision,request.value,request.version);
+        if(request.action==='remove')return componentDrafts.remove(current,request.target,request.version);
+        throw Error('Invalid component recovery action');
+      });
+      return {ok:true,value};
+    }catch(e){return {ok:false,error:{code:e.code??'ERROR',message:String(e.message??e)}};}
+  });
   handle('read',async(...args)=>{
     checkArgs(args,1);if(typeof args[0]!=='string')throw Error('Invalid section');
     const current=requireWorkspace(),saved=await current.read(args[0]);
@@ -268,6 +285,16 @@ function workspaceSmokeExec(){
     if(/\.(?:click|dispatchEvent|setSelectionRange|focus)\(/.test(js)){
       const selectors=[...js.matchAll(/document\.querySelector\((['"])(.*?)\1\)|document\.getElementById\((['"])(.*?)\3\)/g)].map(m=>m[2]??'#'+m[4]);
       const selector=selectors[0];
+      // Recovery initialization and explicit commit/cancel are asynchronous.
+      // Do not drive old smoke actions through disabled lab controls.
+      if(await raw("!!document.querySelector('.lab-overlay')")){
+        let settled=false;
+        for(let i=0;i<100;i++){
+          if(await raw("!document.querySelector('.lab-overlay')||(!document.querySelector('#component-recovery-state[data-phase=loading]')&&!document.querySelector('.lab-overlay[data-recovery-working=true]'))")){settled=true;break;}
+          await new Promise(r=>setTimeout(r,50));
+        }
+        if(!settled)throw Error('Component recovery operation did not settle');
+      }
       const mode=selector&&/^#preview-(?:book|button)$/.test(selector)&&await raw("document.querySelector('.workspace-shell').dataset.workspaceMode==='layout'")?'layout':selector&&routeFor(selector);
       if(mode&&!await raw("document.querySelector('.workspace-shell').dataset.workspaceMode==="+JSON.stringify(mode))){
         await raw("document.querySelector('#mode-"+mode+"').click()");
@@ -1168,6 +1195,7 @@ async function packageSmoke(){
   await writingJourneySmoke();
   await recoveryJourneySmoke();
   await settingsRecoveryJourneySmoke();
+  await componentRecoveryJourneySmoke();
   await nativeCloseSmoke('discard');
   const report='PASS portable Windows package: isolated renderer, workspace, math, bundled fonts, numbering, save, new-book writing journey and renderer reload';
   if(process.env.BC_PACKAGE_SMOKE_REPORT)await writeFile(process.env.BC_PACKAGE_SMOKE_REPORT,report+'\n',{flag:'wx'});
@@ -1275,11 +1303,13 @@ async function writingJourneySmoke(){
   await until('optional group consumes no height',"(()=>{const r=document.querySelector('#lab-preview > div')?.shadowRoot;return !!r?.querySelector('[data-named-slot=strategy]')&&!r.querySelector('[data-named-slot=extension]')&&!r.querySelector('[data-component-group]')&&parseFloat(r.querySelector('[data-block]').style.height)<"+fullHeight+";})()");
   await until('custom measured',"!document.querySelector('#lab-library-add').disabled&&[...document.querySelector('#lab-preview > div')?.shadowRoot?.querySelectorAll('[data-fixed-label]')??[]].some(e=>e.textContent==="+JSON.stringify(customName+'：サンプル')+")");
   if(await readFile(themePath,'utf8')!==themeBefore||await readFile(manuscript,'utf8')!==expected)throw Error('Writing journey: unregistered component changed disk');
+  await until('custom draft recorded',"document.querySelector('#component-recovery-state')?.dataset.phase==='recorded'");
   await click('#lab-library-add');
   await until('custom registered',"[...document.querySelector('#lab-library-select')?.options??[]].some(e=>e.textContent==="+JSON.stringify(customName)+")&&!document.querySelector('#lab-cancel').disabled");
   const customId=await raw("[...document.querySelector('#lab-library-select').options].find(e=>e.textContent==="+JSON.stringify(customName)+").value");
   if(!/^component-[a-f0-9-]+$/.test(customId))throw Error('Writing journey: invalid registered component ID');
   const themeRegistered=await readFile(themePath,'utf8');
+  if((await recoveryStore(smokeRoot,'components').list()).records.length)throw Error('Writing journey: successful registration did not clear recovery draft');
   if(themeRegistered===themeBefore||!themeRegistered.includes(customId)||await readFile(manuscript,'utf8')!==expected)throw Error('Writing journey: component registration did not preserve manuscript');
   await click('#lab-cancel');
   await until('catalog after registration',"!document.querySelector('#lab-measure')&&!!document.querySelector("+JSON.stringify('[data-catalog-edit=registered-'+customId+']')+")");
@@ -1556,6 +1586,51 @@ async function settingsRecoveryJourneySmoke(){
   await click('#mode-writing');await click('[data-section=chapter-01]');
   await until('manuscript returned',"document.querySelector('#workspace-save-state').textContent==='保存済み'&&!document.querySelector('#source').disabled");
   console.log('PASS UX-10g-2 packaged settings checkpoint, locked review, restore and discard without changing originals');
+}
+// Test the editor against the actual component store and theme. The saved
+// restart fixture must remain byte-identical throughout this journey.
+async function componentRecoveryJourneySmoke(){
+  const raw=js=>win.webContents.executeJavaScript(js);
+  const until=async(label,js)=>{for(let i=0;i<150;i++){if(await raw(js))return;await new Promise(r=>setTimeout(r,100));}throw Error('Component recovery journey: '+label+'; '+await raw("document.querySelector('#status')?.textContent"));};
+  const click=async selector=>{
+    await until('reachable '+selector,"(()=>{const e=document.querySelector("+JSON.stringify(selector)+");return !!e?.getClientRects().length&&!e.disabled;})()");
+    await raw("document.querySelector("+JSON.stringify(selector)+").click()");
+  };
+  const input=async(selector,value)=>{
+    await until('editable '+selector,"(()=>{const e=document.querySelector("+JSON.stringify(selector)+");return !!e?.getClientRects().length&&!e.disabled;})()");
+    await raw("(()=>{const e=document.querySelector("+JSON.stringify(selector)+");Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,"+JSON.stringify(String(value))+");e.dispatchEvent(new Event('input',{bubbles:true}));})()");
+  };
+  const root=join(smokeRoot,'writing-journey'),themePath=join(root,'themes','default','theme.yaml'),savedTheme=await readFile(themePath,'utf8');
+  const store=recoveryStore(smokeRoot,'components');
+  const oracle=JSON.parse(await readFile(join(smokeRoot,'ux10-restart.json'),'utf8'));
+  const selector='[data-catalog-edit=registered-'+oracle.customId+']';
+  async function openLab(){await click('#mode-design');await click('#design-tab-components');await click(selector);await click('[data-property-choice=layout]');}
+  await openLab();
+  const padding=oracle.padding===7?8:7;
+  await input('#lab-padding',padding);
+  await until('component checkpoint',"document.querySelector('#component-recovery-state')?.dataset.phase==='recorded'");
+  const snapshot=(await store.list()).records;
+  if(snapshot.length!==1||await readFile(themePath,'utf8')!==savedTheme)throw Error('Component checkpoint modified theme or missed draft');
+  async function reopen(){
+    await win.loadURL(PAGE);
+    await until('home catalog',"[...document.querySelectorAll('.hub-project-open')].some(e=>e.querySelector('strong')?.textContent==='執筆フロー検証書籍'&&!e.disabled)");
+    await raw("(()=>{const e=[...document.querySelectorAll('.hub-project-open')].find(e=>e.querySelector('strong')?.textContent==='執筆フロー検証書籍');e.click();})()");
+    await openLab();
+    await until('candidate',"!!document.querySelector('#component-recovery-restore')&&document.querySelector('#lab-padding').disabled");
+  }
+  await reopen();await click('#component-recovery-later');
+  await until('deferred close',"!document.querySelector('#lab-measure')");
+  if((await store.list()).records[0]?.version!==snapshot[0].version)throw Error('Deferred recovery was modified');
+  await openLab();await click('#component-recovery-restore');
+  await until('restored design requires measurement',"Number(document.querySelector('#lab-padding').value)==="+padding+"&&!document.querySelector('#lab-measure').disabled&&document.querySelector('#lab-library-replace').disabled");
+  await click('#lab-measure');
+  await until('restored design measured',"!document.querySelector('#lab-library-replace').disabled");
+  if(await readFile(themePath,'utf8')!==savedTheme)throw Error('Recovery implicitly changed registered component');
+  await click('#lab-cancel');await until('discarded close',"!document.querySelector('#lab-measure')");
+  if((await store.list()).records.length||await readFile(themePath,'utf8')!==savedTheme)throw Error('Component cancel did not clean up working draft');
+  await click('#mode-writing');await click('[data-section=chapter-01]');
+  await until('manuscript returned',"document.querySelector('#workspace-save-state').textContent==='保存済み'&&!document.querySelector('#source').disabled");
+  console.log('PASS UX-10g-4 registered component draft checkpoint, defer, restore, remeasure and cancel without overwriting');
 }
 async function nativeCloseSmoke(decision){
   const raw=js=>win.webContents.executeJavaScript(js);
