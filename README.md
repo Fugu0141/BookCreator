@@ -2,7 +2,7 @@
 
 Markdownを正本として、GUIによる書籍デザイン、自動組版、見開き管理、PDF出力、GitHub連携を組み合わせるローカルファーストの書籍制作ソフトウェアを目指します。
 
-**Status:** Initial implementation 0.0.1: revision guards, preview-release gate and cross-library smoke test. No runnable GUI application yet.
+**Status:** Development prototype 0.0.1: experimental desktop workspace and browser preview, not a released or publication-ready application.
 
 ## Related projects
 
@@ -31,7 +31,7 @@ BCMの正本は[言語仕様](https://github.com/Fugu0141/BookCreator_Markdown/b
 
 ## Development
 
-TypeScript / React / Electronを中心にWindows、Linux、macOSを目標とし、ブラウザへの移植性を初期から検証する。まずBCMとEngineの最小PoCを進め、共通fixtureでアプリ側の変換を確認する。現時点ではプラットフォーム非依存のコア検証のみ。React/Electronアプリの起動は未実装。
+TypeScript / React / Electronを中心にWindows、Linux、macOSを目標とし、ブラウザへの移植性を初期から検証する。まずBCMとEngineの最小PoCを進め、共通fixtureでアプリ側の変換を確認する。実測プレビューおよびReact/Electronの開発版を起動できる。正式リリース・出版確定は未対応。
 
 
 ## Local development / ローカル開発
@@ -51,6 +51,10 @@ Cross-library smoke test: clone the three repositories into sibling directories 
 ## License
 
 MITを第一希望とする。依存関係の確認と最終決定は未完了であり、現時点では正式なLICENSEを追加していない。
+
+## Web preview on GitHub Pages (experimental)
+
+After enabling Settings → Pages → Source: GitHub Actions, run **Web preview Pages** from the Actions tab on `main`. The workflow builds the pinned sibling libraries, tests the static site under `/BookCreator/`, then publishes only the demo assets. Pull requests run the test without publishing. The expected project URL is `https://fugu0141.github.io/BookCreator/` (available only after successful deployment). Click 数式サンプルを試す to explore equation numbering and references. Input is ephemeral and stays in the browser; no cloud storage, project file access, Component Lab, custom font manager or PDF export. This is an experimental demo, not a public software release.
 
 ## Experimental browser preview demo
 

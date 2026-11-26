@@ -1,0 +1,56 @@
+name: Web preview Pages
+on:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: BookCreator
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: Fugu0141/BookCreator_Markdown
+          ref: 0a096d3e0b3c294b7f9e17054a40ab8a844c2a52
+          path: BookCreator_Markdown
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: Fugu0141/BookCreator_LayoutEngine
+          ref: cb19394c600538f65144dd2f24af83a62d117e88
+          path: BookCreator_LayoutEngine
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: |
+          for dir in BookCreator_Markdown BookCreator_LayoutEngine BookCreator; do
+            (cd "$dir" && npm install --ignore-scripts --no-audit --no-fund && npm run build) || exit 1
+          done
+      - run: node demo/build-pages.mjs && node tests/pages-preview.mjs
+        working-directory: BookCreator
+      - if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: BookCreator/dist-pages
+  deploy:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    concurrency:
+      group: bookcreator-pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy experimental demo
+        id: deployment
+        uses: actions/deploy-pages@v4
