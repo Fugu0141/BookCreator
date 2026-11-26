@@ -38,3 +38,39 @@ test('empty store avoids scanning registered books',async()=>{
   const result=await listRecoveryCandidates({list:async()=>{throw Error('unexpected catalog scan');}},{list:async()=>({records:[],unreadable:0})},async()=>{throw Error('unexpected manifest scan');});
   assert.deepEqual(result,{items:[],unmatched:0,unreadable:0,unavailable:[]});
 });
+
+import {listUnifiedRecovery} from '../recovery-hub.mjs';
+import {componentRecoveryKey} from '../component-recovery.mjs';
+test('unified list joins all namespaces without leaking contents or redirecting deleted entries',async t=>{
+  const root=await mkdtemp(join(tmpdir(),'bc-unified-recovery-'));t.after(()=>rm(root,{recursive:true,force:true}));
+  const profile=join(root,'profile');await mkdir(profile);
+  const manifestPath=join(root,'book','book.yaml'),themePath='themes/default/theme.yaml';
+  const stores=Object.fromEntries(['manuscript','settings','components'].map(k=>[k,recoveryStore(profile,k)]));
+  const draft={baseRevision:'b'.repeat(64),text:'private draft content'};
+  const id='component-00000000-0000-4000-8000-000000000001';
+  const section={id:'chapter',path:'manuscript/chapter.md'};
+  const target={usage:'study',level:'custom',entryId:id};
+  await stores.manuscript.put(recoveryKey(manifestPath,section.id,section.path),draft);
+  await stores.settings.put(recoveryKey(manifestPath,'typography',themePath),draft);
+  await stores.settings.put(recoveryKey(manifestPath,'book-settings','book.yaml'),draft);
+  await stores.components.put(componentRecoveryKey(manifestPath,themePath,target),draft);
+  await stores.components.put(componentRecoveryKey(manifestPath,themePath,{usage:'paragraph',level:'default',entryId:null}),draft);
+  const missing=componentRecoveryKey(manifestPath,themePath,{...target,entryId:'component-deleted'});
+  await stores.components.put(missing,draft);
+  const result=await listUnifiedRecovery({list:async()=>[{id:'book',title:'書籍',path:manifestPath}]},stores,async()=>({manifestPath,themePath,sections:[section]}),async()=>[{id,usage:'study',name:'登録部品'}]);
+  assert.equal(result.items.length,5);assert.equal(result.unmatched,1);
+  assert.deepEqual(result.items.filter(i=>i.kind==='settings').map(i=>i.settingKind).sort(),['book-settings','typography']);
+  assert.deepEqual(result.items.find(i=>i.target?.entryId===id).target,target);
+  assert.equal(result.items.find(i=>i.kind==='manuscript').sectionId,section.id);
+  const serialized=JSON.stringify(result);
+  assert.ok(!serialized.includes(draft.text)&&!serialized.includes(missing)&&!serialized.includes(manifestPath));
+  assert.equal((await stores.components.get(missing)).text,draft.text);
+});
+test('failure of one namespace does not hide candidates in other namespaces',async()=>{
+  const manifestPath=join(tmpdir(),'book.yaml');
+  const key=recoveryKey(manifestPath,'book-settings','book.yaml');
+  const empty={list:async()=>({records:[],unreadable:0})};
+  const result=await listUnifiedRecovery({list:async()=>[{id:'book',title:'Book',path:manifestPath}]},{manuscript:{list:async()=>{throw Error('broken');}},settings:{list:async()=>({records:[{key,updatedAt:'2026-11-26T00:00:00Z'}],unreadable:0})},components:empty},async()=>({manifestPath,sections:[]}),async()=>{throw Error('unexpected scan');});
+  assert.equal(result.items.length,1);assert.equal(result.items[0].settingKind,'book-settings');
+  assert.equal(result.storageErrors[0].kind,'manuscript');
+});
