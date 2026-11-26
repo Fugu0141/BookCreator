@@ -4,11 +4,12 @@ import {mkdtempSync,realpathSync,statSync} from 'node:fs';
 import {join,dirname,basename} from 'node:path';
 import {tmpdir} from 'node:os';
 import {fileURLToPath} from 'node:url';
-import {openWorkspace,createProject} from './workspace.mjs';
+import {openWorkspace,createProject,recoveryManifest} from './workspace.mjs';
 import {projectCatalog} from './project-catalog.mjs';
 import {STIX_FONT,verifyPinnedFontBlob} from './bundled-math-font.mjs';
 import {createHash,randomUUID} from 'node:crypto';
 import {recoveryKey,recoveryStore,recoveryStatus} from './manuscript-recovery.mjs';
+import {listRecoveryCandidates} from './recovery-hub.mjs';
 const PACKAGE_CRASH_PREPARE=process.argv.includes('--package-crash-prepare');
 const PACKAGE_CRASH_VERIFY=process.argv.includes('--package-crash-verify');
 const PACKAGE_RESTART_SMOKE=PACKAGE_CRASH_PREPARE||PACKAGE_CRASH_VERIFY||process.argv.includes('--package-restart-smoke');
@@ -58,8 +59,9 @@ async function run(){
     workspace=next;recoverySessions.clear();
     let recent, catalogWarning;
     try{recent=await catalog.remember(next.manifestPath,next.summary.title);}catch(e){catalogWarning='書籍一覧を更新できませんでした: '+String(e.message??e);}
-    return {...next.summary,typography,fonts,settings,recent,catalogWarning};
+    return {...next.summary,typography,fonts,settings,recent,catalogWarning,projectId:recent?.find(p=>p.path===next.manifestPath)?.id??null};
   }
+  handle('listRecoveryCandidates',async(...args)=>{checkArgs(args,0);return listRecoveryCandidates(catalog,recovery,recoveryManifest);});
   handle('listProjects',async(...args)=>{checkArgs(args,0);return catalog.list();});
   handle('openRegisteredProject',async(...args)=>{checkArgs(args,1);return activate(await openWorkspace(await catalog.pathFor(args[0])));});
   handle('favoriteProject',async(...args)=>{checkArgs(args,2);return catalog.favorite(...args);});
@@ -1412,7 +1414,9 @@ async function crashRecoverySmoke(prepare){
   }
   const oracle=JSON.parse(await readFile(oraclePath,'utf8')),record=await store.get(key);
   if(oracle.version!==1||oracle.pid===process.pid||oracle.sourceHash!==digest(saved)||oracle.draftHash!==digest(draft)||record?.version!==oracle.recordVersion||record?.text!==draft)throw Error('Crash recovery oracle mismatch');
-  await openBook();
+  await click('#hub-recovery');
+  await until('home recovery candidate',"document.querySelector('#hub-recovery-summary')?.textContent==='1 件の復旧候補'&&document.querySelectorAll('.hub-recovery-row').length===1&&document.querySelector('.hub-recovery-row').textContent.includes('執筆フロー検証書籍')&&document.querySelector('.hub-recovery-row').dataset.recoverySection==='chapter-01'&&!document.querySelector('.hub-recovery-row').textContent.includes('強制終了後に復旧する未保存原稿。')");
+  await click('.hub-recovery-open');
   await until('recovery after forced exit',"document.querySelector('#recovery-dialog').open&&document.querySelector('#recovery-saved-text').value==="+JSON.stringify(saved)+"&&document.querySelector('#recovery-draft-text').value==="+JSON.stringify(draft)+"&&!!document.querySelector('#recovery-restore')");
   await click('#recovery-later');
   await until('deferred', "!document.querySelector('#recovery-dialog').open&&document.querySelector('#source').readOnly");
@@ -1435,6 +1439,9 @@ async function crashRecoverySmoke(prepare){
   await click('#save');
   await until('explicit save',"document.querySelector('#workspace-save-state').textContent==='保存済み'&&!document.querySelector('#recovery-state')");
   if(await readFile(path,'utf8')!==draft||await store.get(key))throw Error('Recovered save or cleanup failed');
+  await click('#mode-home');await click('#hub-recovery');
+  await until('home recovery list cleared',"document.querySelector('#hub-recovery-summary')?.textContent==='0 件の復旧候補'&&document.querySelectorAll('.hub-recovery-row').length===0&&!document.querySelector('#hub-recovery-warning')");
+  console.log('PASS UX-10f-4 home recovery discovery, direct navigation and list cleanup');
   const report='PASS UX-10f-3 forced process recovery, external conflict protection and explicit save';
   if(!process.env.BC_PACKAGE_SMOKE_REPORT)throw Error('Crash verification report required');
   await writeFile(process.env.BC_PACKAGE_SMOKE_REPORT,report+'\n',{flag:'wx'});

@@ -69,6 +69,25 @@ export function recoveryStore(userData){
     if((current?.version??null)!==expected)fail('RECOVERY_CONFLICT','Recovery draft has changed; reload before replacing or removing it');
   }
   return {
+    // Only metadata leaves this enumeration. A damaged entry is retained,
+    // counted and reported; it cannot hide healthy recovery records.
+    list(){return serial(async()=>{
+      const dir=await directory(),entries=await readdir(dir,{withFileTypes:true});
+      const keys=entries.filter(e=>/^[a-f0-9]{64}\.json$/.test(e.name)).map(e=>e.name.slice(0,-5)).sort();
+      if(keys.length>MAX_ENTRIES)fail('RECOVERY_LIMIT','Too many recovery records to enumerate safely');
+      const records=[];let unreadable=0,total=0;
+      for(const key of keys){
+        try{
+          const st=await lstat(join(dir,key+'.json'));
+          if(!st.isFile()||st.isSymbolicLink()||st.size>MAX_RECORD){unreadable++;continue;}
+          total+=st.size;
+          if(total>MAX_TOTAL)fail('RECOVERY_LIMIT','Recovery listing exceeds total size limit');
+          const record=await read(dir,key);
+          if(record)records.push({key,updatedAt:record.updatedAt,version:record.version});
+        }catch(e){if(e.code==='RECOVERY_LIMIT')throw e;unreadable++;}
+      }
+      return {records,unreadable};
+    });},
     get(key){return serial(async()=>{validateKey(key);return read(await directory(),key);});},
     put(key,draft,expectedVersion=null){return serial(async()=>{
       validateKey(key);validateDraft(draft);validateVersion(expectedVersion);

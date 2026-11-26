@@ -518,3 +518,12 @@ body{font-family:BCFont_NotoSansJP,system-ui,sans-serif}.font-control,.typograph
 #recovery-dialog textarea{box-sizing:border-box;width:100%;resize:vertical;font-family:inherit}
 #recovery-dialog .close-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px}
 #recovery-state[data-phase=error]{color:#9a251c}
+
+.hub-recovery-row{display:grid;grid-template-columns:minmax(0,1fr) 180px 128px;align-items:center;gap:12px;padding:12px 14px}
+.hub-recovery-row+.hub-recovery-row{border-top:1px solid #e1e7ed}
+.hub-recovery-name{min-width:0}
+.hub-recovery-name strong,.hub-recovery-name small{display:block;overflow-wrap:anywhere}
+.hub-recovery-name small,.hub-recovery-row time{font-size:12px;color:#64748b}
+#hub-recovery-summary{margin:12px 0}
+@media(max-width:1000px){.hub-recovery-row{grid-template-columns:minmax(0,1fr) 125px 120px}}
+@media(max-width:720px){.hub-recovery-row{grid-template-columns:minmax(0,1fr) 105px;gap:6px;padding:8px}.hub-recovery-row time{display:none}}
