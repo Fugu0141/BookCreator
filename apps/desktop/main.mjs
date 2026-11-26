@@ -563,6 +563,21 @@ async function smoke(){
   await exec("document.querySelector('#paragraph-measure').click()");
   await until("!document.querySelector('#paragraph-apply').disabled && document.querySelector('#paragraph-preview > div').shadowRoot.querySelectorAll('[data-page]').length>1");
   if(!await exec("(()=>{const root=document.querySelector('#paragraph-preview > div').shadowRoot;return Array.from(root.querySelectorAll('[data-fragmentable-frame]')).map(e=>e.querySelector('[data-content-slot]').textContent).join('')===document.querySelector('#paragraph-sample').value;})()"))throw Error('Paragraph frame lost source text');
+  // Opt in to BCM math in a disposable paragraph sample; retain the literal mode by default.
+  const plainParagraphSample=await exec("document.querySelector('#paragraph-sample').value");
+  const setLabSample=(selector,value)=>exec("(()=>{const e=document.querySelector("+JSON.stringify(selector)+");Object.getOwnPropertyDescriptor(e instanceof HTMLTextAreaElement?HTMLTextAreaElement.prototype:HTMLInputElement.prototype,'value').set.call(e,"+JSON.stringify(value)+");e.dispatchEvent(new Event('input',{bubbles:true}));})()");
+  await setLabSample('#paragraph-sample','係数 $\\frac{1}{2}$ です。');
+  await exec("document.querySelector('#paragraph-sample-bcm').click()");
+  await until("document.querySelector('#paragraph-apply').disabled && !document.querySelector('#paragraph-preview > div')");
+  await exec("document.querySelector('#paragraph-measure').click()");
+  await until("!!document.querySelector('#paragraph-preview > div')?.shadowRoot?.querySelector('[data-inline-math] math mfrac')");
+  await setLabSample('#paragraph-sample','式 $x');
+  await exec("document.querySelector('#paragraph-measure').click()");
+  await until("document.querySelector('#paragraph-apply').disabled && !document.querySelector('#paragraph-preview > div') && document.querySelector('#paragraph-status').textContent.includes('Invalid inline math')");
+  await exec("document.querySelector('#paragraph-sample-bcm').click()");
+  await setLabSample('#paragraph-sample',plainParagraphSample);
+  await exec("document.querySelector('#paragraph-measure').click()");
+  await until("!document.querySelector('#paragraph-apply').disabled && document.querySelector('#paragraph-preview > div').shadowRoot.querySelectorAll('[data-page]').length>1");
   await exec("document.querySelector('#paragraph-apply').click()");
   await until("!document.querySelector('#paragraph-measure') && !document.querySelector('#open').disabled");
   await exec("document.querySelector('#preview-book').click()");
@@ -718,6 +733,21 @@ async function smoke(){
   await exec("document.querySelector('#lab-measure').click()");
   await until("!document.querySelector('#lab-library-add').disabled");
   if(!await exec("document.querySelector('#lab-preview > div').shadowRoot.querySelector('[data-named-slot=hint]').textContent==='ヒントのサンプル。'"))throw Error('Independent slot sample did not render');
+  const plainStudySample=await exec("document.querySelector('#lab-sample').value");
+  await setLabSample('#lab-sample','**問題** $x^2$ です。');
+  await setLabSample('[data-lab-slot-sample=hint]','ヒント $\\sqrt{x}$ です。');
+  await exec("document.querySelector('#lab-sample-bcm').click()");
+  await until("document.querySelector('#lab-library-add').disabled && !document.querySelector('#lab-preview > div')");
+  await exec("document.querySelector('#lab-measure').click()");
+  await until("!!document.querySelector('#lab-preview > div')?.shadowRoot?.querySelector('[data-content-slot] [data-inline-math] math msup') && !!document.querySelector('#lab-preview > div')?.shadowRoot?.querySelector('[data-named-slot=hint] [data-inline-math] math msqrt')");
+  await setLabSample('[data-lab-slot-sample=hint]','ヒント $x');
+  await exec("document.querySelector('#lab-measure').click()");
+  await until("document.querySelector('#lab-library-add').disabled && !document.querySelector('#lab-preview > div') && document.querySelector('#lab-status').textContent.includes('Invalid inline math')");
+  await exec("document.querySelector('#lab-sample-bcm').click()");
+  await setLabSample('#lab-sample',plainStudySample);
+  await setLabSample('[data-lab-slot-sample=hint]','ヒントのサンプル。');
+  await exec("document.querySelector('#lab-measure').click()");
+  await until("!document.querySelector('#lab-library-add').disabled");
   if(!await exec("document.querySelector('#lab-duplicate').disabled"))throw Error('Duplicate semantic slot allowed');
   await exec("document.querySelector('#lab-library-add').click()");
   await until("Array.from(document.querySelector('#lab-library-select').options).some(e=>e.textContent==='複数領域問題') && !document.querySelector('#open').disabled");
@@ -1004,7 +1034,7 @@ async function smoke(){
   await until("(()=>{const e=document.querySelector('#source');return e.value.slice(e.selectionStart,e.selectionEnd)==='y^2';})()");
   await exec("document.querySelector('#source-equation-numbering').click()");
   await until("document.querySelector('#source').value==="+JSON.stringify(editedNumbered));
-  console.log('PASS GUI named slot math insert and paper re-edit; GUI equation numbering toggle and reference guard; GUI equation reference selection and insertion; GUI numbered equation insertion and re-edit; GUI inline math insert, update, cancel and stale guard; inline math atom source mapping; GUI math insertion, update, cancel and stale guard; batch list conversion; list indent and outdent; manuscript list markers and exact source selection; inline physical size and scripts; combined style controls and stable font override; source toolbar and shortcut toggles, selection and protected source; inline style rendering and exact raw envelope; multiline source, sample and exact named selection; optional slot omission, conditional group height, insertion and mixed occurrences; named slot editing, template, paper and exact source selection; identified question and linked explanation, source insertion and partial/book consistency; study numbering sample, chapter sequence and selected/book consistency; independently created custom component, direct insertion, rename and paper; custom study design, typed library and actual paper; study template, real paper and source selection; typed paragraph library, binding, usage filter and detach; paragraph frame fragmentation and theme/heading coexistence; shared binding, paper, impact and detach; named library registration, rename, independent draft copy and persistence; dynamic sample and manuscript context, theme and paper; image ratio lock, non-destructive crop and history; image component asset, actual pixels, theme and paper; component duplication and lock guards; Canvas smart guide cancellation and equal-gap distribution; Canvas multi-selection, alignment, history and persisted geometry; Canvas resize, undo/redo and persisted width; Canvas actual mouse drag, undo/redo and persisted paper; Canvas numeric coordinates and actual paper rendering; nested component grouping and actual book preview; H1-specific fixed label and independent font; Component Lab measure, discard, apply and actual book rendering; book settings save and physical whole-book preview; imported project font, license metadata, theme selection, actual font rendering; Electron project creation, theme save/reopen, Electron sandbox, project open/read, React editing, bundled Noto, independent font roles, stale invalidation, measured preview, source selection and save');
+  console.log('PASS Lab BCM math samples; GUI named slot math insert and paper re-edit; GUI equation numbering toggle and reference guard; GUI equation reference selection and insertion; GUI numbered equation insertion and re-edit; GUI inline math insert, update, cancel and stale guard; inline math atom source mapping; GUI math insertion, update, cancel and stale guard; batch list conversion; list indent and outdent; manuscript list markers and exact source selection; inline physical size and scripts; combined style controls and stable font override; source toolbar and shortcut toggles, selection and protected source; inline style rendering and exact raw envelope; multiline source, sample and exact named selection; optional slot omission, conditional group height, insertion and mixed occurrences; named slot editing, template, paper and exact source selection; identified question and linked explanation, source insertion and partial/book consistency; study numbering sample, chapter sequence and selected/book consistency; independently created custom component, direct insertion, rename and paper; custom study design, typed library and actual paper; study template, real paper and source selection; typed paragraph library, binding, usage filter and detach; paragraph frame fragmentation and theme/heading coexistence; shared binding, paper, impact and detach; named library registration, rename, independent draft copy and persistence; dynamic sample and manuscript context, theme and paper; image ratio lock, non-destructive crop and history; image component asset, actual pixels, theme and paper; component duplication and lock guards; Canvas smart guide cancellation and equal-gap distribution; Canvas multi-selection, alignment, history and persisted geometry; Canvas resize, undo/redo and persisted width; Canvas actual mouse drag, undo/redo and persisted paper; Canvas numeric coordinates and actual paper rendering; nested component grouping and actual book preview; H1-specific fixed label and independent font; Component Lab measure, discard, apply and actual book rendering; book settings save and physical whole-book preview; imported project font, license metadata, theme selection, actual font rendering; Electron project creation, theme save/reopen, Electron sandbox, project open/read, React editing, bundled Noto, independent font roles, stale invalidation, measured preview, source selection and save');
   closing=true;win.destroy();await rm(smokeRoot,{recursive:true,force:true,maxRetries:10,retryDelay:100});app.exit(0);
 }
 app.on('window-all-closed',()=>{if(!SMOKE)app.quit();});
