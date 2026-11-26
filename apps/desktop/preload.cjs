@@ -1,5 +1,11 @@
 const {contextBridge,ipcRenderer}=require('electron');
 contextBridge.exposeInMainWorld('bookcreator',Object.freeze({
+  onCloseRequested:callback=>{
+    const listener=(_event,token)=>callback(token);
+    ipcRenderer.on('bookcreator:close-requested',listener);
+    return ()=>ipcRenderer.removeListener('bookcreator:close-requested',listener);
+  },
+  completeClose:(token,decision)=>ipcRenderer.invoke('bookcreator:complete-close',token,decision),
   open:()=>ipcRenderer.invoke('bookcreator:open'),
   listProjects:()=>ipcRenderer.invoke('bookcreator:listProjects'),
   openRegisteredProject:id=>ipcRenderer.invoke('bookcreator:openRegisteredProject',id),
