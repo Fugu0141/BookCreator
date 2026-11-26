@@ -64,7 +64,7 @@ async function registerProjectFonts(fonts){
   }
   return result;
 }
-async function resolvePreviewImage(token,id,current){if(typeof token!=='string'||!/^[a-f0-9]{64}$/.test(id))throw Error('Invalid preview image request');const bytes=await retryPreviewRead(()=>unwrap(api.readPreviewImage(token,id)),{current});return new Blob([bytes],{type:'image/png'});}
+async function resolvePreviewImage(token,id,current){if(typeof token!=='string'||!/^[a-f0-9]{64}$/.test(id))throw Error('Invalid preview image request');const bytes=await retryPreviewRead(()=>unwrap(api.readPreviewImage(token,id)),{current,category:'image'});return new Blob([bytes],{type:'image/png'});}
 const unwrap=unwrapIpc;
 function validPaper(page){try{return page?paperGeometry(page):null;}catch{return null;}}
 function App(){
@@ -552,7 +552,7 @@ function App(){
     try{
       const input=describeLayoutInput({whole,file,raw,page,savedSettings,typography,theme,fonts,order,job,bundledFingerprint:__BUNDLED_FONT_FINGERPRINT__},{paperGeometry,hasDynamicLabels,hasStudyNumbering});
       const current=()=>layoutScheduler.current.isCurrent(job);
-      const snapshot=whole||input.needsContext?await retryPreviewRead(()=>unwrap(api.readPreviewBook(book.settingRecovery.token)),{current}):undefined;
+      const snapshot=whole||input.needsContext?await retryPreviewRead(()=>unwrap(api.readPreviewBook(book.settingRecovery.token)),{current,category:'source'}):undefined;
       if(!layoutScheduler.current.isCurrent(job))return;
       documents=collectLayoutDocuments(input,snapshot);
       const prepared=prepareLayoutOptions(input,documents,prepareBookBrowserPreview,deps);
