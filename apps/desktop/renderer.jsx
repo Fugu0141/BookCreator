@@ -8,7 +8,7 @@ import React,{useState,useRef,useEffect} from 'react';
 import {createRoot} from 'react-dom/client';
 import {parsePreviewInline,prepareBrowserPreview,prepareBookBrowserPreview,previewSourceRange,planInlineFormat,planListFormat,planListIndent,planListBatch,inspectDisplayMath,planDisplayMath,inspectInlineMath,planInlineMath,inspectComponentDisplayMath,planComponentDisplayMath,equationReferenceTargets,planEquationReference,planEquationNumbering,planNumberedComponentDisplayMath,hasDynamicLabels,hasStudyNumbering,studyTemplate,studyKinds,defaultStudyDesign,customStudyTemplate,isCustomComponentId,linkedStudyTemplate,slottedStudyTemplate,namedSlotDefinitions} from '../../dist/index.js';
 import {scanDocument,validateScannedBlocks,indexBlockIds,applyPatches,parseReferenceToken} from '../../../BookCreator_Markdown/dist/index.js';
-import {createPlainTextPagePreview,createTextMeasurementCache,createMathCompilationCache,createDisplayMathGeometryCache,createInlineMathGeometryCache,parsePreviewMath,parseDisplayMath,createPreviewMath} from '../../../BookCreator_LayoutEngine/dist/index.js';
+import {createPlainTextPagePreview,createTextMeasurementCache,createParagraphMeasurementCache,createMathCompilationCache,createDisplayMathGeometryCache,createInlineMathGeometryCache,parsePreviewMath,parseDisplayMath,createPreviewMath} from '../../../BookCreator_LayoutEngine/dist/index.js';
 import {ParagraphLab} from './paragraph-lab.jsx';
 import {ComponentLab} from './component-lab.jsx';
 import {paperGeometry} from './book-settings.mjs';
@@ -103,12 +103,17 @@ function App(){
   function resetMathCaches(){for(const cache of Object.values(mathCaches.current))cache.clear();mathCaches.current=makeMathCaches();}
   function changeMathCacheEnabled(enabled){resetMathCaches();setMathCacheEnabled(enabled);}
   function readMathCaches(){return Object.fromEntries(Object.entries(mathCaches.current).map(([key,cache])=>[key,cache.stats()]));}
+  const [paragraphCacheEnabled,setParagraphCacheEnabled]=useState(false);
+  const paragraphCacheRef=useRef(null);
+  if(!paragraphCacheRef.current)paragraphCacheRef.current=createParagraphMeasurementCache(document);
+  function resetParagraphCache(){paragraphCacheRef.current.clear();paragraphCacheRef.current=createParagraphMeasurementCache(document);}
+  function changeParagraphCacheEnabled(enabled){resetParagraphCache();if(enabled){resetTextCache();setCacheEnabled(false);}setParagraphCacheEnabled(enabled);}
   const textCache=useRef(null);
   if(!textCache.current)textCache.current=createTextMeasurementCache(document);
   // Replace rather than reuse the old object: even an in-flight job cannot
   // repopulate the next book's cache after its session has ended.
   function resetTextCache(){textCache.current.clear();textCache.current=createTextMeasurementCache(document);}
-  function changeCacheEnabled(enabled){resetTextCache();setCacheEnabled(enabled);}
+  function changeCacheEnabled(enabled){resetTextCache();if(enabled){resetParagraphCache();setParagraphCacheEnabled(false);}setCacheEnabled(enabled);}
   const [editorView,setEditorView]=useState('source'),[structuredDraft,setStructuredDraft]=useState(null);
   const [structuredComposing,setStructuredComposing]=useState(false);
   const [studyLinkDraft,setStudyLinkDraft]=useState(null);
@@ -144,7 +149,7 @@ function App(){
     invalidate();setStatus('数式フォントを変更しました（未保存）。');
   }
   const weightsFor=family=>{const f=fonts.find(f=>f.alias===family);return f?[f.weight]:[400,500,600,700];};
-  function importFont(){void io(async()=>{const result=await unwrap(api.importFont(rights));if(!result)return;setRights({license:'',licenseText:'',copyAllowed:false,embedAllowed:false});const registered=await registerProjectFonts(result.fonts);resetTextCache();resetMathCaches();setFonts(registered);invalidate();setStatus(result.duplicate?'同じフォントは登録済みです。':registered.some(f=>f.id===result.id&&!f.loaded)?'登録しましたがブラウザ読込失敗。出版不可。':'フォントを登録しました。');});}
+  function importFont(){void io(async()=>{const result=await unwrap(api.importFont(rights));if(!result)return;setRights({license:'',licenseText:'',copyAllowed:false,embedAllowed:false});const registered=await registerProjectFonts(result.fonts);resetTextCache();resetMathCaches();resetParagraphCache();setFonts(registered);invalidate();setStatus(result.duplicate?'同じフォントは登録済みです。':registered.some(f=>f.id===result.id&&!f.loaded)?'登録しましたがブラウザ読込失敗。出版不可。':'フォントを登録しました。');});}
   const [imageManager,setImageManager]=useState(false),[images,setImages]=useState([]),[imageAllowed,setImageAllowed]=useState(false);
   function toggleImages(){if(imageManager){setImageManager(false);return;}void io(async()=>{setImages(await unwrap(api.listImages()));setImageManager(true);});}
   function importImage(){void io(async()=>{const result=await unwrap(api.importImage(imageAllowed));if(!result)return;setImages(result.images);setImageAllowed(false);setStatus(result.duplicate?'同じ画像は登録済みです。':'PNG素材を登録しました。');});}
@@ -162,7 +167,7 @@ function App(){
     return token?{token,target:{usage,level,entryId:initialLibraryEntry?.id??null},send:request=>unwrap(api.componentRecovery(request))}:null;
   }
   const themeDirty=!!theme&&JSON.stringify(typography)!==JSON.stringify(fromRoles(theme.roles));
-  async function applyBook(next){resetTextCache();resetMathCaches();installSettingsRecovery(next.settingRecovery);resetRecovery();invalidate(true);setPreviewScopeOverride(null);setLayoutState({phase:'idle',scope:null,pages:0});setImages([]);setImageManager(false);setImageAllowed(false);setFonts(await registerProjectFonts(next.fonts??[]));setEditorFont(noto);setRights({license:'',licenseText:'',copyAllowed:false,embedAllowed:false});setBook(next);if(next.recent)setProjects(next.recent);setCatalogError(next.catalogWarning??'');setMode('writing');setWritingPanel(null);setEditorView('source');setStructuredDraft(null);setStudyLinkDraft(null);setStructuredHistory(null);setStructuredComposing(false);setOutlineOpen(true);setCompactPane('editor');setPageListOpen(true);setPageInfoOpen(true);setShortcutHelp(false);setDesignTab('styles');setComponentSearch('');setComponentFilter('all');setInitialLibraryEntry(null);setShowPaper(livePreview);setFontManager(false);setStudyInstanceId('');setAnswerTo('');setStudyChoice('example');applySettings(next.settings);setShowSettings(false);setFile(null);setText('');setTheme(next.typography);setTypography(fromRoles(next.typography.roles));setCreating(false);setLabOpen(false);setParagraphOpen(false);setStudyOpen(false);setLabLevel("default");setStatus(next.typography.message??'原稿を選択してください。');}
+  async function applyBook(next){resetTextCache();resetMathCaches();resetParagraphCache();installSettingsRecovery(next.settingRecovery);resetRecovery();invalidate(true);setPreviewScopeOverride(null);setLayoutState({phase:'idle',scope:null,pages:0});setImages([]);setImageManager(false);setImageAllowed(false);setFonts(await registerProjectFonts(next.fonts??[]));setEditorFont(noto);setRights({license:'',licenseText:'',copyAllowed:false,embedAllowed:false});setBook(next);if(next.recent)setProjects(next.recent);setCatalogError(next.catalogWarning??'');setMode('writing');setWritingPanel(null);setEditorView('source');setStructuredDraft(null);setStudyLinkDraft(null);setStructuredHistory(null);setStructuredComposing(false);setOutlineOpen(true);setCompactPane('editor');setPageListOpen(true);setPageInfoOpen(true);setShortcutHelp(false);setDesignTab('styles');setComponentSearch('');setComponentFilter('all');setInitialLibraryEntry(null);setShowPaper(livePreview);setFontManager(false);setStudyInstanceId('');setAnswerTo('');setStudyChoice('example');applySettings(next.settings);setShowSettings(false);setFile(null);setText('');setTheme(next.typography);setTypography(fromRoles(next.typography.roles));setCreating(false);setLabOpen(false);setParagraphOpen(false);setStudyOpen(false);setLabLevel("default");setStatus(next.typography.message??'原稿を選択してください。');}
   useEffect(()=>{void refreshProjects();},[]);
   async function loadRecoveryHub(){try{setRecoveryHub(await unwrap(api.listRecoveryCandidates()));setRecoveryHubError('');}catch(e){setRecoveryHub(null);setRecoveryHubError(String(e.message??e));}}
   async function refreshProjects(){await io(async()=>{let next;try{next=await unwrap(api.listProjects());setCatalogError('');}catch(e){setCatalogError(String(e.message??e));}await loadRecoveryHub();if(next)setProjects(next);});}
@@ -565,7 +570,8 @@ function App(){
   }
   async function renderRequest(job,whole,scope,automatic,requestedAt){
     const startedAt=performance.now();let outcome='cancelled';
-    const measurementCache=cacheEnabled?textCache.current:undefined;
+    const measurementCache=cacheEnabled&&!paragraphCacheEnabled?textCache.current:undefined;
+    const paragraphCache=paragraphCacheEnabled?paragraphCacheRef.current:undefined;
     const mathOptions=mathCacheEnabled?mathCaches.current:{};
     const raw=text;let diagnostics=[],documents=[];
     try{
@@ -580,7 +586,7 @@ function App(){
       const options=prepared.options;
       validateLayoutOptions(options,input.fonts);
       const geometry=input.geometry;
-      const result=await measurementLane.run(()=>createPlainTextPagePreview(document,{...options,paper:geometry.paper,measurementCache,...mathOptions,collectTimings:true,resolveImage:id=>resolveImage(id,current)}),{current,category:scope});
+      const result=await measurementLane.run(()=>createPlainTextPagePreview(document,{...options,paper:geometry.paper,measurementCache,paragraphCache,...mathOptions,collectTimings:true,resolveImage:id=>resolveImage(id,current)}),{current,category:scope});
       if(!result||!layoutScheduler.current.isCurrent(job))return;
       const presentationStarted=performance.now();
       const pages=describeMeasuredPaper(result,options,{previewSourceRange,paperThumbnail,onNavigate:(documentId,range)=>{
@@ -595,7 +601,7 @@ function App(){
       setLayoutPages(pages);setActivePage(pageNumber);setPageJump(String(pageNumber));
       setLayoutState({phase:'ready',scope,pages:result.plan.pages.length});
       outcome='success';
-      previewPhaseMetrics.record(scope,!!measurementCache,{...result.timings,presentationMs:performance.now()-presentationStarted},mathCacheEnabled);
+      previewPhaseMetrics.record(scope,!!measurementCache,{...result.timings,presentationMs:performance.now()-presentationStarted},mathCacheEnabled,!!paragraphCache);
       if(!automatic)setStatus(result.plan.pages.length+' ページ · '+(whole?'書籍全体':'選択原稿')+' · 実測プレビュー（出版不可）');
     }catch(e){if(layoutScheduler.current.isCurrent(job)){outcome='failed';setLayoutState({phase:'failed',scope,pages:0});setLayoutDiagnostics(diagnosticRecords(diagnostics,documents,e));if(!automatic)setStatus(String(e.message??e));}}
     finally{performanceMetrics.record({stage:'layout',category:scope,outcome,waitMs:startedAt-requestedAt,runMs:performance.now()-startedAt});if(layoutScheduler.current.isCurrent(job))setMeasuring(false);}
@@ -679,7 +685,7 @@ function App(){
     if(next===mode)return;
     if(busy||settingsReview||recoveryOpen||composing.current||structuredComposing||structuredDraft||studyLinkDraft||mathDraft||referenceDraft||labOpen||paragraphOpen||studyOpen){setStatus('現在の操作を完了または取り消してから画面を切り替えてください。');return;}
     if(next!=='home'&&!book)return;
-    setCreating(false);setPreviewScopeOverride(null);setMode(next);setCompactPane('editor');setCompactFocusRequest(null);setWritingPanel(null);if(next==='home'){resetTextCache();resetMathCaches();setShowPerformance(false);setHomeTab('projects');setRecoveryHub(null);setRecoveryHubError('');}setShowSettings(next==='settings');
+    setCreating(false);setPreviewScopeOverride(null);setMode(next);setCompactPane('editor');setCompactFocusRequest(null);setWritingPanel(null);if(next==='home'){resetTextCache();resetMathCaches();resetParagraphCache();setShowPerformance(false);setHomeTab('projects');setRecoveryHub(null);setRecoveryHubError('');}setShowSettings(next==='settings');
   }
   function workspaceKey(event){
     // Leave native input undo/redo, IME and active modal interactions alone.
@@ -951,7 +957,7 @@ function App(){
     <PublicationPanel visible={mode==='publication'} saveLabel={saveLabel} dirty={dirty} themeDirty={themeDirty} settingsDirty={settingsDirty} layout={layoutState} diagnostics={layoutDiagnostics} canOpenDiagnostic={canOpenDiagnostic} onOpenDiagnostic={openDiagnostic} blocked={routeBlocked} canRender={!!book&&!!validPaper(page)} onNavigate={navigate} onRender={()=>{navigate('layout');void render(true);}}/>
   </main>
   <section id="workspace-diagnostics" className="workspace-diagnostics" hidden={!showDiagnostics||layoutState.phase!=='failed'} aria-label="組版診断"><div className="diagnostic-heading"><strong>組版診断 · {layoutDiagnostics.length}件</strong><button type="button" className="secondary-action" onClick={()=>setShowDiagnostics(false)}>閉じる</button></div><DiagnosticList id="workspace-diagnostic-list" diagnostics={layoutDiagnostics} blocked={routeBlocked} canOpen={canOpenDiagnostic} onOpen={openDiagnostic}/></section>
-   {showPerformance&&mode!=='home'&&!labOpen&&!paragraphOpen&&!studyOpen&&<PerformancePanel readMemory={()=>unwrap(api.performanceMemory())} readCache={()=>textCache.current.stats()} cacheEnabled={cacheEnabled} onCacheEnabled={changeCacheEnabled} readMathCaches={readMathCaches} mathCacheEnabled={mathCacheEnabled} onMathCacheEnabled={changeMathCacheEnabled} cacheBlocked={measuring||routeBlocked} onClose={()=>setShowPerformance(false)}/>}
+   {showPerformance&&mode!=='home'&&!labOpen&&!paragraphOpen&&!studyOpen&&<PerformancePanel readMemory={()=>unwrap(api.performanceMemory())} readCache={()=>textCache.current.stats()} cacheEnabled={cacheEnabled} onCacheEnabled={changeCacheEnabled} readMathCaches={readMathCaches} mathCacheEnabled={mathCacheEnabled} onMathCacheEnabled={changeMathCacheEnabled} readParagraphCache={()=>paragraphCacheRef.current.stats()} paragraphCacheEnabled={paragraphCacheEnabled} onParagraphCacheEnabled={changeParagraphCacheEnabled} cacheBlocked={measuring||routeBlocked} onClose={()=>setShowPerformance(false)}/>}
    <div className="workspace-statusbar"><span id="workspace-layout-state" data-phase={layoutState.phase} data-scope={layoutState.scope??'none'}>{layoutLabel}</span><button id="toggle-diagnostics" type="button" hidden={layoutState.phase!=='failed'} className="secondary-action" aria-expanded={showDiagnostics} aria-controls="workspace-diagnostics" disabled={routeBlocked} onClick={()=>setShowDiagnostics(v=>!v)}>診断 {layoutDiagnostics.length}件</button><footer id="status" role="status">{status}</footer><button id="performance-toggle" type="button" className="secondary-action" hidden={mode==='home'} disabled={routeBlocked} aria-expanded={showPerformance} onClick={()=>setShowPerformance(v=>!v)}>性能計測</button></div>{paragraphOpen&&page&&<ParagraphLab recovery={labRecovery('paragraph','default')} themeRevision={theme.revision} initialEntry={initialLibraryEntry} design={theme.paragraphDesign} library={theme.library} binding={theme.paragraphBinding} libraryEditable={theme.libraryEditable} libraryMessage={theme.libraryMessage??libraryNotice} onLibraryAction={changeLibrary} bodyFont={typography.body} mathFontFamily={typography.mathFontFamily} fontOptions={componentFonts} width={paperGeometry(page).content.width} height={paperGeometry(page).content.height} busy={busy} onCancel={()=>setParagraphOpen(false)} onApply={applyParagraph}/>}{studyOpen&&page&&<ComponentLab recovery={labRecovery('study',studyTarget)} themeRevision={theme.revision} initialEntry={initialLibraryEntry} key={'study-'+studyTarget} usage="study" customOnly={studyTarget==='custom'} level={studyTarget} studyName={studyTarget==='custom'?'独自部品ライブラリ':studyNames[studyTarget]} design={studyTarget==='custom'?defaultStudyDesign('note'):theme.studyDesigns?.[studyTarget]??defaultStudyDesign(studyTarget)} hasOverride={!!theme.studyDesigns?.[studyTarget]} fontOptions={componentFonts} library={theme.library} bindings={theme.studyBindings??{}} libraryEditable={theme.libraryEditable} libraryMessage={theme.libraryMessage??libraryNotice} onLibraryAction={changeLibrary} imageOptions={images} resolveImage={resolveImage} typography={typography} width={paperGeometry(page).content.width} height={paperGeometry(page).content.height} busy={busy} onCancel={()=>setStudyOpen(false)} onApply={applyStudy}/>}{labOpen&&page&&<ComponentLab recovery={labRecovery('heading',labLevel)} themeRevision={theme.revision} initialEntry={initialLibraryEntry} key={labLevel} level={labLevel} design={(labLevel==="default"?theme.headingDesign:theme.headingLevels?.[labLevel]??theme.headingDesign)} hasOverride={labLevel==="default"?!!theme.headingDesign:!!theme.headingLevels?.[labLevel]} fontOptions={componentFonts} library={theme.library} bindings={theme.bindings??{}} headingLevels={theme.headingLevels??{}} libraryEditable={theme.libraryEditable} libraryMessage={theme.libraryMessage??libraryNotice} onLibraryAction={changeLibrary} imageOptions={images} resolveImage={resolveImage} typography={typography} width={paperGeometry(page).content.width} height={paperGeometry(page).content.height} busy={busy} onCancel={()=>setLabOpen(false)} onApply={applyHeadingDesign}/>}<dialog id="close-dialog" ref={closeDialog} aria-labelledby="close-title" aria-describedby="close-description" onCancel={e=>{e.preventDefault();void finishClose('cancel');}}>
     <h2 id="close-title">BookCreatorを終了</h2>
     <p id="close-description">{closeRequest?.blocked?'現在の操作を完了または取り消してから、もう一度終了してください。':unsaved.length?'未保存の変更があります。保存対象を確認してください。':'保存済みです。終了しますか？'}</p>

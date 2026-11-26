@@ -48,6 +48,8 @@ export async function runBookBenchmark(win,app,root,fixture){
   const paperSignature=()=>raw("JSON.stringify(Array.from(document.querySelector('#preview > div').shadowRoot.querySelectorAll('[data-page]')).map(p=>p.outerHTML))");
   const cacheStats=()=>raw("(()=>{const e=document.querySelector('#performance-cache');return {hits:Number(e.dataset.hits),misses:Number(e.dataset.misses),entries:Number(e.dataset.entries)};})()");
   const mathStats=()=>raw("JSON.parse(document.querySelector('#performance-math-cache').dataset.stats)");
+  const paragraphStats=()=>raw("JSON.parse(document.querySelector('#performance-paragraph-cache').dataset.stats)");
+  const paragraphEmpty=s=>Object.values(s).every(n=>n===0);
   const mathEmpty=s=>Object.values(s).every(v=>v.entries===0&&v.hits===0&&v.misses===0);
   await click('#open');
   await until('open',"document.querySelector('.workspace-shell').dataset.workspaceMode==='writing'&&!document.querySelector('#open').disabled");
@@ -74,8 +76,8 @@ export async function runBookBenchmark(win,app,root,fixture){
   if(await readFile(join(root,'book.yaml'),'utf8')!==fixture.manifest)throw Error('Benchmark changed manifest');
   await click('#performance-toggle');
   await until('metrics',"document.querySelector('#performance-summary tbody tr[data-stage=layout][data-category=book]')?.dataset.success>0&&document.querySelector('#performance-memory')?.dataset.phase==='ready'");
-  async function readPhaseSample(scope,enabled,mathEnabled=false){
-    const selector='#performance-phase-summary tr[data-scope='+scope+'][data-cache-enabled='+String(enabled)+'][data-math-cache-enabled='+String(mathEnabled)+']';
+  async function readPhaseSample(scope,enabled,mathEnabled=false,paragraphEnabled=false){
+    const selector='#performance-phase-summary tr[data-scope='+scope+'][data-cache-enabled='+String(enabled)+'][data-math-cache-enabled='+String(mathEnabled)+'][data-paragraph-cache-enabled='+String(paragraphEnabled)+']';
     const sample=await raw("(()=>{const e=document.querySelector("+JSON.stringify(selector)+");return e?{count:Number(e.dataset.count),timings:JSON.parse(e.dataset.latest)}:null;})()");
     if(!sample||!Number.isSafeInteger(sample.count)||sample.count<1||
       Object.keys(sample.timings).length!==phaseKeys.length||!phaseKeys.every(k=>Number.isFinite(sample.timings[k])&&sample.timings[k]>=0))
@@ -84,8 +86,8 @@ export async function runBookBenchmark(win,app,root,fixture){
   }
   await readPhaseSample('manuscript',false,false);
   await readPhaseSample('book',false,false);
-  const baselineCache=await cacheStats(),baselineMath=await mathStats();
-  if(await raw("document.querySelector('#performance-cache-enabled').checked||document.querySelector('#performance-math-cache-enabled').checked")||Object.values(baselineCache).some(n=>n!==0)||!mathEmpty(baselineMath))throw Error('Both experimental caches must start disabled and empty');
+  const baselineCache=await cacheStats(),baselineMath=await mathStats(),baselineParagraph=await paragraphStats();
+  if(await raw("document.querySelector('#performance-cache-enabled').checked||document.querySelector('#performance-math-cache-enabled').checked||document.querySelector('#performance-paragraph-cache-enabled').checked")||Object.values(baselineCache).some(n=>n!==0)||!mathEmpty(baselineMath)||!paragraphEmpty(baselineParagraph))throw Error('All experimental caches must start disabled and empty');
   const cachedPaper=await paperSignature();
   await click('#performance-close');
   // Reset the cache before each warm arm; prime both arms symmetrically.
@@ -167,6 +169,42 @@ export async function runBookBenchmark(win,app,root,fixture){
     }
   }
   const mathComparison=summarizeCacheComparison(mathComparisons.map(s=>({label:'cache-pair-'+s.pair+'-'+s.arm,scope:'book',elapsedMs:s.elapsedMs})));
+  // Compare incremental paragraph plans without either legacy cache.
+  await setMathComparison(false);
+  async function setParagraphComparison(enabled){
+    await click('#performance-toggle');
+    const checked=()=>raw("document.querySelector('#performance-paragraph-cache-enabled').checked");
+    if(await checked())await click('#performance-paragraph-cache-enabled');
+    if(enabled)await click('#performance-paragraph-cache-enabled');
+    if(await checked()!==enabled||!paragraphEmpty(await paragraphStats()))throw Error('Paragraph cache toggle/reset failed');
+    if(await raw("document.querySelector('#performance-cache-enabled').checked||document.querySelector('#performance-math-cache-enabled').checked"))throw Error('Paragraph comparison requires both legacy caches disabled');
+    await click('#performance-close');
+  }
+  async function readParagraphComparison(scope,enabled){
+    await click('#performance-toggle');
+    const stats=await paragraphStats(),phase=await readPhaseSample(scope,false,false,enabled);
+    await click('#performance-close');return {stats,phase};
+  }
+  const paragraphComparisons=[];
+  for(const {pair,order} of cacheComparisonPlan()){
+    for(const arm of order){
+      const enabled=arm==='warm';
+      await setParagraphComparison(enabled);
+      await repeat('paragraph-prime-'+pair+'-'+arm);
+      const prime=await readParagraphComparison('book',enabled);
+      const label='paragraph-pair-'+pair+'-'+arm;
+      await repeat(label);
+      const after=await readParagraphComparison('book',enabled);
+      if(after.phase.count!==prime.phase.count+1)throw Error('Expected one paragraph phase sample');
+      if(enabled){
+        if(prime.stats.entries<=0||after.stats.hits<=prime.stats.hits||after.stats.misses!==prime.stats.misses)
+          throw Error('Expected unchanged full-book paragraph plans to be reused');
+      }else if(!paragraphEmpty(prime.stats)||!paragraphEmpty(after.stats))throw Error('Disabled paragraph cache accumulated data');
+      paragraphComparisons.push({pair,arm,elapsedMs:samples.find(s=>s.label===label).elapsedMs,timings:after.phase.timings,prime:prime.stats,after:after.stats});
+    }
+  }
+  const paragraphComparison=summarizeCacheComparison(paragraphComparisons.map(s=>({label:'cache-pair-'+s.pair+'-'+s.arm,scope:'book',elapsedMs:s.elapsedMs})));
+  await setParagraphComparison(false);
   await setMathComparison(true);
   // Restore and populate the cache so the session-release assertion is not vacuous.
   await setComparisonCache(true);
@@ -183,5 +221,14 @@ export async function runBookBenchmark(win,app,root,fixture){
   if((await cacheStats()).entries!==0||!mathEmpty(await mathStats()))throw Error('Cache entries survived book reopen');
   await click('#performance-close');
   await setComparisonCache(false);await setMathComparison(false);
-  console.log('BENCH report '+JSON.stringify({version:6,fixtureVersion:2,cacheComparison,phaseComparisons,mathComparison,mathComparisons,chapters:fixture.chapters.map(c=>({id:c.id,characters:c.source.length,sections:c.sections,blocks:c.blocks})),initialMemory,finalMemory:memory(),samples,summary,baselineCache,baselineMath,finalCache}));
+  await setParagraphComparison(true);
+  await measure('paragraph-session-release-prime','manuscript',()=>click('[data-section=small]'),"document.querySelector('#source').value==="+JSON.stringify(fixture.chapters[0].source));
+  await click('#performance-toggle');
+  if((await paragraphStats()).entries<=0)throw Error('Expected populated paragraph cache before book session release');
+  await click('#performance-close');await click('#mode-home');await click('#open');
+  await until('paragraph session reopened',"document.querySelector('.workspace-shell').dataset.workspaceMode==='writing'&&!document.querySelector('#open').disabled&&!document.querySelector('#source').value");
+  await click('#performance-toggle');
+  if(!paragraphEmpty(await paragraphStats()))throw Error('Paragraph cache survived book reopen');
+  await click('#performance-close');await setParagraphComparison(false);
+  console.log('BENCH report '+JSON.stringify({version:7,fixtureVersion:2,cacheComparison,phaseComparisons,mathComparison,mathComparisons,paragraphComparison,paragraphComparisons,chapters:fixture.chapters.map(c=>({id:c.id,characters:c.source.length,sections:c.sections,blocks:c.blocks})),initialMemory,finalMemory:memory(),samples,summary,baselineCache,baselineMath,baselineParagraph,finalCache}));
 }
