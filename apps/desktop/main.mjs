@@ -90,11 +90,29 @@ async function run(){
   win.webContents.setWindowOpenHandler(()=>({action:'deny'}));
   win.webContents.on('will-navigate',e=>e.preventDefault());
   win.webContents.on('will-attach-webview',e=>e.preventDefault());
+  let closeSequence=0,pendingClose=null;
+  // The renderer owns draft state. Never infer that an open workspace is clean.
+  // The main process only accepts a response to the current native close request.
   win.on('close',e=>{
-    if(closing||SMOKE||!workspace)return;
-    e.preventDefault();if(busy)return;
-    const choice=dialog.showMessageBoxSync(win,{type:'warning',buttons:['キャンセル','終了'],defaultId:0,cancelId:0,message:'未保存の原稿・テーマ設定がある可能性があります。終了しますか？'});
-    if(choice===1){closing=true;win.close();}
+    if(closing)return;
+    e.preventDefault();
+    if(pendingClose!==null)return;
+    pendingClose=++closeSequence;
+    win.webContents.send('bookcreator:close-requested',pendingClose);
+  });
+  win.webContents.on('did-start-navigation',(_event,_url,isInPlace,isMainFrame)=>{
+    if(isMainFrame&&!isInPlace)pendingClose=null;
+  });
+  ipcMain.handle('bookcreator:complete-close',async(event,token,decision)=>{
+    sender(event);
+    if(pendingClose===null||token!==pendingClose||!['cancel','exit'].includes(decision))throw Error('Invalid close response');
+    if(decision==='exit'&&busy)throw Error('Workspace operation in progress');
+    pendingClose=null;
+    if(decision==='exit'){
+      closing=true;
+      setImmediate(()=>{if(!win.isDestroyed())win.close();});
+    }
+    return true;
   });
   handle('open',async(...args)=>{
     checkArgs(args,0);
