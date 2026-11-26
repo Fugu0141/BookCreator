@@ -472,3 +472,8 @@ body{font-family:BCFont_NotoSansJP,system-ui,sans-serif}.font-control,.typograph
 .structured-insert-fields label{display:flex;flex:1 1 180px;flex-direction:column;gap:4px;font-size:12px;min-width:0}
 .structured-insert-fields select{width:100%;min-width:0}
 .structured-insert-confirm{justify-content:flex-end}
+
+/* UX-09c: retain the active location without jumping to the top. */
+.structured-block[data-focused=true]:focus-within{border-color:var(--bc-primary);box-shadow:0 0 0 1px var(--bc-primary)}
+.structured-block:focus-visible,.structured-editor button:focus-visible,.structured-editor select:focus-visible,.structured-editor summary:focus-visible{outline:2px solid var(--bc-primary);outline-offset:2px}
+.structured-block{scroll-margin-block:12px}
