@@ -1,4 +1,5 @@
 // Conservative projection of BCM scanner ranges, using the existing inline parser.
+import {projectList,isolatedListContext} from './structured-list.mjs';
 const eol=/(?:\r\n|\r|\n)$/;
 const normalize=s=>s.replace(/\r\n/g,'\n');
 const supported=(s,parseInline)=>{
@@ -13,19 +14,21 @@ export function projectBlocks(source,scan,parseInline){
     let last=index,kind=block.kind,label=({heading:'見出し',raw:'本文 / Markdown',math:'独立数式',code:'コード',directive:'部品・指示'})[kind]??kind;
     if(kind==='raw')while(blocks[last+1]?.kind==='raw'&&blocks[last].range.end===blocks[last+1].range.start)last++;
     const range={start:block.range.start,end:blocks[last].range.end},raw=source.slice(range.start,range.end);
-    let payload=null,prefix='',suffix='',inline=null;
+    let payload=null,prefix='',suffix='',inline=null,list=null;
     const body=raw.replace(eol,''),ending=raw.slice(body.length);
     if(kind==='heading'){
       const match=/^( {0,3}#{1,6}[ \t]+)(.+)$/.exec(body);
       if(match&&(inline=supported(match[2],parseInline))&&!inline.inlineMath.length){prefix=match[1];payload=match[2];suffix=ending;}
       label='見出し H'+block.level;
+    }else if(kind==='raw'&&isolatedListContext(source,blocks,index,last)&&(list=projectList(raw,scan,parseInline))){
+      kind='list';label='リスト';
     }else if(kind==='raw'&&(!blocks[index-1]||['blank','heading'].includes(blocks[index-1].kind))&&(!blocks[last+1]||blocks[last+1].kind==='blank')&&(inline=supported(normalize(body),parseInline))){
       kind='paragraph';label='本文';payload=normalize(body);suffix=ending;
     }else if(kind==='math'){
       const match=/^(\$\$[ \t]*(?:\r\n|\n))([\s\S]+?)((?:\r\n|\n)\$\$[ \t]*(?:\r\n|\n)?$)/.exec(raw);
       if(match){prefix=match[1];payload=normalize(match[2]);suffix=match[3];}
     }else if(kind==='directive'){label='部品・指示：'+block.header.name;}
-    rows.push({index,last,kind,label,range,raw,prefix,suffix,level:block.level,inline:result.diagnostics.length?null:inline,payload:result.diagnostics.length?null:payload});
+    rows.push({index,last,kind,label,range,raw,prefix,suffix,level:block.level,list:result.diagnostics.length?null:list,inline:result.diagnostics.length?null:inline,payload:result.diagnostics.length?null:payload});
     index=last;
   }
   return {rows,diagnostics:result.diagnostics};
