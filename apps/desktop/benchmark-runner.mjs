@@ -79,8 +79,8 @@ export async function runBookBenchmark(win,app,root,fixture){
   if(await readFile(join(root,'book.yaml'),'utf8')!==fixture.manifest)throw Error('Benchmark changed manifest');
   await click('#performance-toggle');
   await until('metrics',"document.querySelector('#performance-summary tbody tr[data-stage=layout][data-category=book]')?.dataset.success>0&&document.querySelector('#performance-memory')?.dataset.phase==='ready'");
-  async function readPhaseSample(scope,enabled,mathEnabled=false,paragraphEnabled=false,pageEnabled=false){
-    const selector='#performance-phase-summary tr[data-scope='+scope+'][data-cache-enabled='+String(enabled)+'][data-math-cache-enabled='+String(mathEnabled)+'][data-paragraph-cache-enabled='+String(paragraphEnabled)+'][data-page-cache-enabled='+String(pageEnabled)+']';
+  async function readPhaseSample(scope,enabled,mathEnabled=false,paragraphEnabled=false,pageEnabled=false,reuseEnabled=false){
+    const selector='#performance-phase-summary tr[data-scope='+scope+'][data-cache-enabled='+String(enabled)+'][data-math-cache-enabled='+String(mathEnabled)+'][data-paragraph-cache-enabled='+String(paragraphEnabled)+'][data-page-cache-enabled='+String(pageEnabled)+'][data-reuse-paper-pages='+String(reuseEnabled)+']';
     const sample=await raw("(()=>{const e=document.querySelector("+JSON.stringify(selector)+");return e?{count:Number(e.dataset.count),timings:JSON.parse(e.dataset.latest)}:null;})()");
     if(!sample||!Number.isSafeInteger(sample.count)||sample.count<1||
       Object.keys(sample.timings).length!==phaseKeys.length||!phaseKeys.every(k=>Number.isFinite(sample.timings[k])&&sample.timings[k]>=0))
@@ -339,5 +339,59 @@ export async function runBookBenchmark(win,app,root,fixture){
   await click('#performance-toggle');
   if(!pageEmpty(await pageStats()))throw Error('Page cache survived book reopen');
   await click('#performance-close');await setPageComparison(false);
-  console.log('BENCH report '+JSON.stringify({version:10,fixtureVersion:2,defaultParagraphCacheEnabled:true,baselinePage,pageComparison,pageComparisons,paragraphEditComparison,paragraphEditComparisons,cacheComparison,phaseComparisons,mathComparison,mathComparisons,paragraphComparison,paragraphComparisons,chapters:fixture.chapters.map(c=>({id:c.id,characters:c.source.length,sections:c.sections,blocks:c.blocks})),initialMemory,finalMemory:memory(),samples,summary,baselineCache,baselineMath,baselineParagraph,finalCache}));
+  // Compare real edits with warm incremental paragraphs, but without the
+  // page template cache. A new host primes every arm, even the partial mode.
+  async function setPartial(enabled){
+    await click('#performance-toggle');
+    const checked=()=>raw("document.querySelector('#performance-reuse-paper-pages').checked");
+    if(await checked()!==enabled)await click('#performance-reuse-paper-pages');
+    if(await checked()!==enabled)throw Error('Partial publication toggle failed');
+    if(!await raw("document.querySelector('#performance-paragraph-cache-enabled').checked&&!document.querySelector('#performance-page-cache-enabled').checked&&!document.querySelector('#performance-cache-enabled').checked&&!document.querySelector('#performance-math-cache-enabled').checked"))throw Error('Partial comparison requires only incremental paragraphs');
+    await click('#performance-close');
+  }
+  async function readPartial(enabled){
+    await click('#performance-toggle');
+    const phase=await readPhaseSample('manuscript',false,false,true,false,enabled),stats=await paragraphStats();
+    await click('#performance-close');return {phase,stats};
+  }
+  await setPartial(false);
+  await measure('partial-open','manuscript',()=>click('[data-section='+large.id+']'),"document.querySelector('#source').value==="+JSON.stringify(large.source));
+  if(await paperSignature()!==originalPaper)throw Error('Partial baseline differs');
+  const partialComparisons=[];
+  for(const {pair,order} of cacheComparisonPlan()){
+    let editedPaper;
+    for(const arm of order){
+      const enabled=arm==='warm';
+      await setPartial(false);
+      await setParagraphComparison(true);
+      await raw("document.querySelector('#preview > div').dataset.paperProbe='old'");
+      await measure('partial-prime-'+pair+'-'+arm,'manuscript',()=>click('#preview-button'),"document.querySelector('#preview > div').dataset.paperProbe!=='old'");
+      if(await paperSignature()!==originalPaper)throw Error('Partial prime differs');
+      const prime=await readPartial(false);
+      await setPartial(enabled);
+      // A first partial-mode sample does not exist until the edit succeeds.
+      await click('#performance-toggle');
+      const beforeCount=await raw("Number(document.querySelector('#performance-phase-summary tr[data-scope=manuscript][data-cache-enabled=false][data-math-cache-enabled=false][data-paragraph-cache-enabled=true][data-page-cache-enabled=false][data-reuse-paper-pages="+String(enabled)+"]')?.dataset.count??0)");
+      await click('#performance-close');
+      await raw("(()=>{const h=document.querySelector('#preview > div');window.__bcPartialBenchmark={host:h,pages:[...h.shadowRoot.querySelectorAll('[data-page]')]};document.querySelector('#source').focus();})()");
+      const label='partial-edit-pair-'+pair+'-'+arm;
+      await measure(label,'manuscript',()=>setSource(edited),paperText('増分組版を確認します。')+"&&document.activeElement.id==='source'");
+      const identity=await raw("(()=>{const h=document.querySelector('#preview > div'),old=window.__bcPartialBenchmark,p=[...h.shadowRoot.querySelectorAll('[data-page]')];delete window.__bcPartialBenchmark;return {sameHost:h===old.host,reused:p.filter((n,i)=>n===old.pages[i]).length,reported:Number(h.dataset.reusedPages),pages:p.length};})()");
+      if(identity.reported!==identity.reused||identity.sameHost!==enabled||(enabled?(identity.reused<=0||identity.reused>=identity.pages):identity.reused!==0))throw Error('Unexpected partial publication identity: '+JSON.stringify(identity));
+      const signature=await paperSignature();
+      if(signature===originalPaper)throw Error('Partial edit did not change paper');
+      if(editedPaper===undefined)editedPaper=signature;
+      else if(editedPaper!==signature)throw Error('Partial edit paper differs between modes');
+      const after=await readPartial(enabled);
+      if(after.phase.count!==beforeCount+1||after.stats.misses-prime.stats.misses!==1||after.stats.hits<=prime.stats.hits)throw Error('Expected one edit and one remeasured paragraph');
+      const sample=samples.find(s=>s.label===label);
+      partialComparisons.push({pair,arm,elapsedMs:sample.elapsedMs,timings:after.phase.timings,memory:sample.memory,identity});
+      await raw("document.querySelector('#source').focus()");
+      await measure('partial-restore-'+pair+'-'+arm,'manuscript',()=>setSource(large.source),"!"+paperText('増分組版を確認します。')+"&&document.querySelector('#workspace-save-state').textContent==='保存済み'");
+      if(await paperSignature()!==originalPaper||await readFile(join(root,'manuscript',large.id+'.md'),'utf8')!==large.source)throw Error('Partial edit fixture not restored');
+    }
+  }
+  await setPartial(false);
+  const partialComparison=summarizeCacheComparison(partialComparisons.map(s=>({label:'cache-pair-'+s.pair+'-'+s.arm,scope:'manuscript',elapsedMs:s.elapsedMs})),'manuscript');
+  console.log('BENCH report '+JSON.stringify({version:11,fixtureVersion:2,defaultParagraphCacheEnabled:true,partialComparison,partialComparisons,baselinePage,pageComparison,pageComparisons,paragraphEditComparison,paragraphEditComparisons,cacheComparison,phaseComparisons,mathComparison,mathComparisons,paragraphComparison,paragraphComparisons,chapters:fixture.chapters.map(c=>({id:c.id,characters:c.source.length,sections:c.sections,blocks:c.blocks})),initialMemory,finalMemory:memory(),samples,summary,baselineCache,baselineMath,baselineParagraph,finalCache}));
 }
