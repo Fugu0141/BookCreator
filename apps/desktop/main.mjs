@@ -888,9 +888,9 @@ async function smoke(){
   await until("document.querySelector('#source').value==="+JSON.stringify(beforeSlotMath)+" && !document.querySelector('#preview > div')");
   // Numbered component equation: paper selection includes the wrapper; editing changes only TeX.
   const nestedNumbered='::::callout{kind="note"}\n:::layout{#eq-gui-nested numbered="true"}\n$$\nx^2\n$$\n:::\n::::\n';
-  const numberedSource=beforeSlotMath+'\n\n'+nestedNumbered;
-  await setInlineMathSource(numberedSource);
-  await until("document.querySelector('#source').value==="+JSON.stringify(numberedSource));
+  const nestedNumberedSource=beforeSlotMath+'\n\n'+nestedNumbered;
+  await setInlineMathSource(nestedNumberedSource);
+  await until("document.querySelector('#source').value==="+JSON.stringify(nestedNumberedSource));
   await exec("document.querySelector('#preview-button').click()");
   await until("!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-slot-display-math] [data-equation-number]')");
   await exec("document.querySelector('#preview > div').shadowRoot.querySelector('[data-slot-display-math] [data-equation-number]').click()");
