@@ -145,6 +145,13 @@ function workspaceSmokeExec(){
     if(/^#(?:source(?:-.*)?|editor-font|study-(?!design).+|preview-button|preview-book)$/.test(selector)||selector.startsWith('[data-section='))return 'writing';
     return null;
   };
+  const designCategoryFor=selector=>{
+    if(/^#(?:body-font|body-weight|heading-font|heading-weight|math-font|save-theme|discard-theme-roles)$/.test(selector))return 'styles';
+    if(/^#(?:lab-level|component-lab|paragraph-lab|study-design-kind|study-design-lab)$/.test(selector))return 'components';
+    if(/^#(?:image-manager|image-copy|import-image)$/.test(selector))return 'assets';
+    if(/^#(?:font-manager|font-license|font-license-text|font-copy|import-font)$/.test(selector))return 'fonts';
+    return null;
+  };
   const panelFor=selector=>{
     if(/^#source-list-/.test(selector))return 'list';
     if(/^#source-(?:math|inline-math|equation-numbering|equation-reference)$/.test(selector))return 'math';
@@ -171,6 +178,16 @@ function workspaceSmokeExec(){
           if(!panel)throw Error('Cannot reach visible '+selector+' in '+mode);
           // Grouped commands become visible only after the group is expanded.
         }
+      }
+      const category=selectors.map(designCategoryFor).find(Boolean);
+      if(category&&!await raw("document.querySelector('#design-tab-"+category+"')?.getAttribute('aria-current')==='page'")){
+        await raw("document.querySelector('#design-tab-"+category+"').click()");
+        let visible=false;
+        for(let i=0;i<100;i++){
+          if(await raw("!!document.querySelector('#design-panel-"+category+"')?.getClientRects().length")){visible=true;break;}
+          await new Promise(r=>setTimeout(r,50));
+        }
+        if(!visible)throw Error('Cannot open design category '+category);
       }
       const panel=selectors.map(panelFor).find(Boolean);
       if(panel&&!await raw("!!document.querySelector('#writing-tools-"+panel+"')?.getClientRects().length")){
@@ -219,6 +236,11 @@ async function packageSmoke(){
   if(!await exec("document.querySelector('.workspace-shell').dataset.workspaceMode==='writing'&&!document.querySelector('#body-font').getClientRects().length&&!document.querySelector('#preview').getClientRects().length"))throw Error('Writing does not isolate design and paper controls');
   await exec("document.querySelector('#mode-design').click()");
   await until("document.querySelector('.workspace-shell').dataset.workspaceMode==='design'&&!!document.querySelector('#body-font').getClientRects().length&&!document.querySelector('#source').getClientRects().length");
+  for(const category of ['components','assets','fonts','styles']){
+    await exec("document.querySelector('#design-tab-"+category+"').click()");
+    await until("document.querySelector('#design-tab-"+category+"').getAttribute('aria-current')==='page'&&!!document.querySelector('#design-panel-"+category+"').getClientRects().length&&[...document.querySelectorAll('.design-categories>section')].filter(e=>e.getClientRects().length).length===1");
+  }
+  if(!await exec("document.querySelector('#workspace-save-state').textContent.includes('テーマ')"))throw Error('Design category switch lost unsaved typography');
   await exec("document.querySelector('#mode-layout').click()");
   await until("document.querySelector('.workspace-shell').dataset.workspaceMode==='layout'&&!!document.querySelector('#preview').getClientRects().length&&!document.querySelector('#source').getClientRects().length");
   await exec("document.querySelector('#mode-publication').click()");
