@@ -327,6 +327,23 @@ async function packageSmoke(){
   if(!await exec("document.querySelectorAll('[data-layout-page]').length===document.querySelector('#preview > div').shadowRoot.querySelectorAll('[data-page]').length&&document.querySelector('#layout-page-scope').textContent.includes('書籍全体')&&document.querySelector('.layout-page-info').textContent.includes('chapter')&&document.querySelector('#layout-prev').disabled"))throw Error('Page list does not represent measured pages');
   await exec("document.querySelector('#layout-next').click()");
   await until("document.querySelector('[data-layout-page=\"2\"]').getAttribute('aria-current')==='page'&&document.querySelector('#preview').scrollTop>0&&document.querySelector('#layout-page-jump').value==='2'");
+  const paperWidth=await exec("(()=>{const h=document.querySelector('#preview > div');h.dataset.paperProbe='same';return h.shadowRoot.querySelector('[data-page]').style.width;})()");
+  const changePaperZoom=value=>exec("(()=>{const e=document.querySelector('#layout-zoom');e.value="+JSON.stringify(value)+";e.dispatchEvent(new Event('change',{bubbles:true}));})()");
+  if(!await exec("document.querySelectorAll('#layout-pages .layout-thumbnail').length===document.querySelectorAll('[data-layout-page]').length"))throw Error('Missing measured page miniatures');
+  await changePaperZoom('75');
+  await until("(()=>{const v=document.querySelector('#preview'),h=v.firstElementChild,p=h.shadowRoot.querySelector('[data-page]');return Number(v.dataset.paperZoom)===.75&&Math.abs(p.getBoundingClientRect().width/p.offsetWidth-.75)<.02;})()");
+  await exec("document.querySelector('#layout-guides').click()");
+  await until("Array.from(document.querySelector('#preview > div').shadowRoot.querySelectorAll('[data-content-guide]')).every(e=>getComputedStyle(e).visibility==='hidden')");
+  await changePaperZoom('page');
+  await until("(()=>{const v=document.querySelector('#preview'),p=v.firstElementChild.shadowRoot.querySelector('[data-page]'),r=p.getBoundingClientRect();return r.width<=v.clientWidth&&r.height<=v.clientHeight;})()");
+  if(!await exec("document.querySelector('#preview > div').dataset.paperProbe==='same'&&document.querySelector('#preview > div').shadowRoot.querySelector('[data-page]').style.width==="+JSON.stringify(paperWidth)+"&&document.querySelector('#workspace-layout-state').dataset.phase==='ready'"))throw Error('Paper view altered measured result');
+  await exec("document.querySelector('#layout-guides').click()");
+  await until("Array.from(document.querySelector('#preview > div').shadowRoot.querySelectorAll('[data-content-guide]')).every(e=>getComputedStyle(e).visibility==='visible')");
+  await changePaperZoom('width');
+  await until("Number(document.querySelector('#preview').dataset.paperZoom)>0&&Number(document.querySelector('#preview').dataset.paperZoom)<=1");
+  await changePaperZoom('100');
+  await until("Number(document.querySelector('#preview').dataset.paperZoom)===1");
+
   await exec("document.querySelector('[data-layout-page=\"1\"]').click()");
   await until("document.querySelector('[data-layout-page=\"1\"]').getAttribute('aria-current')==='page'&&document.querySelector('#preview').scrollTop<20");
   await exec("(()=>{const e=document.querySelector('#layout-page-jump');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,'2');e.dispatchEvent(new Event('input',{bubbles:true}));})()");
