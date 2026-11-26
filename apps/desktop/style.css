@@ -403,3 +403,10 @@ body{font-family:BCFont_NotoSansJP,system-ui,sans-serif}.font-control,.typograph
 .structured-study-field label{display:block;color:var(--bc-muted);font-weight:600;font-size:12px}
 .structured-study-field textarea{width:100%;box-sizing:border-box;min-height:100px;margin-top:6px;resize:vertical;font:inherit;line-height:1.6}
 .structured-study-field .structured-content{background:white;border-radius:3px;padding:8px;min-height:24px}
+
+/* UX-08e: separate document-level insertion/history from block-level controls. */
+.structured-operation-toolbar{display:flex;align-items:center;gap:6px 12px;flex-wrap:wrap;padding:8px;border:1px solid var(--bc-border);border-radius:5px;background:#f6f9fb}
+.structured-operation-toolbar label{display:flex;align-items:center;gap:6px;font-size:12px;flex-wrap:wrap}
+.structured-operation-toolbar button,.structured-block-operations button{padding:5px 8px;font-size:12px}
+.structured-block-operations{display:flex;gap:4px;flex-wrap:wrap;align-items:center;padding-top:6px;margin-top:6px;border-top:1px solid var(--bc-border)}
+.structured-delete-confirm{display:flex;gap:4px;align-items:center;flex-wrap:wrap;color:var(--bc-error);font-size:12px}
