@@ -3,7 +3,7 @@ import {parseReferenceToken} from '../../../BookCreator_Markdown/dist/index.js';
 import {parsePreviewMath} from '../../../BookCreator_LayoutEngine/dist/index.js';
 
 // Private parser placeholders are never displayed as actual reference numbers.
-export function projectMixed(value){
+export function projectMixed(value,allowPlain=false){
   try{
     if(!value||value.trim()!==value||value.includes('\r'))return null;
     const refs=new Map();
@@ -13,7 +13,7 @@ export function projectMixed(value){
       refs.set(offset,ref);
       return ref.format==='number'?'1.1':'式 (1.1)';
     });
-    if(!parsed.inlineMath.length&&!refs.size)return null;
+    if(!allowPlain&&!parsed.inlineMath.length&&!refs.size)return null;
     const parts=[];let cursor=0;
     for(const s of parsed.sourceMap.segments){
       const ref=refs.get(s.outerStart),math=parsed.inlineMath.find(a=>a.start===s.start&&s.end===s.start+1),style=parsed.inlineStyles.find(a=>a.start===s.start&&a.end===s.end);
@@ -34,7 +34,7 @@ export function projectMixed(value){
 const fixedParts=parts=>parts.filter(p=>p.kind!=='text'&&p.kind!=='math').map(p=>[p.kind,p.raw]);
 export function mixedDraftParts(original,draft){
   const staged=draft.mixedLayout===undefined?original:projectMixed(draft.mixedLayout);
-  if(!staged||JSON.stringify(fixedParts(staged.parts))!==JSON.stringify(fixedParts(original.parts)))throw Error('参照または書式が変化しました。');
+  if(!original||!staged||JSON.stringify(fixedParts(staged.parts))!==JSON.stringify(fixedParts(original.parts)))throw Error('参照または書式が変化しました。');
   return staged;
 }
 function composeMixed(parts,values){
@@ -47,11 +47,11 @@ function composeMixed(parts,values){
   return {value,parts:check.parts};
 }
 export function planMixedMath(draft,request){
-  if(!draft?.mixed||!draft.row?.mixed)throw Error('混在本文を開き直してください。');
+  if(!draft?.mixed||!mixedOrigin(draft.row,draft))throw Error('混在本文を開き直してください。');
   const {formula}=request;
   if(typeof formula!=='string'||!formula||formula.length>2048||formula.trim()!==formula||/[\r\n$]/.test(formula))throw Error('数式に改行・ドル記号・前後の空白は入力できません。');
   parsePreviewMath(formula);
-  const current=composeMixed(mixedDraftParts(draft.row.mixed,draft).parts,draft.values);
+  const current=composeMixed(mixedDraftParts(mixedOrigin(draft.row,draft),draft).parts,draft.values);
   const parts=current.parts.slice(),at=request.part;
   if(!Number.isSafeInteger(at)||!parts[at])throw Error('数式の位置が変化しました。');
   const atom={kind:'math',raw:'$'+formula+'$',formula};
@@ -72,8 +72,8 @@ export function planMixedMath(draft,request){
 export function planMixedEdit(source,draft,{scan,parseInline,applyPatches,project}){
   if(draft.source!==source)throw Error('原稿が変更されました。');
   const before=project(source,scan,parseInline),at=before.rows.findIndex(r=>r.range.start===draft.row.range.start&&r.raw===draft.row.raw),row=before.rows[at];
-  if(before.diagnostics.length||!row?.mixed||!Array.isArray(draft.values))throw Error('本文の構造が変更されました。');
-  const parts=mixedDraftParts(row.mixed,draft).parts;
+  if(before.diagnostics.length||!row||!Array.isArray(draft.values))throw Error('本文の構造が変更されました。');
+  const parts=mixedDraftParts(mixedOrigin(row,draft),draft).parts;
   const {value}=composeMixed(parts,draft.values);
   return replaceMixedParagraph(source,before,at,row,value,{scan,parseInline,applyPatches,project});
 }
@@ -109,4 +109,33 @@ export function planMixedReference(source,draft,request,options){
   }else throw Error('未対応の参照操作');
   const {value}=composeMixed(parts,parts.filter(p=>p.kind==='text').map(p=>p.value));
   return replaceMixedParagraph(currentSource,before,at,row,value,options,true);
+}
+
+export function mixedOrigin(row,draft){
+  if(row?.mixed)return row.mixed;
+  if(row?.kind!=='paragraph'||row.payload===null||typeof draft?.mixedBase!=='string')return null;
+  const base=projectMixed(draft.mixedBase,true);
+  return base&&!base.parts.some(p=>p.kind==='math'||p.kind==='reference')?base:null;
+}
+export function startRichMath(draft,offset,formula){
+  if(!draft?.rich||draft.richError||draft.row.kind!=='paragraph'||draft.row.mixed)throw Error('文章編集を開き直してください。');
+  const base=projectMixed(draft.value,true);
+  if(!base||base.parts.some(p=>p.kind==='math'||p.kind==='reference'))throw Error('対応する文章を入力してください。');
+  if(typeof formula!=='string'||!formula||formula.length>2048||formula.trim()!==formula||/[\r\n$]/.test(formula))throw Error('数式に改行・ドル記号・前後の空白は入力できません。');
+  parsePreviewMath(formula);
+  if(!Number.isSafeInteger(offset)||offset<0||offset>draft.value.length)throw Error('挿入位置が不正です。');
+  let cursor=0,at=-1,relative=0;
+  for(let i=0;i<base.parts.length;i++){
+    const p=base.parts[i],length=(p.kind==='text'?p.value:p.raw).length;
+    if(p.kind==='text'&&offset>=cursor&&offset<=cursor+length){at=i;relative=offset-cursor;break;}
+    cursor+=length;
+  }
+  if(at<0)throw Error('書式の途中には挿入できません。');
+  const parts=base.parts.slice(),text=parts[at].value;
+  const boundaries=new Set([text.length,...Array.from(new Intl.Segmenter(undefined,{granularity:'grapheme'}).segment(text),g=>g.index)]);
+  if(!boundaries.has(relative))throw Error('文字の途中には挿入できません。');
+  parts.splice(at,1,{kind:'text',value:text.slice(0,relative)},{kind:'math',raw:'$'+formula+'$',formula},{kind:'text',value:text.slice(relative)});
+  const values=parts.filter(p=>p.kind==='text').map(p=>p.value);
+  const next=composeMixed(parts,values);
+  return {...draft,rich:false,mixed:true,mixedBase:draft.value,mixedLayout:next.value,values,inlineEdit:null};
 }
