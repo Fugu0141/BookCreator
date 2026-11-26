@@ -4,13 +4,14 @@ const stageNames={measurement:'実測レーン',layout:'組版要求',read:'読�
 const categoryNames={manuscript:'選択原稿',book:'全冊',component:'部品',paragraph:'段落',catalog:'カタログ',source:'原稿',image:'画像',other:'その他'};
 const ms=v=>v===null?'—':v.toFixed(1);
 const mib=v=>(v/1024).toFixed(1)+' MiB';
-export function PerformancePanel({readMemory,onClose}){
+export function PerformancePanel({readMemory,readCache,cacheEnabled,onCacheEnabled,cacheBlocked,onClose}){
   const [rows,setRows]=useState(()=>performanceMetrics.snapshot());
+  const [cache,setCache]=useState(()=>readCache());
   const [memory,setMemory]=useState(null),[phase,setPhase]=useState('pending');
   const request=useRef(0);
   async function refresh(){
     const job=++request.current;
-    setRows(performanceMetrics.snapshot());setPhase('pending');
+    setRows(performanceMetrics.snapshot());setCache(readCache());setPhase('pending');
     try{
       const value=await readMemory();
       if(job!==request.current)return;
@@ -27,7 +28,8 @@ export function PerformancePanel({readMemory,onClose}){
     <p className="muted">直近 {rows.length} / 200 件。成功時の中央値・最大値（ms）。組版要求には入力合流時間を含みません。実測・読取は組版要求の内訳と重なるため合算しないでください。</p>
     <div className="performance-table-wrap"><table id="performance-summary"><thead><tr><th>処理</th><th>成功</th><th>失敗</th><th>取消</th><th>待機 中央値</th><th>処理 中央値</th><th>処理 最大</th><th>再試行</th></tr></thead><tbody>{summary.map(g=><tr key={g.stage+':'+g.category} data-stage={g.stage} data-category={g.category} data-success={g.success}><th>{stageNames[g.stage]} / {categoryNames[g.category]}</th><td>{g.success}</td><td>{g.failed}</td><td>{g.cancelled}</td><td>{ms(g.medianWaitMs)}</td><td>{ms(g.medianRunMs)}</td><td>{ms(g.maxRunMs)}</td><td>{g.retries}</td></tr>)}</tbody></table></div>
     {!rows.length&&<p className="muted">組版操作後に更新すると計測結果を確認できます。</p>}
+    <div id="performance-cache" data-hits={cache.hits} data-misses={cache.misses} data-entries={cache.entries}><label><input id="performance-cache-enabled" type="checkbox" checked={cacheEnabled} disabled={cacheBlocked} onChange={e=>{onCacheEnabled(e.target.checked);setCache(readCache());}}/>通常テキストの実測結果を再利用</label> ／ 再利用 {cache.hits} 件・新規実測 {cache.misses} 件・保持 {cache.entries} 件（{cache.characters} UTF-16コード単位・{cache.lines} 行）</div>
     <div id="performance-memory" data-phase={phase}>{phase==='ready'&&memory?<>プロセスの作業セット（取得時点）：Main {mib(memory.browserKiB)} ／ Renderer {mib(memory.rendererKiB)} ／ その他 {mib(memory.otherKiB)}（{memory.processes} プロセス）</>:phase==='error'?'メモリ情報を取得できませんでした。':'メモリ情報を取得中…'}</div>
-    <small>共有メモリの重複を含み得る概算です。記録はアプリの再起動で消え、原稿・書籍名・ファイルパスは保存しません。</small>
+    <small>共有メモリの重複を含み得る概算です。記録はアプリの再起動で消え、性能記録に原稿・書籍名・ファイルパスは含めません。実測キャッシュは原稿の一部を端末内メモリにのみ保持し、書籍切替・ホーム移動・フォント登録時に解放します。</small>
   </section>;
 }
