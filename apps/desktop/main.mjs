@@ -5,6 +5,8 @@ import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {fileURLToPath} from 'node:url';
 import {openWorkspace,createProject} from './workspace.mjs';
+import {STIX_FONT,verifyPinnedFontBlob} from './bundled-math-font.mjs';
+import {createHash} from 'node:crypto';
 const SMOKE=process.argv.includes('--smoke');
 const smokeRoot=SMOKE?mkdtempSync(join(tmpdir(),'bc-electron-')):undefined;
 if(smokeRoot)app.setPath('userData',smokeRoot);
@@ -37,7 +39,14 @@ async function run(){
   session.defaultSession.setPermissionCheckHandler(()=>false);
   session.defaultSession.webRequest.onBeforeRequest((details,callback)=>callback({cancel:!details.url.startsWith('bookcreator://app/')}));
   const fontManifest=JSON.parse(await readFile(new URL('./build/fonts-manifest.json',import.meta.url),'utf8'));
-  if(fontManifest.schemaVersion!==1||fontManifest.family!=='BCFont_NotoSansJP'||!Array.isArray(fontManifest.assets)||fontManifest.assets.length>512||fontManifest.assets.some(name=>typeof name!=='string'||!/^[A-Za-z0-9_-]+\.(?:woff2|woff)$/.test(name)))throw Error('Invalid trusted font build manifest');
+  if(fontManifest.schemaVersion!==2||fontManifest.family!=='BCFont_NotoSansJP'||!Array.isArray(fontManifest.assets)||fontManifest.assets.length>512||fontManifest.assets.some(name=>typeof name!=='string'||!/^[A-Za-z0-9_-]+\.(?:woff2|woff)$/.test(name)))throw Error('Invalid trusted font build manifest');
+  const math=fontManifest.math;
+  if(!math||math.family!==STIX_FONT.family||math.asset!==STIX_FONT.asset||math.sourceCommit!==STIX_FONT.commit||!/^[a-f0-9]{64}$/.test(math.sha256))throw Error('Invalid bundled math manifest');
+  const mathBytes=verifyPinnedFontBlob(await readFile(new URL('./build/fonts/'+STIX_FONT.asset,import.meta.url)),STIX_FONT.fontBlob,4*1024*1024);
+  if(createHash('sha256').update(mathBytes).digest('hex')!==math.sha256)throw Error('Bundled math font digest mismatch');
+  verifyPinnedFontBlob(await readFile(new URL('./build/STIXTwoMath-LICENSE.txt',import.meta.url)),STIX_FONT.licenseBlob,64*1024);
+  ASSETS.set('/fonts/'+STIX_FONT.asset,['build/fonts/'+STIX_FONT.asset,'font/ttf']);
+  ASSETS.set('/STIXTwoMath-LICENSE.txt',['build/STIXTwoMath-LICENSE.txt','text/plain; charset=utf-8']);
   ASSETS.set('/fonts.css',['build/fonts.css','text/css; charset=utf-8']);
   for(const name of fontManifest.assets)ASSETS.set('/fonts/'+name,['build/fonts/'+name,name.endsWith('.woff2')?'font/woff2':'font/woff']);
   protocol.handle('bookcreator',async request=>{
