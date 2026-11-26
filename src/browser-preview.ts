@@ -11,14 +11,14 @@ function resolveStudy(item:SemanticItem,body:ReturnType<typeof resolvePreviewTyp
   }
   return compileStudyBlock(item.studyKind!,item.attributes?.title,body,designs?.[item.studyKind!],number,answer);
 }
-function slotRequests(item:SemanticItem,compiled:ReturnType<typeof compileHeadingDesign>,source:string){
+function slotRequests(item:SemanticItem,compiled:ReturnType<typeof compileHeadingDesign>,source:string,validateMath?:(formula:string)=>unknown){
   const slots=item.namedSlots??[];
   for(const s of slots)if(s.sourceTextStart===undefined||source.slice(s.sourceTextStart,s.sourceTextStart+s.text.length)!==s.text)throw RangeError('Cannot establish exact named slot source mapping');
   const resolved=resolveNamedSlotPresence(compiled,slots);
   return {...resolved,namedSlots:resolved.namedSlots.map(slot=>{
-    const inline=parsePreviewInline(slot.request.text,slot.sourceTextStart!);
-    if(!inline.inlineStyles.length)return {...slot,sourceMap:undefined as InlineSourceMap|undefined};
-    return {...slot,sourceTextStart:undefined,sourceMap:inline.sourceMap,request:{...slot.request,text:inline.text,inlineStyles:inline.inlineStyles}};
+    const inline=parsePreviewInline(slot.request.text,slot.sourceTextStart!,validateMath);
+    if(inline.text===slot.request.text&&!inline.inlineStyles.length&&!inline.inlineMath.length)return {...slot,sourceMap:undefined as InlineSourceMap|undefined};
+    return {...slot,sourceTextStart:undefined,sourceMap:inline.sourceMap,request:{...slot.request,text:inline.text,...(inline.inlineStyles.length?{inlineStyles:inline.inlineStyles}:{}),...(inline.inlineMath.length?{inlineMath:inline.inlineMath}:{})}};
   })};
 }
 function equationResolver<S extends Scan>(items:readonly SemanticItem[],deps:PreparationDependencies<S>){
@@ -83,8 +83,8 @@ export function prepareBrowserPreview<S extends Scan>(document:Manuscript,revisi
     if(offset<0||raw.slice(offset,offset+item.text.length)!==item.text){reject(item.origin,'Cannot establish exact source mapping');continue;}
     if(item.kind==='heading')numbering.heading(item.level!);
     let study:ReturnType<typeof compileStudyBlock>|undefined,namedSlots:ReturnType<typeof slotRequests>['namedSlots']=[];
-    if(item.kind==='study')try{study=resolveStudy(item,fonts.body,undefined,catalog,numbering.next(item.componentId??item.studyKind!),answerFor(item));const resolved=slotRequests(item,study,document.source);study={...study,component:resolved.component};namedSlots=resolved.namedSlots;}catch(e){reject(item.origin,String(e instanceof Error?e.message:e));continue;}
-    const inline=item.kind==='math'?{requestText:item.text,inlineStyles:undefined,inlineMath:undefined,sourceTextStart:item.sourceTextStart,sourceMap:undefined}:primaryInline(item.text,item.origin.range.start+offset,item.kind==='paragraph'?deps.validateInlineMath:undefined,item.kind==='paragraph'&&deps.parseReference?refFor(item.origin.documentId):undefined);
+    if(item.kind==='study')try{study=resolveStudy(item,fonts.body,undefined,catalog,numbering.next(item.componentId??item.studyKind!),answerFor(item));const resolved=slotRequests(item,study,document.source,deps.validateInlineMath);study={...study,component:resolved.component};namedSlots=resolved.namedSlots;}catch(e){reject(item.origin,String(e instanceof Error?e.message:e));continue;}
+    const inline=item.kind==='math'?{requestText:item.text,inlineStyles:undefined,inlineMath:undefined,sourceTextStart:item.sourceTextStart,sourceMap:undefined}:primaryInline(item.text,item.origin.range.start+offset,item.kind==='paragraph'||item.kind==='study'?deps.validateInlineMath:undefined,item.kind==='paragraph'&&deps.parseReference?refFor(item.origin.documentId):undefined);
     blocks.push({origin:item.origin,request:{text:inline.requestText,...(inline.inlineStyles?{inlineStyles:inline.inlineStyles}:{}),...(inline.inlineMath?{inlineMath:inline.inlineMath}:{}),width:block.width,fontSize:study?.fontSize??(item.kind==='heading'?6500:4200),...(study?.textStyle??(item.kind==='heading'?fonts.heading:fonts.body)),lineHeight:study?.lineHeight??1.8,...(item.kind==='math'?{}:multilineTextOptions(item.text,study?.paragraphGap))},splitPolicy:block.splitPolicy,...(item.kind==='math'?{displayMath:true as const,...(item.equationNumber?{equationNumber:item.equationNumber}:{})}:{}),...(item.listItem?{listItem:{...item.listItem,indentStep:5000,markerWidth:14000,gap:2000}}:{}),...(study?{component:study.component}:{}),...(namedSlots.length?{namedSlots}:{}),
       sourceTextStart:inline.sourceTextStart,sourceMap:inline.sourceMap,...(block.startPosition?{startPosition:block.startPosition,startPositionSource:block.startPositionSource}:{})});
   }
@@ -124,10 +124,9 @@ export function prepareBookBrowserPreview<S extends Scan>(documents:readonly Man
         const number=numbering.next(item.componentId??item.studyKind!);
         if(!active){chapter=number.chapter;active=true;chapterTitle=undefined;counters.fill(0);counters[0]=chapter;}
         design=resolveStudy(item,fonts.body,studyDesigns,catalog,number,answerFor(item));
-        const resolved=slotRequests(item,design,byId.get(item.origin.documentId)!.source);design={...design,component:resolved.component};namedSlots=resolved.namedSlots;
+        const resolved=slotRequests(item,design,byId.get(item.origin.documentId)!.source,deps.validateInlineMath);design={...design,component:resolved.component};namedSlots=resolved.namedSlots;
       }catch(e){diagnostics.push({code:'BC_PREVIEW_COMPONENT',message:String(e instanceof Error?e.message:e),documentId:item.origin.documentId,range:item.origin.range});continue;}
-      const inline=item.kind==='math'?{requestText:item.text,inlineStyles:undefined,inlineMath:undefined,sourceTextStart:item.sourceTextStart,sourceMap:undefined}:primaryInline(item.text,item.origin.range.start+offset,item.kind==='paragraph'?deps.validateInlineMath:undefined,item.kind==='paragraph'&&deps.parseReference?refFor(item.origin.documentId):undefined);
-      if(inline.inlineMath?.length&&design){diagnostics.push({code:'BC_PREVIEW_COMPONENT',message:'Inline math in paragraph component frames is not supported yet',documentId:item.origin.documentId,range:item.origin.range});continue;}
+      const inline=item.kind==='math'?{requestText:item.text,inlineStyles:undefined,inlineMath:undefined,sourceTextStart:item.sourceTextStart,sourceMap:undefined}:primaryInline(item.text,item.origin.range.start+offset,item.kind==='paragraph'||item.kind==='study'?deps.validateInlineMath:undefined,item.kind==='paragraph'&&deps.parseReference?refFor(item.origin.documentId):undefined);
       if(item.kind==='heading'){
         const level=item.level!;
         const numberedChapter=numbering.heading(level);
