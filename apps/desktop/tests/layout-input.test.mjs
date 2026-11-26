@@ -51,3 +51,9 @@ test('invalid font and component resource are rejected before measurement',()=>{
   assert.throws(()=>validateLayoutOptions(options,[{alias:'BCFont_custom',loaded:true,weight:400}]),/ウェイト/);
   assert.doesNotThrow(()=>validateLayoutOptions(options,[{alias:'BCFont_custom',loaded:true,weight:700}]));
 });
+
+test('block budget counts all prepared sections including page breaks',()=>{
+  const section=count=>({blocks:Array.from({length:count},()=>({kind:'pagebreak'}))});
+  assert.doesNotThrow(()=>validateLayoutOptions({sections:[section(64),section(64)]},[]));
+  assert.throws(()=>validateLayoutOptions({sections:[section(64),section(65)]},[]),{code:'PREVIEW_BLOCK_LIMIT',message:/128.*129/});
+});
