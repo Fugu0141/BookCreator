@@ -245,7 +245,7 @@ async function packageSmoke(){
   const originalZoom=win.webContents.getZoomFactor();
   const baselineWidth=await exec("innerWidth");
   const atUiZoom=async(factor,check)=>{
-    win.webContents.setZoomFactor(factor);
+    win.webContents.setZoomFactor(originalZoom*factor);
     try{
       await until("Math.abs(innerWidth-"+baselineWidth+"/"+factor+")<8");
       await until(check);
@@ -596,6 +596,29 @@ async function smoke(){
     await until("!document.querySelector('[data-property-tab="+category+"]').hidden&&[...document.querySelectorAll('.lab-inspector [data-property-tab]')].filter(p=>!p.hidden).length===1");
   }
   if(!await exec("document.querySelector('#lab-padding').closest('[data-property-tab]').dataset.propertyTab==='layout'&&document.querySelector('#lab-font-size').closest('[data-property-tab]').dataset.propertyTab==='appearance'"))throw Error('Inspector categories incorrect');
+  // At compact UI sizes the same editor becomes a scrollable vertical workspace.
+  const labOriginalZoom=win.webContents.getZoomFactor(),labBaseWidth=await exec("innerWidth");
+  win.webContents.setZoomFactor(labOriginalZoom*2);
+  try{
+    await until("Math.abs(innerWidth-"+labBaseWidth+"/2)<8");
+    await until("(()=>{const d=document.querySelector('.lab-three-pane'),r=d.getBoundingClientRect(),c=document.querySelector('#lab-cancel').getBoundingClientRect(),g=document.querySelector('.lab-grid-three');return r.left>=0&&r.right<=innerWidth+1&&r.top>=0&&r.bottom<=innerHeight+1&&c.left>=r.left&&c.right<=r.right&&g.clientHeight>0;})()");
+    if(await exec("innerWidth<=650")){
+      await until("(()=>{const a=document.querySelector('.lab-layers').getBoundingClientRect(),b=document.querySelector('.lab-canvas').getBoundingClientRect(),c=document.querySelector('.lab-inspector').getBoundingClientRect();return a.bottom<=b.top+1&&b.bottom<=c.top+1;})()");
+    }
+    await exec("document.querySelector('#lab-measure').scrollIntoView({block:'center',inline:'nearest'})");
+    await until("(()=>{const r=document.querySelector('#lab-measure').getBoundingClientRect(),g=document.querySelector('.lab-grid-three').getBoundingClientRect();return r.top>=g.top-1&&r.bottom<=g.bottom+1;})()");
+    await exec("document.querySelector('#lab-measure').click()");
+    await until("!document.querySelector('#lab-apply').disabled");
+    await exec("document.querySelector('[data-property-choice=layout]').scrollIntoView({block:'center',inline:'nearest'})");
+    await until("(()=>{const r=document.querySelector('[data-property-choice=layout]').getBoundingClientRect(),g=document.querySelector('.lab-grid-three').getBoundingClientRect();return r.top>=g.top-1&&r.bottom<=g.bottom+1;})()");
+    await exec("document.querySelector('[data-property-choice=layout]').click()");
+    await until("!document.querySelector('#lab-property-layout').hidden");
+  }finally{
+    win.webContents.setZoomFactor(labOriginalZoom);
+    await until("Math.abs(innerWidth-"+labBaseWidth+")<8");
+  }
+  await exec("document.querySelector('[data-property-choice=appearance]').click()");
+
   await exec("document.querySelector('#lab-measure').click()");
   await until("!document.querySelector('#lab-apply').disabled");
   await exec("document.querySelector('#lab-cancel').click()");
