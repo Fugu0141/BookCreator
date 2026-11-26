@@ -138,3 +138,13 @@ body{font-family:BCFont_NotoSansJP,system-ui,sans-serif}.font-control,.typograph
 .writing-tool-panel input:not([type=checkbox]):not([type=color]):not([type=number]){width:140px}
 .writing-tool-panel .font-control{margin:0}
 @media(max-width:1000px){.writing-toolbar button{padding:5px 7px;font-size:12px}.writing-tool-panel{max-height:180px}}
+
+/* Optional insertion metadata: keep the default insertion path compact. */
+.insertion-details{border:1px solid #d7e0e7;border-radius:6px;padding:6px 9px;max-width:100%;min-width:0}
+.insertion-details summary{cursor:pointer;font-size:13px;color:#263c50;min-height:28px;line-height:28px}
+.insertion-details summary:focus-visible{outline:2px solid #456f90;outline-offset:2px}
+.insertion-details[open]>.controls{margin:6px 0 0;gap:8px}
+.insertion-details small{overflow-wrap:anywhere;display:block;margin:4px 0}
+
+/* Closed details must exclude their fields from layout and interaction, including Chromium's content-visibility implementation. */
+.insertion-details:not([open])>:not(summary){display:none!important}
