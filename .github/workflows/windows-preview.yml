@@ -92,6 +92,45 @@ jobs:
             if ($restart.ExitCode -ne 0) { throw "Packaged restart failed: $($restart.ExitCode)" }
             if (-not (Test-Path $env:BC_PACKAGE_SMOKE_REPORT) -or -not (Select-String -Path $env:BC_PACKAGE_SMOKE_REPORT -Pattern 'PASS UX-10d portable Windows process restart' -Quiet)) { throw 'Missing restart smoke completion marker' }
             Get-Content $env:BC_PACKAGE_SMOKE_REPORT
+            # Force-terminate only the isolated test executable launched here.
+            # A ready marker is written after the real editor checkpoint and disk checks.
+            $env:BC_PACKAGE_SMOKE_REPORT = Join-Path $smokeParent 'crash-ready.txt'
+            $crashOut = Join-Path $env:RUNNER_TEMP 'bc-crash-prepare-stdout.txt'
+            $crashErr = Join-Path $env:RUNNER_TEMP 'bc-crash-prepare-stderr.txt'
+            $crash = Start-Process -FilePath (Join-Path $isolated 'BookCreator.exe') -ArgumentList '--package-crash-prepare' -WorkingDirectory $env:RUNNER_TEMP -RedirectStandardOutput $crashOut -RedirectStandardError $crashErr -PassThru
+            try {
+              $deadline = [DateTime]::UtcNow.AddSeconds(90)
+              $ready = $false
+              while ([DateTime]::UtcNow -lt $deadline) {
+                $crash.Refresh()
+                if ($crash.HasExited) { throw "Crash preparation exited before forced termination: $($crash.ExitCode)" }
+                if (Test-Path -LiteralPath $env:BC_PACKAGE_SMOKE_REPORT) {
+                  $marker = (Get-Content -LiteralPath $env:BC_PACKAGE_SMOKE_REPORT -Raw).Trim()
+                  if ($marker -eq "READY UX-10f-3 $($crash.Id)") { $ready = $true; break }
+                }
+                Start-Sleep -Milliseconds 200
+              }
+              if (-not $ready) { throw 'Missing crash-ready marker' }
+              taskkill /PID $crash.Id /T /F
+              if ($LASTEXITCODE -ne 0 -or -not $crash.WaitForExit(15000)) { throw 'Could not force-terminate isolated executable' }
+              if ($crash.ExitCode -eq 0) { throw 'Expected abnormal process exit' }
+            } finally {
+              $crash.Refresh()
+              if (-not $crash.HasExited) { taskkill /PID $crash.Id /T /F; $null = $crash.WaitForExit(15000) }
+              Get-Content $crashOut,$crashErr -ErrorAction SilentlyContinue
+            }
+            $env:BC_PACKAGE_SMOKE_REPORT = Join-Path $smokeParent 'crash-verified.txt'
+            $verifyOut = Join-Path $env:RUNNER_TEMP 'bc-crash-verify-stdout.txt'
+            $verifyErr = Join-Path $env:RUNNER_TEMP 'bc-crash-verify-stderr.txt'
+            $verify = Start-Process -FilePath (Join-Path $isolated 'BookCreator.exe') -ArgumentList '--package-crash-verify' -WorkingDirectory $env:RUNNER_TEMP -RedirectStandardOutput $verifyOut -RedirectStandardError $verifyErr -PassThru
+            if (-not $verify.WaitForExit(180000)) {
+              taskkill /PID $verify.Id /T /F
+              throw 'Crash recovery verification timeout'
+            }
+            Get-Content $verifyOut,$verifyErr -ErrorAction SilentlyContinue
+            if ($verify.ExitCode -ne 0) { throw "Crash recovery verification failed: $($verify.ExitCode)" }
+            if (-not (Test-Path $env:BC_PACKAGE_SMOKE_REPORT) -or -not (Select-String -Path $env:BC_PACKAGE_SMOKE_REPORT -Pattern 'PASS UX-10f-3 forced process recovery' -Quiet)) { throw 'Missing crash recovery completion marker' }
+            Get-Content $env:BC_PACKAGE_SMOKE_REPORT
           } finally {
             # Clean only the runner-owned profile tree, after Electron process exit.
             try {
