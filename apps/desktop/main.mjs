@@ -270,11 +270,59 @@ async function run(){
     await writeFile(join(smokeRoot,'manuscript','chapter.md'),'# 見出し\n\n'+('日本語と English text の実測組版です。 '.repeat(30)).trim()+'\n');
   }
   await win.loadURL(PAGE);
+  if(SMOKE){
+    if(!PACKAGE_RESTART_SMOKE){
+      await liveWritingSmoke();
+      // Legacy scenarios start with a fresh renderer, not a previously open book.
+      await win.loadURL(PAGE);
+    }
+    await selectManualPreviewForRegression();
+  }
   if(EXTRA_CRASH_MODE)await productionDataCrashSmoke(EXTRA_CRASH_MODE);
   else if(PACKAGE_CRASH_PREPARE||PACKAGE_CRASH_VERIFY)await crashRecoverySmoke(PACKAGE_CRASH_PREPARE);
   else if(PACKAGE_RESTART_SMOKE)await packageRestartSmoke();
   else if(PACKAGE_SMOKE)await packageSmoke();
   else if(SMOKE)await smoke();
+}
+// Existing explicit-composition regressions deliberately use the supported manual
+// mode. Exercise the default automatic mode separately before those regressions.
+async function selectManualPreviewForRegression(){
+  const raw=js=>win.webContents.executeJavaScript(js);
+  for(let i=0;i<100;i++){
+    if(await raw("!!document.querySelector('#live-preview')")){
+      await raw("(()=>{const e=document.querySelector('#live-preview');if(e.checked)e.click();})()");
+      if(await raw("document.querySelector('#live-preview').checked===false"))return;
+    }
+    await new Promise(r=>setTimeout(r,50));
+  }
+  throw Error('Cannot select manual preview for regression');
+}
+async function liveWritingSmoke(){
+  const raw=js=>win.webContents.executeJavaScript(js);
+  const until=async(label,js)=>{for(let i=0;i<150;i++){if(await raw(js))return;await new Promise(r=>setTimeout(r,100));}throw Error('Live writing: '+label+'; '+await raw("document.querySelector('#status')?.textContent"));};
+  const click=async selector=>{await until('enabled '+selector,"!!document.querySelector("+JSON.stringify(selector)+")&&!document.querySelector("+JSON.stringify(selector)+").disabled");await raw("document.querySelector("+JSON.stringify(selector)+").click()");};
+  const path=join(smokeRoot,'manuscript','chapter.md'),saved=await readFile(path,'utf8');
+  const ready="document.querySelector('#workspace-layout-state').dataset.phase==='ready'&&document.querySelector('#preview > div')?.dataset.paperFreshness==='current'";
+  const setSource=source=>raw("(()=>{const e=document.querySelector('#source');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(e,"+JSON.stringify(source)+");e.dispatchEvent(new Event('input',{bubbles:true}));})()");
+  await until('default live preview',"document.querySelector('#live-preview')?.checked===true");
+  await click('#open');await click('[data-section=chapter]');
+  await until('initial paper',ready+"&&!!document.querySelector('#preview').getClientRects().length");
+  await raw("(()=>{const e=document.querySelector('#source');e.focus();e.setSelectionRange(0,0);e.dispatchEvent(new CompositionEvent('compositionstart',{bubbles:true,data:'あ'}));})()");
+  const first=saved+'\nライブ組版途中。\n',latest=saved+'\nライブ組版最終確認。\n';
+  await setSource(first);
+  await new Promise(r=>setTimeout(r,350));
+  if(!await raw("document.querySelector('#workspace-layout-state').dataset.phase==='stale'&&document.querySelector('#preview > div').inert"))throw Error('IME intermediate source triggered live composition');
+  await setSource(latest);
+  await raw("document.querySelector('#source').dispatchEvent(new CompositionEvent('compositionend',{bubbles:true,data:'あ'}))");
+  await until('latest paper',ready+"&&document.querySelector('#preview > div').shadowRoot.textContent.includes('ライブ組版最終確認。')&&!document.querySelector('#preview > div').shadowRoot.textContent.includes('ライブ組版途中。')&&document.activeElement.id==='source'");
+  if(await readFile(path,'utf8')!==saved)throw Error('Live writing changed saved manuscript');
+  await setSource(saved);
+  await until('reverted source',ready+"&&document.querySelector('#workspace-save-state').textContent==='保存済み'");
+  // Reopening through the normal discard path cleans any coalesced recovery draft.
+  await click('#mode-home');await click('#open');
+  await until('reopened book',"document.querySelector('.workspace-shell').dataset.workspaceMode==='writing'&&!document.querySelector('#open').disabled&&!document.querySelector('#source').value");
+  await click('#mode-home');
+  console.log('PASS default live writing preview, IME, latest result, focus and disk safety');
 }
 // Short distribution smoke test: no installed fonts, user projects or native dialogs required.
 // Existing regression scenarios still use the real controls, but reach them through
@@ -1389,6 +1437,7 @@ async function writingJourneySmoke(){
   // Start a fresh renderer in the same isolated Electron process/profile.
   // This verifies catalog reload from disk; not a full OS/process restart.
   await win.loadURL(PAGE);
+  await selectManualPreviewForRegression();
   await until('fresh renderer home',mode('home')+"&&!![...document.querySelectorAll('.hub-project-open')].find(e=>e.querySelector('strong')?.textContent==="+JSON.stringify(title)+")");
   await raw("(()=>{const e=[...document.querySelectorAll('.hub-project-open')].find(e=>e.querySelector('strong')?.textContent==="+JSON.stringify(title)+");if(!e?.getClientRects().length||e.disabled)throw Error('New project not accessible');e.click();})()");
   await until('reopened book',mode('writing')+"&&!!document.querySelector('[data-section=chapter-01]')&&!document.querySelector('[data-section=chapter-01]').disabled");
@@ -1545,7 +1594,7 @@ async function productionDataCrashSmoke(mode){
     if(after.theme===saved.theme||after.manifest===saved.manifest||after.source!==saved.source||(await records()).length)throw Error('Explicit settings save or cleanup failed');
     // Read through a fresh renderer and actual workspace activation, not
     // merely an in-memory state update or a changed YAML hash.
-    await win.loadURL(PAGE);await openBook();
+    await win.loadURL(PAGE);await selectManualPreviewForRegression();await openBook();
     await click('#mode-design');await click('#design-tab-styles');
     await until('saved font reloaded',"document.querySelector('#body-font').value==="+JSON.stringify(oracle.values.font)+"&&!document.querySelector('#settings-recovery-review-typography')");
     await click('#book-settings');
@@ -1611,7 +1660,7 @@ async function crashRecoverySmoke(prepare){
   // preserved and must not be offered as an automatic restore.
   const external=saved+'\n外部変更の検証。\n';
   await writeFile(path,external);
-  await win.loadURL(PAGE);await openBook();
+  await win.loadURL(PAGE);await selectManualPreviewForRegression();await openBook();
   await until('diverged review',"document.querySelector('#recovery-dialog').open&&document.querySelector('#recovery-saved-text').value==="+JSON.stringify(external)+"&&document.querySelector('#recovery-draft-text').value==="+JSON.stringify(draft)+"&&!document.querySelector('#recovery-restore')");
   await click('#recovery-later');
   await until('diverged deferred',"!document.querySelector('#recovery-dialog').open&&document.querySelector('#source').readOnly");
@@ -1619,7 +1668,7 @@ async function crashRecoverySmoke(prepare){
   // Restore only the test fixture to its exact prior bytes, then exercise
   // explicit restoration and normal revision-checked save.
   await writeFile(path,saved);
-  await win.loadURL(PAGE);await openBook();
+  await win.loadURL(PAGE);await selectManualPreviewForRegression();await openBook();
   await click('#recovery-restore');
   await until('restored but unsaved',"!document.querySelector('#recovery-dialog').open&&document.querySelector('#source').value==="+JSON.stringify(draft)+"&&document.querySelector('#workspace-save-state').textContent==='未保存：原稿'");
   if(await readFile(path,'utf8')!==saved)throw Error('Recovery overwrote original before save');
@@ -1652,6 +1701,7 @@ async function recoveryJourneySmoke(){
   if((await store.get(key))?.text!==draft||await readFile(path,'utf8')!==saved)throw Error('Recovery checkpoint changed original or lost draft');
   async function reopen(){
     await win.loadURL(PAGE);
+    await selectManualPreviewForRegression();
     await until('home catalog',"[...document.querySelectorAll('.hub-project-open')].some(e=>e.querySelector('strong')?.textContent==='執筆フロー検証書籍')");
     await raw("(()=>{const e=[...document.querySelectorAll('.hub-project-open')].find(e=>e.querySelector('strong')?.textContent==='執筆フロー検証書籍');if(!e?.getClientRects().length||e.disabled)throw Error('Fixture unavailable');e.click();})()");
     await click('[data-section=chapter-01]');
@@ -1690,6 +1740,7 @@ async function settingsRecoveryJourneySmoke(){
   await until('both recorded',"['typography','book-settings'].every(k=>document.querySelector('#settings-recovery-state-'+k)?.dataset.phase==='recorded')");
   if((await store.list()).records.length!==2||await readFile(manifest,'utf8')!==savedManifest||await readFile(theme,'utf8')!==savedTheme)throw Error('Settings checkpoint changed ordinary files');
   await win.loadURL(PAGE);
+  await selectManualPreviewForRegression();
   await until('home catalog',"[...document.querySelectorAll('.hub-project-open')].some(e=>e.querySelector('strong')?.textContent==='執筆フロー検証書籍'&&!e.disabled)");
   await click('#hub-recovery');
   await until('settings listed',"document.querySelector('#hub-recovery-summary')?.textContent==='2 件の復旧候補'&&['typography','book-settings'].every(k=>!!document.querySelector('[data-recovery-setting='+k+'] .hub-recovery-open'))");
@@ -1738,6 +1789,7 @@ async function componentRecoveryJourneySmoke(){
   if(snapshot.length!==1||await readFile(themePath,'utf8')!==savedTheme)throw Error('Component checkpoint modified theme or missed draft');
   async function reopen(){
     await win.loadURL(PAGE);
+    await selectManualPreviewForRegression();
     await until('home catalog',"[...document.querySelectorAll('.hub-project-open')].some(e=>e.querySelector('strong')?.textContent==='執筆フロー検証書籍'&&!e.disabled)");
     await click('#hub-recovery');
     await until('registered component listed',"document.querySelector('#hub-recovery-summary')?.textContent==='1 件の復旧候補'&&!!document.querySelector("+JSON.stringify('[data-recovery-entry='+oracle.customId+'] .hub-recovery-open')+")");
