@@ -20,6 +20,7 @@ import {planBlockOperation} from './structured-operations.mjs';
 const parseStructuredInline=value=>parsePreviewInline(value,0,parsePreviewMath);
 const deps={scan:scanDocument,validate:validateScannedBlocks,index:indexBlockIds,validateDisplayMath:parseDisplayMath,validateInlineMath:parsePreviewMath,parseReference:parseReferenceToken};
 import {recoverySession} from './recovery-session.mjs';
+import {settingsDraftSession} from './settings-draft-session.mjs';
 const api=window.bookcreator;
 const studyNames={note:'補足',tip:'ポイント',warning:'注意',important:'重要',example:'例題',exercise:'練習問題',explanation:'解説'};
 const noto='BCFont_NotoSansJP',stix='BCFont_STIXTwoMath';
@@ -94,17 +95,21 @@ function App(){
   const [typography,setTypography]=useState(initialTypography),[editorFont,setEditorFont]=useState(noto);
   const [theme,setTheme]=useState(null),[creating,setCreating]=useState(false),[newBook,setNewBook]=useState({title:'新しい書籍',folder:'new-book',size:'A5'});
   const [savedSettings,setSavedSettings]=useState(null),[page,setPage]=useState(null),[order,setOrder]=useState([]),[showSettings,setShowSettings]=useState(false);
+  const settingsControllers=useRef({}),settingsDialog=useRef(null);
+  const [settingsCandidates,setSettingsCandidates]=useState({}),[settingsRecoveryStates,setSettingsRecoveryStates]=useState({}),[settingsReview,setSettingsReview]=useState(null),[settingsResolving,setSettingsResolving]=useState(false);
+  const typographyLocked=!!settingsCandidates.typography,bookSettingsLocked=!!settingsCandidates['book-settings'];
   const settingsDirty=!!savedSettings&&JSON.stringify({page,sections:order})!==JSON.stringify({page:savedSettings.page,sections:savedSettings.sections.filter(s=>s.editable).map(s=>({id:s.id,startOn:s.startOn}))});
   function applySettings(s){setSavedSettings(s);setPage(s.page);setOrder(s.sections.filter(x=>x.editable).map(x=>({id:x.id,startOn:x.startOn})));setBook(b=>b?{...b,sections:s.sections,pageSettings:s.page}:b);}
-  function saveBookSettings(){void io(async()=>{const s=await unwrap(api.saveBookSettings(savedSettings.revision,{page,sections:order}));invalidate();applySettings(s);setStatus('書籍設定を保存しました。');});}
-  function changePage(key,value){setPage(p=>({...p,[key]:value}));invalidate();}
-  function moveSection(i,delta){setOrder(prev=>{const a=[...prev],j=i+delta;if(j<0||j>=a.length)return prev;[a[i],a[j]]=[a[j],a[i]];return a;});invalidate();}
-  function setStart(id,startOn){setOrder(prev=>prev.map(s=>s.id===id?{...s,startOn}:s));invalidate();}
-  function discardSettings(){if(savedSettings){applySettings(savedSettings);invalidate();}}
+  function saveBookSettings(){if(bookSettingsLocked)return;void io(async()=>{await persistSettings('book-settings');setStatus('書籍設定を保存しました。');});}
+  function changePage(key,value){if(bookSettingsLocked)return;setPage(p=>({...p,[key]:value}));invalidate();}
+  function moveSection(i,delta){if(bookSettingsLocked)return;setOrder(prev=>{const a=[...prev],j=i+delta;if(j<0||j>=a.length)return prev;[a[i],a[j]]=[a[j],a[i]];return a;});invalidate();}
+  function setStart(id,startOn){if(bookSettingsLocked)return;setOrder(prev=>prev.map(s=>s.id===id?{...s,startOn}:s));invalidate();}
+  function discardSettings(){if(bookSettingsLocked)return;if(savedSettings){applySettings(savedSettings);invalidate();}}
   const [fonts,setFonts]=useState([]),[fontManager,setFontManager]=useState(false),[rights,setRights]=useState({license:'',licenseText:'',copyAllowed:false,embedAllowed:false});
   const fontChoices=[...choices,...fonts.map(f=>({id:f.alias,label:f.family+' '+f.style+' · '+f.sha256.slice(0,8)+(f.loaded?'':'（読込失敗）'),disabled:!f.loaded}))];
   const mathFontChoices=[{id:'auto',label:'自動（システム数式フォント）'},{id:stix,label:'STIX Two Math（同梱）'},...fontChoices.filter(c=>fonts.some(f=>f.alias===c.id&&f.hasMathTable&&f.weight===400))];
   function setMathFont(value){
+    if(typographyLocked)return;
     if(!mathFontChoices.some(c=>c.id===value&&!c.disabled))return;
     setTypography(t=>{const {mathFontFamily:_,...text}=t;return value==='auto'?text:{...text,mathFontFamily:value};});
     invalidate();setStatus('数式フォントを変更しました（未保存）。');
@@ -124,7 +129,7 @@ function App(){
   const componentFonts=fontChoices.map(c=>({id:idsByFamily[c.id]??('font-'+c.id.slice(7)),label:c.label,weights:weightsFor(c.id),disabled:c.disabled}));
   function applyHeadingDesign(design){void io(async()=>{const next=await unwrap(api.saveHeadingDesign(theme.revision,design,labLevel));setTheme(next);setLabOpen(false);invalidate();setStatus(design?.componentId?'共有部品を見出しに割り当てました。':'見出し部品をテーマに保存しました。');});}
   const themeDirty=!!theme&&JSON.stringify(typography)!==JSON.stringify(fromRoles(theme.roles));
-  async function applyBook(next){resetRecovery();invalidate();setLayoutState({phase:'idle',scope:null,pages:0});setImages([]);setImageManager(false);setImageAllowed(false);setFonts(await registerProjectFonts(next.fonts??[]));setEditorFont(noto);setRights({license:'',licenseText:'',copyAllowed:false,embedAllowed:false});setBook(next);if(next.recent)setProjects(next.recent);setCatalogError(next.catalogWarning??'');setMode('writing');setWritingPanel(null);setEditorView('source');setStructuredDraft(null);setStudyLinkDraft(null);setStructuredHistory(null);setStructuredComposing(false);setOutlineOpen(true);setCompactPane('editor');setPageListOpen(true);setPageInfoOpen(true);setShortcutHelp(false);setDesignTab('styles');setComponentSearch('');setComponentFilter('all');setInitialLibraryEntry(null);setShowPaper(false);setFontManager(false);setStudyInstanceId('');setAnswerTo('');setStudyChoice('example');applySettings(next.settings);setShowSettings(false);setFile(null);setText('');setTheme(next.typography);setTypography(fromRoles(next.typography.roles));setCreating(false);setLabOpen(false);setParagraphOpen(false);setStudyOpen(false);setLabLevel("default");setStatus(next.typography.message??'原稿を選択してください。');}
+  async function applyBook(next){installSettingsRecovery(next.settingRecovery);resetRecovery();invalidate();setLayoutState({phase:'idle',scope:null,pages:0});setImages([]);setImageManager(false);setImageAllowed(false);setFonts(await registerProjectFonts(next.fonts??[]));setEditorFont(noto);setRights({license:'',licenseText:'',copyAllowed:false,embedAllowed:false});setBook(next);if(next.recent)setProjects(next.recent);setCatalogError(next.catalogWarning??'');setMode('writing');setWritingPanel(null);setEditorView('source');setStructuredDraft(null);setStudyLinkDraft(null);setStructuredHistory(null);setStructuredComposing(false);setOutlineOpen(true);setCompactPane('editor');setPageListOpen(true);setPageInfoOpen(true);setShortcutHelp(false);setDesignTab('styles');setComponentSearch('');setComponentFilter('all');setInitialLibraryEntry(null);setShowPaper(false);setFontManager(false);setStudyInstanceId('');setAnswerTo('');setStudyChoice('example');applySettings(next.settings);setShowSettings(false);setFile(null);setText('');setTheme(next.typography);setTypography(fromRoles(next.typography.roles));setCreating(false);setLabOpen(false);setParagraphOpen(false);setStudyOpen(false);setLabLevel("default");setStatus(next.typography.message??'原稿を選択してください。');}
   useEffect(()=>{void refreshProjects();},[]);
   async function loadRecoveryHub(){try{setRecoveryHub(await unwrap(api.listRecoveryCandidates()));setRecoveryHubError('');}catch(e){setRecoveryHub(null);setRecoveryHubError(String(e.message??e));}}
   async function refreshProjects(){await io(async()=>{let next;try{next=await unwrap(api.listProjects());setCatalogError('');}catch(e){setCatalogError(String(e.message??e));}await loadRecoveryHub();if(next)setProjects(next);});}
@@ -133,14 +138,14 @@ function App(){
     if(routeBlockRef.current||composing.current)return;
     if(book?.projectId===item.projectId&&file?.id===item.sectionId){navigate('writing');if(recoveryCandidate)setRecoveryOpen(true);return;}
     if(!confirmProjectDiscard())return;
-    void io(()=>withDiscard(async()=>{const next=await unwrap(api.openRegisteredProject(item.projectId));await applyBook(next);const selected=await unwrap(api.read(item.sectionId));installRead(selected);setCompactPane('editor');setStatus('復旧候補を確認してください。');}));
+    void io(()=>withProjectDiscard(async()=>{const next=await unwrap(api.openRegisteredProject(item.projectId));await applyBook(next);const selected=await unwrap(api.read(item.sectionId));installRead(selected);setCompactPane('editor');setStatus('復旧候補を確認してください。');}));
   }
-  function openRegistered(id){if(!confirmProjectDiscard())return;void io(()=>withDiscard(async()=>{const next=await unwrap(api.openRegisteredProject(id));await applyBook(next);}));}
+  function openRegistered(id){if(!confirmProjectDiscard())return;void io(()=>withProjectDiscard(async()=>{const next=await unwrap(api.openRegisteredProject(id));await applyBook(next);}));}
   function favoriteProject(id,value){void io(async()=>{setProjects(await unwrap(api.favoriteProject(id,value)));});}
   function forgetProject(id){if(!window.confirm('一覧から登録を解除しますか？ 書籍ファイルは削除されません。'))return;void io(async()=>{setProjects(await unwrap(api.forgetProject(id)));});}
-  function create(){if(!confirmProjectDiscard())return;void io(()=>withDiscard(async()=>{const next=await unwrap(api.create(newBook));if(next)await applyBook(next);}));}
-  function saveTheme(){if(!theme?.editable||!themeDirty)return;void io(async()=>{const next=await unwrap(api.saveTypography(theme.revision,toRoles(typography)));setTheme(next);setStatus('テーマを保存しました。');});}
-  function setRole(role,key,value){setTypography(t=>({...t,[role]:{...t[role],[key]:value,...(key==='fontFamily'&&fonts.some(f=>f.alias===value)?{fontWeight:weightsFor(value)[0]}:key==='fontFamily'&&![400,500,600,700].includes(t[role].fontWeight)?{fontWeight:400}:{})}}));invalidate();setStatus('書籍プレビューのフォント設定を変更しました（未保存）。');}
+  function create(){if(!confirmProjectDiscard())return;void io(()=>withProjectDiscard(async()=>{const next=await unwrap(api.create(newBook));if(next)await applyBook(next);}));}
+  function saveTheme(){if(typographyLocked||!theme?.editable||!themeDirty)return;void io(async()=>{await persistSettings('typography');setStatus('テーマを保存しました。');});}
+  function setRole(role,key,value){if(typographyLocked)return;setTypography(t=>({...t,[role]:{...t[role],[key]:value,...(key==='fontFamily'&&fonts.some(f=>f.alias===value)?{fontWeight:weightsFor(value)[0]}:key==='fontFamily'&&![400,500,600,700].includes(t[role].fontWeight)?{fontWeight:400}:{})}}));invalidate();setStatus('書籍プレビューのフォント設定を変更しました（未保存）。');}
   const textarea=useRef(null),preview=useRef(null),generation=useRef(0),working=useRef(false);
   const paperView=usePaperViewport(preview,mode==='layout',activePage,layoutState.phase==='ready');
   const [hasSelection,setHasSelection]=useState(false);
@@ -156,6 +161,72 @@ function App(){
   useEffect(()=>{textarea.current?.setSelectionRange(0,0);setHasSelection(false);},[file?.id]);
   useEffect(()=>{syncSelection();},[text,mode]);
   const dirty=!!file&&text!==file.text;
+  function installSettingsRecovery(info){
+    for(const controller of Object.values(settingsControllers.current))controller.close();
+    settingsControllers.current={};setSettingsReview(null);
+    const candidates={},states={};
+    for(const kind of ['typography','book-settings']){
+      const entry=info?.[kind];
+      if(!entry||entry.error){if(entry?.error)states[kind]={phase:'error',message:entry.error};continue;}
+      if(entry.candidate)candidates[kind]={...entry.candidate,saved:entry.saved};
+      states[kind]={phase:entry.candidate?'candidate':'idle',message:''};
+      const controller=settingsDraftSession(entry,request=>unwrap(api.settingsRecovery({...request,kind,token:info.token})),(phase,message='')=>{
+        if(settingsControllers.current[kind]===controller)setSettingsRecoveryStates(previous=>({...previous,[kind]:{phase,message}}));
+      });
+      settingsControllers.current[kind]=controller;
+    }
+    setSettingsCandidates(candidates);setSettingsRecoveryStates(states);
+  }
+  const typographyValue=JSON.stringify(toRoles(typography)),bookSettingsValue=JSON.stringify({page,sections:order});
+  useEffect(()=>{
+    if(theme?.revision)settingsControllers.current.typography?.update({revision:theme.revision,value:JSON.parse(typographyValue),dirty:themeDirty});
+  },[theme?.revision,typographyValue,themeDirty]);
+  useEffect(()=>{
+    if(savedSettings?.revision)settingsControllers.current['book-settings']?.update({revision:savedSettings.revision,value:JSON.parse(bookSettingsValue),dirty:settingsDirty});
+  },[savedSettings?.revision,bookSettingsValue,settingsDirty]);
+  useEffect(()=>{
+    const node=settingsDialog.current;
+    if(settingsReview&&node&&!node.open)node.showModal();
+    else if(!settingsReview&&node?.open)node.close();
+  },[settingsReview]);
+  async function resolveSettingsRecovery(action){
+    const kind=settingsReview,candidate=settingsCandidates[kind],controller=settingsControllers.current[kind];
+    if(!candidate||!controller||settingsResolving)return;
+    if(action==='later'){setSettingsReview(null);return;}
+    setSettingsResolving(true);
+    try{
+      const value=await controller.resolve(action,kind==='typography'?theme?.revision:savedSettings?.revision);
+      if(action==='restore'){
+        if(kind==='typography'){setTypography(fromRoles(value));setMode('design');setDesignTab('styles');setShowSettings(false);}
+        else{setPage(value.page);setOrder(value.sections);setMode('settings');setShowSettings(true);}
+        invalidate();setStatus('復旧した設定は未保存です。内容を確認して保存してください。');
+      }else setStatus('設定の復旧候補を破棄しました。');
+      setSettingsCandidates(previous=>{const next={...previous};delete next[kind];return next;});setSettingsReview(null);
+    }catch(e){setSettingsRecoveryStates(previous=>({...previous,[kind]:{phase:'error',message:String(e.message??e)}}));}
+    finally{setSettingsResolving(false);}
+  }
+  async function persistSettings(kind){
+    const controller=settingsControllers.current[kind];
+    await controller?.pause();
+    try{
+      if(kind==='typography'){
+        const value=toRoles(typography),saved=await unwrap(api.saveTypography(theme.revision,value));setTheme(saved);
+        try{await controller?.saved({revision:saved.revision,value,dirty:false});}catch(e){setSettingsRecoveryStates(previous=>({...previous,[kind]:{phase:'error',message:'保存済みですが復旧記録を整理できません：'+String(e.message??e)}}));}
+      }else{
+        const value={page,sections:order},saved=await unwrap(api.saveBookSettings(savedSettings.revision,value));invalidate();applySettings(saved);
+        try{await controller?.saved({revision:saved.revision,value,dirty:false});}catch(e){setSettingsRecoveryStates(previous=>({...previous,[kind]:{phase:'error',message:'保存済みですが復旧記録を整理できません：'+String(e.message??e)}}));}
+      }
+    }finally{controller?.resume();}
+  }
+  async function pauseSettingDrafts(){for(const controller of Object.values(settingsControllers.current))await controller.pause();}
+  function resumeSettingDrafts(){for(const controller of Object.values(settingsControllers.current))controller.resume();}
+  async function discardSettingDrafts(){for(const controller of Object.values(settingsControllers.current))await controller.discard();}
+  async function withProjectDiscard(fn){
+    const old=settingsControllers.current;
+    await pauseSettingDrafts();
+    try{await discardSettingDrafts();return await withDiscard(fn);}
+    finally{if(settingsControllers.current===old)resumeSettingDrafts();}
+  }
   const recoveryRef=useRef(null),recoveryDialog=useRef(null);
   const [recoveryCandidate,setRecoveryCandidate]=useState(null),[recoveryOpen,setRecoveryOpen]=useState(false),[recoveryState,setRecoveryState]=useState({phase:'idle',message:''}),[recoveryResolving,setRecoveryResolving]=useState(false);
   function resetRecovery(){
@@ -214,7 +285,7 @@ function App(){
   const confirmDiscard=()=>!dirty||window.confirm('未保存の変更を破棄しますか？');
   const confirmProjectDiscard=()=>!(dirty||themeDirty||settingsDirty)||window.confirm('未保存の原稿・テーマ・書籍設定を破棄しますか？');
   async function io(fn){if(working.current)return;working.current=true;setBusy(true);try{await fn();}catch(e){setStatus(String(e.message??e));}finally{working.current=false;setBusy(false);}}
-  function open(){if(!confirmProjectDiscard())return;void io(()=>withDiscard(async()=>{const next=await unwrap(api.open());if(next)await applyBook(next);}));}
+  function open(){if(!confirmProjectDiscard())return;void io(()=>withProjectDiscard(async()=>{const next=await unwrap(api.open());if(next)await applyBook(next);}));}
   function select(id){if(routeBlockRef.current||composing.current){setStatus('現在の操作を完了または取り消してから原稿を切り替えてください。');return;}if(file?.id===id){setCompactPane('editor');if(compactWidthRef.current)setCompactFocusRequest({pane:'editor',id});return;}if(!confirmDiscard())return;void io(()=>withDiscard(async()=>{const next=await unwrap(api.read(id));invalidate();setStructuredHistory(null);installRead(next);setWritingPanel(null);setCompactPane('editor');if(compactWidthRef.current)setCompactFocusRequest({pane:'editor',id:next.id});setStatus(next.editable?'原稿を読み込みました。':'混在改行のため読み取り専用です。');}));}
   function save(){if(composing.current||routeBlockRef.current||!file?.editable||!dirty)return;void io(async()=>{await persistManuscript();setStatus('保存しました。');});}
   const [includeOptionalSlots,setIncludeOptionalSlots]=useState(false);
@@ -490,7 +561,7 @@ function App(){
   }
   useEffect(()=>{if(mode==='layout'&&layoutState.phase==='ready'){const frame=requestAnimationFrame(trackPage);return ()=>cancelAnimationFrame(frame);}},[mode,layoutState.phase]);
   const selectedPage=layoutPages[activePage-1];
-  const routeBlocked=busy||recoveryOpen||isComposing||structuredComposing||!!structuredDraft||!!studyLinkDraft||!!mathDraft||!!referenceDraft||labOpen||paragraphOpen||studyOpen;
+  const routeBlocked=busy||settingsReview||recoveryOpen||isComposing||structuredComposing||!!structuredDraft||!!studyLinkDraft||!!mathDraft||!!referenceDraft||labOpen||paragraphOpen||studyOpen;
   const routeBlockRef=useRef(false);routeBlockRef.current=routeBlocked;
   const formatDisabled=routeBlocked||!file?.editable||!hasSelection;
   const unsaved=[dirty&&'原稿',themeDirty&&'テーマ',settingsDirty&&'書籍設定'].filter(Boolean);
@@ -501,14 +572,14 @@ function App(){
   const closeSaveAllowed=(!dirty||file?.editable)&&(!themeDirty||theme?.editable)&&(!settingsDirty||(!!validPaper(page)&&order.every(s=>['page','continuous'].includes(s.startOn))));
   closeHandler.current=token=>{
     // Never move focus away from an active IME composition to show a dialog.
-    if(recoveryOpen||composing.current||mathComposing.current||structuredComposing||isComposing){
-      setStatus(recoveryOpen?'復旧候補を確認または保留してから終了してください。':'文字入力を確定してから終了してください。');
+    if(settingsReview||recoveryOpen||composing.current||mathComposing.current||structuredComposing||isComposing){
+      setStatus(settingsReview||recoveryOpen?'復旧候補を確認または保留してから終了してください。':'文字入力を確定してから終了してください。');
       void api.completeClose(token,'cancel').catch(e=>setStatus(String(e.message??e)));
       return;
     }
     if(!closeBlocked&&!unsaved.length){
       working.current=true;setBusy(true);
-      void withDiscard(()=>api.completeClose(token,'exit')).catch(e=>{setCloseError(String(e.message??e));setCloseRequest({token,blocked:false});}).finally(()=>{working.current=false;setBusy(false);});
+      void withProjectDiscard(()=>api.completeClose(token,'exit')).catch(e=>{setCloseError(String(e.message??e));setCloseRequest({token,blocked:false});}).finally(()=>{working.current=false;setBusy(false);});
       return;
     }
     setCloseError('');setCloseRequest({token,blocked:closeBlocked});
@@ -529,16 +600,16 @@ function App(){
       if(decision==='save'){
         saving=true;working.current=true;setBusy(true);
         if(dirty){await persistManuscript();completed.push('原稿');}
-        if(themeDirty){const saved=await unwrap(api.saveTypography(theme.revision,toRoles(typography)));setTheme(saved);completed.push('テーマ');}
-        if(settingsDirty){const saved=await unwrap(api.saveBookSettings(savedSettings.revision,{page,sections:order}));applySettings(saved);completed.push('書籍設定');}
+        if(themeDirty){await persistSettings('typography');completed.push('テーマ');}
+        if(settingsDirty){await persistSettings('book-settings');completed.push('書籍設定');}
       }
-      if(decision==='discard'){await recoveryRef.current?.pause();await recoveryRef.current?.discard();}
-      else if(decision==='save'){await recoveryRef.current?.pause();}
+      if(decision==='discard'){await pauseSettingDrafts();await discardSettingDrafts();await recoveryRef.current?.pause();await recoveryRef.current?.discard();}
+      else if(decision==='save'){await pauseSettingDrafts();await recoveryRef.current?.pause();}
       await api.completeClose(closeRequest.token,decision==='cancel'?'cancel':'exit');
       if(decision==='cancel')setCloseRequest(null);
     }catch(e){
       const message=(completed.length?completed.join('・')+'は保存済み。':'')+'終了できませんでした：'+String(e.message??e);
-      recoveryRef.current?.resume(text);setCloseError(message);setStatus(message);
+      resumeSettingDrafts();recoveryRef.current?.resume(text);setCloseError(message);setStatus(message);
     }finally{
       if(saving){working.current=false;setBusy(false);}
       closeAction.current=false;setCloseSaving(false);
@@ -548,7 +619,7 @@ function App(){
   const layoutLabel=layoutState.phase==='ready'?(layoutState.scope==='book'?'全冊':'選択原稿')+' '+layoutState.pages+'ページ（試作）':({idle:'未組版',stale:'組版の更新が必要',running:'組版中…',failed:'組版できませんでした'})[layoutState.phase];
   function navigate(next){
     if(next===mode)return;
-    if(busy||recoveryOpen||composing.current||structuredComposing||structuredDraft||studyLinkDraft||mathDraft||referenceDraft||labOpen||paragraphOpen||studyOpen){setStatus('現在の操作を完了または取り消してから画面を切り替えてください。');return;}
+    if(busy||settingsReview||recoveryOpen||composing.current||structuredComposing||structuredDraft||studyLinkDraft||mathDraft||referenceDraft||labOpen||paragraphOpen||studyOpen){setStatus('現在の操作を完了または取り消してから画面を切り替えてください。');return;}
     if(next!=='home'&&!book)return;
     setCreating(false);setMode(next);setCompactPane('editor');setCompactFocusRequest(null);setWritingPanel(null);if(next==='home'){setHomeTab('projects');setRecoveryHub(null);setRecoveryHubError('');}setShowSettings(next==='settings');
   }
