@@ -532,7 +532,7 @@ function App(){
       const rev=String(job),fingerprint='desktop-poc-'+job+'-'+__BUNDLED_FONT_FINGERPRINT__+'-'+JSON.stringify(typography)+'-'+fonts.map(f=>f.sha256).join(',')+'-'+JSON.stringify({page,order,headingDesign:theme?.headingDesign,headingLevels:theme?.headingLevels,paragraphDesign:theme?.paragraphDesign,studyDesigns:theme?.studyDesigns,library:theme?.library});
       const needsContext=raw.includes(':ref{')||/:::layout\{/.test(raw)||raw.includes('answer-to')||hasDynamicLabels(theme?.headingDesign)||Object.values(theme?.headingLevels??{}).some(hasDynamicLabels)||Object.values(theme?.studyDesigns??{}).some(hasStudyNumbering)||(theme?.library?.entries??[]).some(e=>e.usage==='study'&&hasStudyNumbering(e.design));
       if(whole||needsContext){
-        const snapshot=await unwrap(api.readBook());
+        const snapshot=await unwrap(api.readPreviewBook(book.settingRecovery.token));
         if(!layoutGate.current.isCurrent(job))return;
         const byId=new Map(snapshot.map(d=>[d.documentId,d]));
         documents=order.map(s=>{
