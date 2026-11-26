@@ -10,4 +10,7 @@ test('synthetic workload is reproducible, progressively larger and below current
   assert.ok(sizes.reduce((a,b)=>a+b,0)<49000);
   assert.ok(f.chapters.reduce((n,c)=>n+(c.source.match(/\$/g)?.length??0)/2,0)<512);
   assert.ok(f.chapters.every(c=>f.manifest.includes('manuscript/'+c.id+'.md')));
+  // Reserve space for section-boundary blocks and one unsaved edit.
+  assert.ok(f.chapters.reduce((n,c)=>n+c.blocks,0)+f.chapters.length+1<=128);
+  assert.equal(f.oversizedSource.trim().split('\n\n').length,129);
 });
