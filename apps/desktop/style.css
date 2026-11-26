@@ -395,3 +395,11 @@ body{font-family:BCFont_NotoSansJP,system-ui,sans-serif}.font-control,.typograph
 .structured-inline-tools>strong{font-size:12px;color:var(--bc-muted)}
 .structured-inline-tools input{width:100%;max-width:100%;box-sizing:border-box;font-family:monospace;margin:6px 0}
 .structured-inline-tools>.structured-actions{margin:6px 0}
+
+/* UX-08d: edit manuscript fields, not design definitions. */
+.structured-study>.structured-block-heading strong{font-size:15px;color:var(--bc-primary)}
+.structured-study-meta{display:flex;flex-wrap:wrap;gap:6px 12px;font-size:11px;color:var(--bc-muted);overflow-wrap:anywhere}
+.structured-study-field{margin:8px 0;padding:8px 10px;border:1px solid var(--bc-border);border-radius:5px;background:#f6f9fb}
+.structured-study-field label{display:block;color:var(--bc-muted);font-weight:600;font-size:12px}
+.structured-study-field textarea{width:100%;box-sizing:border-box;min-height:100px;margin-top:6px;resize:vertical;font:inherit;line-height:1.6}
+.structured-study-field .structured-content{background:white;border-radius:3px;padding:8px;min-height:24px}
