@@ -575,7 +575,7 @@ test('batch list formatting converts a whole isolated run, keeps markup and mixe
 
 
 test('BCM display math -> strict engine block and exact formula offsets (LF and CRLF)',()=>{
-  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds,validateDisplayMath:engine.parsePreviewMath};
+  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds,validateDisplayMath:engine.parseDisplayMath};
   const size={width:100000,height:70000},formula='  \\frac{a_1^2}{\\sqrt{b}} ';
   for(const nl of ['\n','\r\n']){
     const source=['導入。','','$$ ',formula,'$$','','結び。'].join(nl);
@@ -597,9 +597,9 @@ test('BCM display math -> strict engine block and exact formula offsets (LF and 
   }
 });
 test('display math rejects incomplete fences, unsupported formulas and absent validator',()=>{
-  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds,validateDisplayMath:engine.parsePreviewMath};
+  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds,validateDisplayMath:engine.parseDisplayMath};
   const run=(source,d=deps)=>prepareBrowserPreview({documentId:'math',revision:'1',source,startOn:'page'},'1','math',{width:100000,height:70000},d);
-  for(const source of ['$$\n\n$$\n','$$\nx+y\nz\n$$\n','$$\nx^2\n','$$\n\\input{secret}\n$$\n','$$\nx^2^3\n$$\n','$$\n'+ 'x'.repeat(2049)+'\n$$\n','$$\rx+1\r$$\r',':::callout{kind="note"}\n$$\nx\n$$\n:::\n']){
+  for(const source of ['$$\n\n$$\n','$$\nx+y\n\\input{secret}\n$$\n','$$\nx^2\n','$$\n\\input{secret}\n$$\n','$$\nx^2^3\n$$\n','$$\n'+ 'x'.repeat(2049)+'\n$$\n','$$\rx+1\r$$\r',':::callout{kind="note"}\n$$\nx\n$$\n:::\n']){
     assert.equal(run(source).options,undefined,source);
   }
   assert.equal(run('$$\nx\n$$\n',{...deps,validateDisplayMath:undefined}).options,undefined);
@@ -639,7 +639,7 @@ test('GUI math planner refuses protected, ambiguous, unsafe and mixed-ending ins
 
 
 test('BCM inline math maps each atom and escaped dollar to exact UTF-16 source envelopes',()=>{
-  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds,validateDisplayMath:engine.parsePreviewMath,validateInlineMath:engine.parsePreviewMath};
+  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds,validateDisplayMath:engine.parseDisplayMath,validateInlineMath:engine.parsePreviewMath};
   const size={width:100000,height:70000},first='$\\frac{a_1^2}{b}$',second='$\\sqrt{x}$',escaped='\\$';
   for(const nl of ['\n','\r\n']){
     const source=['# 見出し','','**係数** '+first+' を使う。','価格は '+escaped+'20。','','次は '+second+' です。',''].join(nl);
@@ -665,7 +665,7 @@ test('BCM inline math maps each atom and escaped dollar to exact UTF-16 source e
   }
 });
 test('BCM inline math refuses invalid delimiters, unsafe commands and unsupported contexts',()=>{
-  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds,validateDisplayMath:engine.parsePreviewMath,validateInlineMath:engine.parsePreviewMath};
+  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds,validateDisplayMath:engine.parseDisplayMath,validateInlineMath:engine.parsePreviewMath};
   const size={width:100000,height:70000};
   const run=(source,d=deps)=>prepareBrowserPreview({documentId:'bad',revision:'1',source,startOn:'page'},'1','inline',size,d);
   for(const source of ['本文 $ x$','本文 $x $','本文 $x$2','本文 $$x$$','本文 $x','本文 $x\n+y$','本文 $\\input{secret}$','本文 $x^2^3$','本文 **$x$**','# 見出し $x$','- 項目 $x$','価格は $20 です。','本文 $x$'+ '$y$']){
@@ -680,7 +680,7 @@ test('BCM inline math refuses invalid delimiters, unsafe commands and unsupporte
 
 
 test('GUI inline math inserts and updates exact formula bodies, retaining CRLF and adjacent styles',()=>{
-  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds,validateDisplayMath:engine.parsePreviewMath,validateInlineMath:engine.parsePreviewMath};
+  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds,validateDisplayMath:engine.parseDisplayMath,validateInlineMath:engine.parsePreviewMath};
   for(const nl of ['\n','\r\n']){
     const source=['# 章','','**係数** を使う。','別の式 $y^2$ です。',''].join(nl);
     const at=source.indexOf(' を使う。')+1,formula='\\frac{1}{2}';
@@ -699,7 +699,7 @@ test('GUI inline math inserts and updates exact formula bodies, retaining CRLF a
   assert.equal(bcm.applyPatches(atEnd,[planInlineMath(atEnd,atEnd.length,atEnd.length,'x^2',deps).patch]),'本文。$x^2$');
 });
 test('GUI inline math refuses protected ranges, text replacement, unsafe boundaries and invalid formulas',()=>{
-  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds,validateDisplayMath:engine.parsePreviewMath,validateInlineMath:engine.parsePreviewMath};
+  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds,validateDisplayMath:engine.parseDisplayMath,validateInlineMath:engine.parsePreviewMath};
   for(const [source,start,end] of [
     ['# 見出し',3,3],['- 項目',3,3],[':::callout{kind="note"}\n本文。\n:::\n',5,5],
     ['本文。',0,2],['**係数** を使う。',3,3],['A\u0301B',1,1],['本文 20。',3,3],
@@ -711,7 +711,7 @@ test('GUI inline math refuses protected ranges, text replacement, unsafe boundar
 
 
 test('numbered equations resolve stable IDs and forward/cross-file references in chapter order',()=>{
-  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds,validateDisplayMath:engine.parsePreviewMath,validateInlineMath:engine.parsePreviewMath,parseReference:bcm.parseReferenceToken};
+  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds,validateDisplayMath:engine.parseDisplayMath,validateInlineMath:engine.parsePreviewMath,parseReference:bcm.parseReferenceToken};
   const size={width:100000,height:70000};
   const eq=(id,formula,flag='true')=>':::layout{#'+id+' numbered="'+flag+'"}\n$$\n'+formula+'\n$$\n:::\n';
   const ref=':ref{target="eq-b" format="label-number"}',bare=':ref{target="eq-a" format="number"}';
@@ -737,7 +737,7 @@ test('numbered equations resolve stable IDs and forward/cross-file references in
   assert.equal(prepareBrowserPreview(docs[0],'1','single',size,deps).options,undefined,'cross-file references require book context');
 });
 test('equation references and wrapper attributes fail closed',()=>{
-  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds,validateDisplayMath:engine.parsePreviewMath,validateInlineMath:engine.parsePreviewMath,parseReference:bcm.parseReferenceToken};
+  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds,validateDisplayMath:engine.parseDisplayMath,validateInlineMath:engine.parsePreviewMath,parseReference:bcm.parseReferenceToken};
   const size={width:100000,height:70000};
   const eq=':::layout{#eq numbered="true"}\n$$\nx^2\n$$\n:::\n';
   const run=source=>prepareBrowserPreview({documentId:'eq',revision:'1',source,startOn:'page'},'1','eq',size,deps);
@@ -757,7 +757,7 @@ test('equation references and wrapper attributes fail closed',()=>{
 
 
 test('GUI numbered equation insertion and re-edit retain exact ID, fences, and references',()=>{
-  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds,validateDisplayMath:engine.parsePreviewMath,validateInlineMath:engine.parsePreviewMath,parseReference:bcm.parseReferenceToken};
+  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds,validateDisplayMath:engine.parseDisplayMath,validateInlineMath:engine.parsePreviewMath,parseReference:bcm.parseReferenceToken};
   const plan=(source,start,end,formula,id)=>planDisplayMath(source,start,end,formula,bcm.scanDocument,engine.parsePreviewMath,id);
   for(const nl of ['\n','\r\n']){
     const original=['# 章','','参照 :ref{target="eq-editor"}。','','結び。',''].join(nl),pos=original.indexOf(nl)+nl.length;
@@ -788,7 +788,7 @@ test('GUI numbered equation insertion and re-edit retain exact ID, fences, and r
 
 
 test('GUI equation reference insertion uses book order, exact patches and stable cross-file targets',()=>{
-  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds,validateDisplayMath:engine.parsePreviewMath,validateInlineMath:engine.parsePreviewMath,parseReference:bcm.parseReferenceToken};
+  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds,validateDisplayMath:engine.parseDisplayMath,validateInlineMath:engine.parsePreviewMath,parseReference:bcm.parseReferenceToken};
   for(const nl of ['\n','\r\n']){
     const source=['# 章','','**係数** と $x$ を参照。',''].join(nl),formula=[':::layout{#eq-next numbered="true"}','$$','x^2','$$',':::',''].join(nl);
     const docs=[{documentId:'a',revision:'1',source,startOn:'page'},{documentId:'b',revision:'1',source:formula,startOn:'page'}];
@@ -812,7 +812,7 @@ test('GUI equation reference insertion uses book order, exact patches and stable
 
 
 test('GUI equation numbering toggles preserve identity and refuse referenced targets across files',()=>{
-  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds,validateDisplayMath:engine.parsePreviewMath,validateInlineMath:engine.parsePreviewMath,parseReference:bcm.parseReferenceToken};
+  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds,validateDisplayMath:engine.parseDisplayMath,validateInlineMath:engine.parsePreviewMath,parseReference:bcm.parseReferenceToken};
   for(const nl of ['\n','\r\n']){
     const source=['# 章','','$$','x^2','$$','','結び。',''].join(nl);
     const doc={documentId:'a',revision:'1',source,startOn:'page'},other={documentId:'b',revision:'1',source:'別の本文。',startOn:'page'};
@@ -837,7 +837,7 @@ test('GUI equation numbering toggles preserve identity and refuse referenced tar
 
 
 test('component inline math keeps independent source envelopes in primary and named text slots',()=>{
-  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds,validateDisplayMath:engine.parsePreviewMath,validateInlineMath:engine.parsePreviewMath};
+  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds,validateDisplayMath:engine.parseDisplayMath,validateInlineMath:engine.parsePreviewMath};
   const size={width:100000,height:70000},id='component-00000000-0000-4000-8000-000000000001';
   const design={...defaultHeadingDesign(),direction:'column',children:[{id:'content',type:'content'},{id:'hint',type:'slot',name:'hint',width:'fill',fontSize:3500,lineHeight:1.5,color:'#123456'}]};
   const library={schemaVersion:3,entries:[{id,name:'数式部品',usage:'study',design}]};
@@ -878,7 +878,7 @@ test('Lab BCM sample conversion is opt-in, bounded, and excludes source mappings
 
 
 test('component display formulas retain scanner fences, slot-local mapping and exact GUI patches',()=>{
-  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds,validateDisplayMath:engine.parsePreviewMath,validateInlineMath:engine.parsePreviewMath};
+  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds,validateDisplayMath:engine.parseDisplayMath,validateInlineMath:engine.parsePreviewMath};
   const size={width:100000,height:100000},id='component-00000000-0000-4000-8000-000000000001';
   const design={...defaultHeadingDesign(),direction:'column',children:[{id:'content',type:'content'},{id:'hint',type:'slot',name:'hint',width:'fill',fontSize:3500,lineHeight:1.5,color:'#123456'}]};
   const library={schemaVersion:3,entries:[{id,name:'数式部品',usage:'study',design}]};
@@ -909,7 +909,7 @@ test('component display formulas retain scanner fences, slot-local mapping and e
     assert.equal(added.slice(plan.selection.start,plan.selection.end),'z^2');
     assert.equal(run(added).options.sections[0].blocks[0].namedSlots[0].request.inlineMath.length,2);
     assert.throws(()=>planComponentDisplayMath(source,source.indexOf('name="hint"'),source.indexOf('name="hint"'),'z',deps),RangeError);
-    assert.equal(run(source.replace(hintFence,()=>['$$','x','y','$$'].join(nl))).options,undefined);
+    assert.equal(run(source.replace(hintFence,()=>['$$','x','\\input{secret}','$$'].join(nl))).options,undefined);
     const sample=previewSampleInline(['前。','',fence,'','後。'].join(nl),true,engine.parsePreviewMath,true);
     assert.equal(sample.inlineMath[0].display,true);
     assert.throws(()=>previewSampleInline(fence,true,engine.parsePreviewMath),RangeError);
@@ -918,7 +918,7 @@ test('component display formulas retain scanner fences, slot-local mapping and e
 
 
 test('extended mathematical grammar integrates with manuscript, GUI patches and Lab samples',()=>{
-  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds,validateDisplayMath:engine.parsePreviewMath,validateInlineMath:engine.parsePreviewMath};
+  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds,validateDisplayMath:engine.parseDisplayMath,validateInlineMath:engine.parsePreviewMath};
   const formula='\\lim_{x\\to0}\\left(\\frac{\\sin x}{x}\\right)';
   const source=['本文 $\\vec{a}\\cdot\\vec{b}$ です。','','$$',formula,'$$',''].join('\n');
   const doc={documentId:'extended',revision:'1',source,startOn:'page'},size={width:100000,height:100000};
@@ -942,7 +942,7 @@ test('extended mathematical grammar integrates with manuscript, GUI patches and 
 
 
 test('math font role propagates independently through single/book preview and named slots',()=>{
-  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds,validateDisplayMath:engine.parsePreviewMath,validateInlineMath:engine.parsePreviewMath};
+  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds,validateDisplayMath:engine.parseDisplayMath,validateInlineMath:engine.parsePreviewMath};
   const id='component-00000000-0000-4000-8000-000000000001',alias='BCFont_'+ 'a'.repeat(64);
   const library={schemaVersion:3,entries:[{id,name:'数式部品',usage:'study',design:{...defaultHeadingDesign(),direction:'column',children:[{id:'content',type:'content'},{id:'hint',type:'slot',name:'hint',width:'fill',fontSize:3500,lineHeight:1.5,color:'#123456',font:{id:'system-monospace',weight:400}}]}}]};
   const source=['# 見出し','','本文 $x^2$ です。','','$$','\\frac{a}{b}','$$','','::::component{name="'+id+'"}',':::slot{name="content"}','問題 $x$ です。',':::','',':::slot{name="hint"}','ヒント $\\sqrt{x}$ です。',':::','::::',''].join('\n');
@@ -958,4 +958,40 @@ test('math font role propagates independently through single/book preview and na
     assert.equal(blocks[3].namedSlots[0].request.fontFamily,'monospace');
   }
   assert.throws(()=>prepareBrowserPreview(doc,'1','font',size,deps,{...typography,mathFontFamily:'serif'},library),RangeError);
+});
+
+
+test('multiline display formulas retain exact LF/CRLF and numbered or component identities',()=>{
+  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds,validateDisplayMath:engine.parseDisplayMath,validateInlineMath:engine.parsePreviewMath,parseReference:bcm.parseReferenceToken};
+  const size={width:100000,height:100000};
+  const id='component-00000000-0000-4000-8000-000000000001';
+  const library={schemaVersion:3,entries:[{id,name:'数式部品',usage:'study',design:{...defaultHeadingDesign(),direction:'column',children:[{id:'content',type:'content'},{id:'hint',type:'slot',name:'hint',width:'fill',fontSize:3500,lineHeight:1.5,color:'#123456'}]}}]};
+  const lines=['\\begin{aligned}','  x&=1 \\\\','  &=2-1','\\end{aligned}'],draft=lines.join('\n');
+  for(const nl of ['\n','\r\n']){
+    const formula=lines.join(nl),fence=['$$',formula,'$$'].join(nl);
+    const raw=['# 見出し','',':::layout{#eq-multi numbered="true"}',fence,':::','','式 :ref{target="eq-multi" format="number"}。','','::::component{name="'+id+'"}',':::slot{name="content"}','本文。','',''+fence,'','結び。',':::','',':::slot{name="hint"}','ヒント。','',''+fence,'','後。',':::','::::',''].join(nl);
+    const doc={documentId:'multi',revision:'1',source:raw,startOn:'page'};
+    const run=source=>prepareBookBrowserPreview([{...doc,source}],'1','multi',size,deps,undefined,undefined,undefined,undefined,undefined,library);
+    const p=run(raw);assert.deepEqual(p.diagnostics,[]);
+    const blocks=p.options.sections[0].blocks,eq=blocks.find(b=>b.displayMath),study=blocks.find(b=>b.component);
+    assert.equal(eq.request.text,formula);assert.equal(eq.equationNumber,'1.1');
+    assert.equal(raw.slice(eq.sourceTextStart,eq.sourceTextStart+formula.length),formula);
+    for(const [request,name] of [[study.request,undefined],[study.namedSlots[0].request,'hint']]){
+      const atom=request.inlineMath[0],range=previewSourceRange(study,{textStart:atom.start,textEnd:atom.start+1},name);
+      assert.equal(atom.formula,formula);assert.equal(raw.slice(range.start,range.end),fence);
+    }
+    const edit=planDisplayMath(raw,eq.sourceTextStart,eq.sourceTextStart+formula.length,draft.replace('x&=1','y&=1'),bcm.scanDocument,engine.parseDisplayMath);
+    const changed=bcm.applyPatches(raw,[edit.patch]);assert.equal(changed,raw.replace(formula,()=>formula.replace('x&=1','y&=1')));
+    assert.equal(run(changed).options.sections[0].blocks.find(b=>b.displayMath).origin.persistentId,'eq-multi');
+    // A component edit uses a manuscript without cross-book references (the current planner scope).
+    const componentRaw=raw.slice(raw.indexOf('::::component'));
+    const at=componentRaw.lastIndexOf(fence),end=at+fence.length;
+    const editSlot=planComponentDisplayMath(componentRaw,at,end,draft.replace('x&=1','z&=1'),deps);
+    assert.equal(bcm.applyPatches(componentRaw,[editSlot.patch]),componentRaw.slice(0,at)+fence.replace('x&=1','z&=1')+componentRaw.slice(end));
+    const inserted=planDisplayMath('前。'+nl,2+nl.length,2+nl.length,draft,bcm.scanDocument,engine.parseDisplayMath);
+    assert.equal(inserted.patch.replacement.includes(formula),true);
+    assert.equal(previewSampleInline(fence,true,engine.parsePreviewMath,true,engine.parseDisplayMath).inlineMath[0].formula,formula);
+  }
+  assert.throws(()=>planInlineMath('本文。',1,1,draft,deps),RangeError);
+  assert.throws(()=>planDisplayMath('',0,0,'x\n$$\ny',bcm.scanDocument,engine.parseDisplayMath),RangeError);
 });
