@@ -139,7 +139,9 @@ async function packageSmoke(){
   await exec("document.querySelector('#save').click()");
   await until("document.querySelector('#status').textContent.includes('保存しました')");
   if(await readFile(join(smokeRoot,'manuscript','chapter.md'),'utf8')!==sample)throw Error('Packaged app source save mismatch');
-  console.log('PASS portable Windows package: isolated renderer, workspace, math, bundled fonts, numbering, save');
+  const report='PASS portable Windows package: isolated renderer, workspace, math, bundled fonts, numbering, save';
+  if(process.env.BC_PACKAGE_SMOKE_REPORT)await writeFile(process.env.BC_PACKAGE_SMOKE_REPORT,report+'\n',{flag:'wx'});
+  console.log(report);
   closing=true;win.destroy();await rm(smokeRoot,{recursive:true,force:true,maxRetries:10,retryDelay:100});app.exit(0);
 }
 async function smoke(){
