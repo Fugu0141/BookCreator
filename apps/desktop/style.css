@@ -540,3 +540,10 @@ body{font-family:BCFont_NotoSansJP,system-ui,sans-serif}.font-control,.typograph
 #settings-recovery-dialog .close-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px}
 [id^="settings-recovery-state-"][data-phase=error]{color:#9a251c}
 @media(max-width:600px){.settings-recovery-compare{grid-template-columns:1fr}}
+
+.lab-recovery-status{font-size:12px;color:#475569;min-width:0;overflow-wrap:anywhere}
+.lab-recovery-status[data-phase=error]{color:#9a251c}
+.lab-recovery-notice{flex:1 1 300px;min-width:0;max-height:35vh;overflow:auto;padding:8px 12px;border:1px solid #b5c8d9;background:#f3f7fa;border-radius:6px}
+.lab-recovery-notice p{margin:4px 0;font-size:12px;overflow-wrap:anywhere}
+.lab-recovery-notice .lab-row{flex-wrap:wrap;gap:6px}
+.lab-three-pane header:has(.lab-recovery-notice){flex-wrap:wrap}
