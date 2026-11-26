@@ -29,7 +29,7 @@ function validateRecord(value,key){
 function validateKey(key){if(!validHash(key))fail('RECOVERY_INPUT','Invalid recovery key');}
 function validateVersion(version){if(version!==null&&!validHash(version))fail('RECOVERY_INPUT','Invalid recovery version');}
 export function recoveryStore(userData,namespace='manuscript'){
-  if(!['manuscript','settings'].includes(namespace))fail('RECOVERY_INPUT','Unsupported recovery namespace');
+  if(!['manuscript','settings','components'].includes(namespace))fail('RECOVERY_INPUT','Unsupported recovery namespace');
   // Serialize compare-and-swap operations within the single main process.
   let tail=Promise.resolve();
   function serial(fn){const next=tail.then(fn);tail=next.catch(()=>{});return next;}
