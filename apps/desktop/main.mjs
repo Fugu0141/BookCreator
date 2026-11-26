@@ -979,7 +979,7 @@ async function packageSmoke(){
   await until("!document.querySelector('#open').disabled&&document.querySelector('#status').textContent.includes('Book validation failed')");
   if(!await exec("document.querySelector('#source').value==="+JSON.stringify(referenceSource)))throw Error('Referenced equation numbering was removed');
   await exec("document.querySelector('#preview-button').click()");
-  await until("document.querySelector('#preview > div')?.shadowRoot?.textContent.includes('式 (1.1)')&&!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-equation-number]')");
+  await until("document.querySelector(\'#workspace-layout-state\').dataset.phase===\'ready\' && ("+"document.querySelector('#preview > div')?.shadowRoot?.textContent.includes('式 (1.1)')&&!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-equation-number]')"+")");
   await exec("document.querySelector('#structured-undo').click()");
   await until("document.querySelector('#source').value==="+JSON.stringify(formulaSource));
   await exec("document.querySelector('#editor-view-source').click()");
@@ -1094,9 +1094,9 @@ async function packageSmoke(){
   await until("[...document.querySelectorAll('.writing-tool-panel')].every(e=>e.hidden)");
   if(!await exec("document.querySelector('#source').value==="+JSON.stringify(sample)))throw Error('Insertion details changed manuscript');
   await exec("document.querySelector('#preview-button').click()");
-  await until("!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-inline-math] math msup')&&!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-display-math] math mfrac')&&document.querySelector('#preview > div').shadowRoot.querySelector('[data-equation-number]')?.textContent==='(1.1)'");
+  await until("document.querySelector(\'#workspace-layout-state\').dataset.phase===\'ready\' && ("+"!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-inline-math] math msup')&&!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-display-math] math mfrac')&&document.querySelector('#preview > div').shadowRoot.querySelector('[data-equation-number]')?.textContent==='(1.1)'"+")");
   await exec("document.fonts.ready.then(()=>true)");
-  await until("(()=>{const root=document.querySelector('#preview > div')?.shadowRoot,math=[...root?.querySelectorAll('math')??[]],faces=[...document.fonts];return math.length===2&&math.every(m=>m.style.fontFamily.includes('BCFont_STIXTwoMath'))&&faces.some(f=>f.family.includes('BCFont_NotoSansJP')&&f.status==='loaded')&&faces.some(f=>f.family.includes('BCFont_STIXTwoMath')&&f.status==='loaded');})()");
+  await until("document.querySelector(\'#workspace-layout-state\').dataset.phase===\'ready\' && ("+"(()=>{const root=document.querySelector('#preview > div')?.shadowRoot,math=[...root?.querySelectorAll('math')??[]],faces=[...document.fonts];return math.length===2&&math.every(m=>m.style.fontFamily.includes('BCFont_STIXTwoMath'))&&faces.some(f=>f.family.includes('BCFont_NotoSansJP')&&f.status==='loaded')&&faces.some(f=>f.family.includes('BCFont_STIXTwoMath')&&f.status==='loaded');})()"+")");
   await exec("document.querySelector('#save').click()");
   await until("document.querySelector('#status').textContent.includes('保存しました')");
   if(await readFile(join(smokeRoot,'manuscript','chapter.md'),'utf8')!==sample)throw Error('Packaged app source save mismatch');
@@ -1132,12 +1132,12 @@ async function packageSmoke(){
   await changePaperZoom('75');
   await until("(()=>{const v=document.querySelector('#preview'),h=v.firstElementChild,p=h.shadowRoot.querySelector('[data-page]');return Number(v.dataset.paperZoom)===.75&&Math.abs(p.getBoundingClientRect().width/p.offsetWidth-.75)<.02;})()");
   await exec("document.querySelector('#layout-guides').click()");
-  await until("Array.from(document.querySelector('#preview > div').shadowRoot.querySelectorAll('[data-content-guide]')).every(e=>getComputedStyle(e).visibility==='hidden')");
+  await until("document.querySelector(\'#workspace-layout-state\').dataset.phase===\'ready\' && ("+"Array.from(document.querySelector('#preview > div').shadowRoot.querySelectorAll('[data-content-guide]')).every(e=>getComputedStyle(e).visibility==='hidden')"+")");
   await changePaperZoom('page');
   await until("(()=>{const v=document.querySelector('#preview'),p=v.firstElementChild.shadowRoot.querySelector('[data-page]'),r=p.getBoundingClientRect();return r.width<=v.clientWidth&&r.height<=v.clientHeight;})()");
   if(!await exec("document.querySelector('#preview > div').dataset.paperProbe==='same'&&document.querySelector('#preview > div').shadowRoot.querySelector('[data-page]').style.width==="+JSON.stringify(paperWidth)+"&&document.querySelector('#workspace-layout-state').dataset.phase==='ready'"))throw Error('Paper view altered measured result');
   await exec("document.querySelector('#layout-guides').click()");
-  await until("Array.from(document.querySelector('#preview > div').shadowRoot.querySelectorAll('[data-content-guide]')).every(e=>getComputedStyle(e).visibility==='visible')");
+  await until("document.querySelector(\'#workspace-layout-state\').dataset.phase===\'ready\' && ("+"Array.from(document.querySelector('#preview > div').shadowRoot.querySelectorAll('[data-content-guide]')).every(e=>getComputedStyle(e).visibility==='visible')"+")");
   await changePaperZoom('width');
   await until("Number(document.querySelector('#preview').dataset.paperZoom)>0&&Number(document.querySelector('#preview').dataset.paperZoom)<=1");
   await changePaperZoom('100');
@@ -1181,7 +1181,7 @@ async function packageSmoke(){
   if(!await exec("document.querySelector('#source').value==="+JSON.stringify(invalidSource)))throw Error('Diagnostic jump changed manuscript');
   await setNavigationSource(sample);
   await until("document.querySelector('#toggle-diagnostics').hidden&&!document.querySelector('#workspace-diagnostic-list li')");
-  await until("document.querySelector('#workspace-layout-state').dataset.phase==='stale'&&!document.querySelector('#layout-pages')&&!document.querySelector('#preview > div')");
+  await until("document.querySelector('#workspace-layout-state').dataset.phase==='stale'&&!document.querySelector('#layout-pages')&&document.querySelector('#preview > div')?.dataset.paperFreshness==='previous'&&document.querySelector('#preview > div').inert");
   await exec("document.querySelector('#preview-button').click()");
   await until("document.querySelector('#workspace-layout-state').dataset.phase==='ready'&&document.querySelector('#workspace-layout-state').dataset.scope==='manuscript'");
   if(await readFile(join(smokeRoot,'manuscript','chapter.md'),'utf8')!==sample)throw Error('Page navigation changed saved manuscript');
@@ -1197,7 +1197,8 @@ async function packageSmoke(){
   await exec("(()=>{const e=document.querySelector('#source');e.dispatchEvent(new CompositionEvent('compositionend',{bubbles:true,data:'あ'}));})()");
   await until("!document.querySelector('#mode-design').disabled");
   await exec("(()=>{const e=document.querySelector('#source');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(e,"+JSON.stringify(sample+'\n追記。\n')+");e.dispatchEvent(new Event('input',{bubbles:true}));})()");
-  await until("document.querySelector('#workspace-save-state').textContent==='未保存：原稿'&&document.querySelector('#workspace-layout-state').dataset.phase==='stale'&&!document.querySelector('#preview > div')");
+  await until("document.querySelector('#workspace-save-state').textContent==='未保存：原稿'&&document.querySelector('#workspace-layout-state').dataset.phase==='stale'&&document.querySelector('#preview > div')?.dataset.paperFreshness==='previous'&&document.querySelector('#preview > div').inert");
+  if(!await exec("(()=>{const e=document.querySelector('#source');e.setSelectionRange(0,0);document.querySelector('#preview > div').shadowRoot.querySelector('[data-block]').click();return e.selectionStart===0&&e.selectionEnd===0;})()"))throw Error('Stale paper changed source selection');
   if(await readFile(join(smokeRoot,'manuscript','chapter.md'),'utf8')!==sample)throw Error('Unsaved edit changed disk');
   await workspaceKey('s',true);
   await until("document.querySelector('#workspace-save-state').textContent==='保存済み'");
@@ -1870,7 +1871,7 @@ async function smoke(){
   await exec("document.querySelector('[data-section=chapter]').click()");
   await until("document.querySelector('#source')?.value.includes('見出し')");
   await exec("document.querySelector('#preview-button').click()");
-  await until("!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-block]')");
+  await until("document.querySelector(\'#workspace-layout-state\').dataset.phase===\'ready\' && ("+"!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-block]')"+")");
   if(!await exec("Array.from(document.fonts).some(f=>f.family.includes('BCFont_NotoSansJP')&&f.status==='loaded')"))throw Error('Bundled Noto font not loaded');
   if(!await exec("(()=>{const lines=[...document.querySelector('#preview > div').shadowRoot.querySelectorAll('[data-start]')];return lines.every(l=>l.style.fontFamily.includes('BCFont_NotoSansJP'))&&lines.some(l=>l.style.fontWeight==='700')&&lines.some(l=>l.style.fontWeight==='400');})()"))throw Error('Font roles not applied');
   // Inline math in ordinary body text, including bundled-font rendering and exact atom selection.
@@ -1880,7 +1881,7 @@ async function smoke(){
   await setInlineMathSource(mixedInlineMath);
   await until("document.querySelector('#source').value==="+JSON.stringify(mixedInlineMath));
   await exec("document.querySelector('#preview-button').click()");
-  await until("!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-inline-math] math mfrac')");
+  await until("document.querySelector(\'#workspace-layout-state\').dataset.phase===\'ready\' && ("+"!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-inline-math] math mfrac')"+")");
   await exec("document.querySelector('#preview > div').shadowRoot.querySelector('[data-inline-math]').click()");
   if(!await exec("(()=>{const el=document.querySelector('#source');return el.value.slice(el.selectionStart,el.selectionEnd)==="+JSON.stringify(inlineMathSource)+";})()"))throw Error('Inline math raw delimiter envelope selection failed');
   // Reuse the math dialog to edit a clicked inline atom and insert another at a caret.
@@ -1906,7 +1907,7 @@ async function smoke(){
   const twiceInline=editedInlineSource.replace('を使います。','$x^2$を使います。');
   await until("document.querySelector('#source').value==="+JSON.stringify(twiceInline));
   await exec("document.querySelector('#preview-button').click()");
-  await until("document.querySelector('#preview > div')?.shadowRoot?.querySelectorAll('[data-inline-math]').length===2");
+  await until("document.querySelector(\'#workspace-layout-state\').dataset.phase===\'ready\' && ("+"document.querySelector('#preview > div')?.shadowRoot?.querySelectorAll('[data-inline-math]').length===2"+")");
   await exec("document.querySelector('#preview > div').shadowRoot.querySelectorAll('[data-inline-math]')[1].click()");
   await exec("document.querySelector('#source-inline-math').click()");
   await until("document.querySelector('#math-formula')?.value==='x^2'");
@@ -1915,16 +1916,16 @@ async function smoke(){
   await exec("document.querySelector('#math-cancel').click()");
   if(await exec("document.querySelector('#source').value")!==twiceInline+'\n追記。')throw Error('Stale inline draft overwrote manuscript');
   await setInlineMathSource(beforeInlineMath);
-  await until("document.querySelector('#source').value==="+JSON.stringify(beforeInlineMath)+" && !document.querySelector('#preview > div')");
+  await until("document.querySelector('#source').value==="+JSON.stringify(beforeInlineMath)+" && document.querySelector('#preview > div')?.dataset.paperFreshness==='previous'&&document.querySelector('#preview > div').inert");
   await exec("(()=>{const el=document.querySelector('#body-font');el.value='serif';el.dispatchEvent(new Event('change',{bubbles:true}));})()");
-  await until("!document.querySelector('#preview > div')");
+  await until("document.querySelector('#preview > div')?.dataset.paperFreshness==='previous'&&document.querySelector('#preview > div').inert");
   await exec("document.querySelector('#preview-button').click()");
-  await until("!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-block]')");
+  await until("document.querySelector(\'#workspace-layout-state\').dataset.phase===\'ready\' && ("+"!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-block]')"+")");
   if(!await exec("Array.from(document.querySelector('#preview > div').shadowRoot.querySelectorAll('[data-start]')).some(l=>l.style.fontFamily==='serif')"))throw Error('Body font change not applied');
   await exec("document.querySelector('#preview > div').shadowRoot.querySelector('[data-block]').click()");
   if(!await exec("document.querySelector('#source').selectionEnd>document.querySelector('#source').selectionStart"))throw Error('Source selection failed');
   await exec("(()=>{const el=document.querySelector('#source');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(el,el.value+'\\n追記');el.dispatchEvent(new Event('input',{bubbles:true}));})()");
-  await until("!document.querySelector('#save').disabled && !document.querySelector('#preview > div')");
+  await until("!document.querySelector('#save').disabled && document.querySelector('#preview > div')?.dataset.paperFreshness==='previous'&&document.querySelector('#preview > div').inert");
   await exec("document.querySelector('#save').click()");
   await until("document.querySelector('#status').textContent.includes('保存しました')");
   if(!(await readFile(join(smokeRoot,'manuscript','chapter.md'),'utf8')).endsWith('追記'))throw Error('Saved source missing');
@@ -1955,7 +1956,7 @@ async function smoke(){
   await exec("document.querySelector('[data-section=chapter-01]').click()");
   await until("!document.querySelector('#open').disabled && document.querySelector('#source').value.includes('はじめに')");
   await exec("document.querySelector('#preview-button').click()");
-  await until("!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-start]')");
+  await until("document.querySelector(\'#workspace-layout-state\').dataset.phase===\'ready\' && ("+"!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-start]')"+")");
   if(!await exec("Array.from(document.querySelector('#preview > div').shadowRoot.querySelectorAll('[data-start]')).some(l=>/BCFont_[a-f0-9]{64}/.test(l.style.fontFamily))"))throw Error('Imported face not used in measured preview');
   await exec("document.querySelector('#book-settings').click()");
   await until("!!document.querySelector('#page-size')");
@@ -1965,7 +1966,7 @@ async function smoke(){
   await until("!document.querySelector('#open').disabled && document.querySelector('#status').textContent.includes('書籍設定を保存しました')");
   if(!(await readFile(join(smokeRoot,'new-book','book.yaml'),'utf8')).includes('size: A4'))throw Error('Page size not persisted');
   await exec("document.querySelector('#preview-book').click()");
-  await until("!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-content-guide]')");
+  await until("document.querySelector(\'#workspace-layout-state\').dataset.phase===\'ready\' && ("+"!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-content-guide]')"+")");
   if(!await exec("Math.abs(parseFloat(document.querySelector('#preview > div').shadowRoot.querySelector('[data-page]').style.width)-210*96/25.4)<0.1"))throw Error('Physical A4 preview width mismatch');
   await exec("document.querySelector('#component-lab').click()");
   await until("!!document.querySelector('#lab-measure')");
@@ -2016,7 +2017,7 @@ async function smoke(){
   await until("!document.querySelector('#open').disabled && !document.querySelector('#lab-measure')");
   if(!(await readFile(join(smokeRoot,'new-book','themes','default','theme.yaml'),'utf8')).includes('previewComponents'))throw Error('Component not saved');
   await exec("document.querySelector('#preview-book').click()");
-  await until("!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-component]')");
+  await until("document.querySelector(\'#workspace-layout-state\').dataset.phase===\'ready\' && ("+"!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-component]')"+")");
   await exec("(()=>{const e=document.querySelector('#lab-level');e.value='1';e.dispatchEvent(new Event('change',{bubbles:true}));})()");
   await until("document.querySelector('#lab-level').value==='1'");
   await exec("document.querySelector('#component-lab').click()");
@@ -2032,7 +2033,7 @@ async function smoke(){
   await exec("document.querySelector('#lab-apply').click()");
   await until("!document.querySelector('#open').disabled && !document.querySelector('#lab-measure')");
   await exec("document.querySelector('#preview-book').click()");
-  await until("!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-fixed-label]')");
+  await until("document.querySelector(\'#workspace-layout-state\').dataset.phase===\'ready\' && ("+"!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-fixed-label]')"+")");
   if(!await exec("(()=>{const l=document.querySelector('#preview > div').shadowRoot.querySelector('[data-fixed-label]');return l.textContent==='CHAPTER'&&l.firstElementChild.style.fontFamily==='monospace';})()"))throw Error('Level-specific fixed label not rendered');
   await exec("document.querySelector('#component-lab').click()");
   await until("!!document.querySelector('#lab-group-next')");
@@ -2045,7 +2046,7 @@ async function smoke(){
   await exec("document.querySelector('#lab-apply').click()");
   await until("!document.querySelector('#open').disabled && !document.querySelector('#lab-measure')");
   await exec("document.querySelector('#preview-book').click()");
-  await until("!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-component-group] [data-fixed-label]')");
+  await until("document.querySelector(\'#workspace-layout-state\').dataset.phase===\'ready\' && ("+"!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-component-group] [data-fixed-label]')"+")");
   await exec("document.querySelector('#component-lab').click()");
   await until("!!document.querySelector('#lab-group-next')");
   await exec("Array.from(document.querySelectorAll('[data-lab-node]')).find(e=>e.textContent.includes('グループ')).click()");
@@ -2061,7 +2062,7 @@ async function smoke(){
   await exec("document.querySelector('#lab-apply').click()");
   await until("!document.querySelector('#open').disabled && !document.querySelector('#lab-measure')");
   await exec("document.querySelector('#preview-book').click()");
-  await until("!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-component-canvas]')");
+  await until("document.querySelector(\'#workspace-layout-state\').dataset.phase===\'ready\' && ("+"!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-component-canvas]')"+")");
   if(!await exec("Math.abs(parseFloat(document.querySelector('#preview > div').shadowRoot.querySelector('[data-component-canvas] [data-content-slot]').style.left)-3*96/25.4)<.02"))throw Error('Canvas x not preserved in book');
   await exec("document.querySelector('#component-lab').click()");
   await until("!!document.querySelector('#lab-measure')");
@@ -2125,7 +2126,7 @@ async function smoke(){
   await exec("document.querySelector('#lab-apply').click()");
   await until("!document.querySelector('#open').disabled && !document.querySelector('#lab-measure')");
   await exec("document.querySelector('#preview-book').click()");
-  await until("!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-component-canvas]')");
+  await until("document.querySelector(\'#workspace-layout-state\').dataset.phase===\'ready\' && ("+"!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-component-canvas]')"+")");
   if(!await exec("Math.abs(parseFloat(document.querySelector('#preview > div').shadowRoot.querySelector('[data-component-canvas] [data-content-slot]').style.left)-"+draggedX+"*96/25.4)<.02"))throw Error('Dragged coordinate not persisted');
   if(!await exec("Math.abs(parseFloat(document.querySelector('#preview > div').shadowRoot.querySelector('[data-content-slot]').style.width)-"+resizedWidth+"*96/25.4)<.02 && !document.querySelector('#preview > div').shadowRoot.querySelector('[data-lab-resize-handle]')"))throw Error('Resized width not persisted or editor handle leaked');
   // Reopen saved Canvas, select its sibling label, and align both to the selection's left edge.
@@ -2149,7 +2150,7 @@ async function smoke(){
   await exec("document.querySelector('#lab-apply').click()");
   await until("!document.querySelector('#open').disabled && !document.querySelector('#lab-measure')");
   await exec("document.querySelector('#preview-book').click()");
-  await until("!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-component-canvas]')");
+  await until("document.querySelector(\'#workspace-layout-state\').dataset.phase===\'ready\' && ("+"!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-component-canvas]')"+")");
   if(!await exec("(()=>{const c=document.querySelector('#preview > div').shadowRoot.querySelector('[data-component-canvas]');return c.querySelector('[data-content-slot]').style.left===c.querySelector('[data-fixed-label]').style.left;})()"))throw Error('Aligned positions not persisted');
   // Exercise the guide in a real pointer gesture, then cancel without committing.
   await exec("document.querySelector('#component-lab').click()");
@@ -2181,7 +2182,7 @@ async function smoke(){
   await exec("document.querySelector('#lab-apply').click()");
   await until("!document.querySelector('#open').disabled && !document.querySelector('#lab-measure')");
   await exec("document.querySelector('#preview-book').click()");
-  await until("!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-component-canvas]')");
+  await until("document.querySelector(\'#workspace-layout-state\').dataset.phase===\'ready\' && ("+"!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-component-canvas]')"+")");
   if(!await exec("!document.querySelector('#preview > div').shadowRoot.querySelector('[data-lab-snap-guide]')"))throw Error('Smart guide leaked to paper');
   // Duplicate a decorative rectangle in the saved Canvas, then protect its draft.
   await exec("document.querySelector('#component-lab').click()");
@@ -2219,7 +2220,7 @@ async function smoke(){
   await exec("document.querySelector('#lab-apply').click()");
   await until("!document.querySelector('#open').disabled && !document.querySelector('#lab-measure')");
   await exec("document.querySelector('#preview-book').click()");
-  await until("!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-component-canvas]')");
+  await until("document.querySelector(\'#workspace-layout-state\').dataset.phase===\'ready\' && ("+"!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-component-canvas]')"+")");
   if(!await exec("Array.from(document.querySelector('#preview > div').shadowRoot.querySelectorAll('[data-component-node]')).some(e=>e.dataset.componentNode==="+JSON.stringify(copyId)+") && !document.querySelector('#preview > div').shadowRoot.querySelector('[data-lab-locked]')"))throw Error('Duplicate not persisted or lock marker leaked');
   // Import into the current project, add an image to the saved Canvas, then apply.
   await exec("document.querySelector('#image-manager').click()");
@@ -2243,7 +2244,7 @@ async function smoke(){
   await exec("document.querySelector('#lab-apply').click()");
   await until("!document.querySelector('#open').disabled && !document.querySelector('#lab-measure')");
   await exec("document.querySelector('#preview-book').click()");
-  await until("!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-component-image] canvas')");
+  await until("document.querySelector(\'#workspace-layout-state\').dataset.phase===\'ready\' && ("+"!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-component-image] canvas')"+")");
   if(!await exec("document.querySelector('#preview > div').shadowRoot.querySelector('[data-component-image] canvas').getAttribute('aria-label')==='Test illustration'"))throw Error('Image absent from saved paper');
   if(!(await readFile(join(smokeRoot,'new-book','themes','default','theme.yaml'),'utf8')).includes(imageId))throw Error('Stable image ID not saved');
   await exec("document.querySelector('#component-lab').click()");
@@ -2265,7 +2266,7 @@ async function smoke(){
   await exec("document.querySelector('#lab-apply').click()");
   await until("!document.querySelector('#open').disabled && !document.querySelector('#lab-measure')");
   await exec("document.querySelector('#preview-book').click()");
-  await until("!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-component-image] canvas')");
+  await until("document.querySelector(\'#workspace-layout-state\').dataset.phase===\'ready\' && ("+"!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-component-image] canvas')"+")");
   if(!await exec("document.querySelector('#preview > div').shadowRoot.querySelector('[data-component-image] canvas').getContext('2d').getImageData(0,0,1,1).data[2]===255"))throw Error('Saved crop not rendered');
   if(!(await readFile(join(smokeRoot,'new-book','assets','images',imageId+'.png'))).equals(tinyPng()))throw Error('Source image modified by crop');
   // Dynamic labels resolve sample context separately from actual manuscript context.
@@ -2281,9 +2282,9 @@ async function smoke(){
   await exec("document.querySelector('#lab-apply').click()");
   await until("!document.querySelector('#open').disabled && !document.querySelector('#lab-measure')");
   await exec("document.querySelector('#preview-book').click()");
-  await until("Array.from(document.querySelector('#preview > div')?.shadowRoot?.querySelectorAll('[data-fixed-label]')??[]).some(e=>e.dataset.componentNode.startsWith('dynamic-')&&e.textContent==='第1章')");
+  await until("document.querySelector(\'#workspace-layout-state\').dataset.phase===\'ready\' && ("+"Array.from(document.querySelector('#preview > div')?.shadowRoot?.querySelectorAll('[data-fixed-label]')??[]).some(e=>e.dataset.componentNode.startsWith('dynamic-')&&e.textContent==='第1章')"+")");
   await exec("document.querySelector('#preview-button').click()");
-  await until("Array.from(document.querySelector('#preview > div')?.shadowRoot?.querySelectorAll('[data-fixed-label]')??[]).some(e=>e.dataset.componentNode.startsWith('dynamic-')&&e.textContent==='第1章')");
+  await until("document.querySelector(\'#workspace-layout-state\').dataset.phase===\'ready\' && ("+"Array.from(document.querySelector('#preview > div')?.shadowRoot?.querySelectorAll('[data-fixed-label]')??[]).some(e=>e.dataset.componentNode.startsWith('dynamic-')&&e.textContent==='第1章')"+")");
   const themeText=await readFile(join(smokeRoot,'new-book','themes','default','theme.yaml'),'utf8');
   if(!themeText.includes('type: dynamic')||!themeText.includes('field: chapter-number'))throw Error('Dynamic definition not persisted');
   // Register the measured design, modify the draft, then load an independent copy.
@@ -2328,7 +2329,7 @@ async function smoke(){
   await exec("document.querySelector('#lab-library-bind').click()");
   await until("!document.querySelector('#lab-measure') && !document.querySelector('#open').disabled");
   await exec("document.querySelector('#preview-book').click()");
-  await until("Array.from(document.querySelector('#preview > div')?.shadowRoot?.querySelectorAll('[data-fixed-label]')??[]).some(e=>e.dataset.componentNode.startsWith('dynamic-')&&e.textContent==='第1章')");
+  await until("document.querySelector(\'#workspace-layout-state\').dataset.phase===\'ready\' && ("+"Array.from(document.querySelector('#preview > div')?.shadowRoot?.querySelectorAll('[data-fixed-label]')??[]).some(e=>e.dataset.componentNode.startsWith('dynamic-')&&e.textContent==='第1章')"+")");
   const sharedYaml=await readFile(join(smokeRoot,'new-book','themes','default','theme.yaml'),'utf8');
   if(!/bindings:\s*\n\s*['"]?1['"]?: component-/.test(sharedYaml))throw Error('Shared H1 binding not persisted');
   await exec("document.querySelector('#component-lab').click()");
@@ -2376,7 +2377,7 @@ async function smoke(){
   await exec("document.querySelector('#paragraph-apply').click()");
   await until("!document.querySelector('#paragraph-measure') && !document.querySelector('#open').disabled");
   await exec("document.querySelector('#preview-book').click()");
-  await until("!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-fragmentable-frame]')");
+  await until("document.querySelector(\'#workspace-layout-state\').dataset.phase===\'ready\' && ("+"!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-fragmentable-frame]')"+")");
   if(!await exec("!!document.querySelector('#preview > div').shadowRoot.querySelector('[data-fixed-label]')"))throw Error('Heading component lost after paragraph save');
   const paragraphYaml=await readFile(join(smokeRoot,'new-book','themes','default','theme.yaml'),'utf8');
   if(!paragraphYaml.includes('previewParagraph:'))throw Error('Paragraph design not persisted');
@@ -2397,7 +2398,7 @@ async function smoke(){
   await exec("document.querySelector('#paragraph-library-bind').click()");
   await until("!document.querySelector('#paragraph-measure') && !document.querySelector('#open').disabled");
   await exec("document.querySelector('#preview-book').click()");
-  await until("!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-fragmentable-frame]')");
+  await until("document.querySelector(\'#workspace-layout-state\').dataset.phase===\'ready\' && ("+"!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-fragmentable-frame]')"+")");
   await exec("document.querySelector('#component-lab').click()");
   await until("!!document.querySelector('#lab-library-select')");
   if(!await exec("document.querySelector('#lab-library-select').options.length===2 && document.querySelector('#lab-library-select').options[1].textContent==='再利用部品'"))throw Error('Paragraph library entry exposed in heading lab');
@@ -2422,7 +2423,7 @@ async function smoke(){
   const newStudySource=await exec("document.querySelector('#source').value");
   if(!newStudySource.startsWith(originalStudySource))throw Error('Study insertion modified existing source');
   await exec("document.querySelector('#preview-button').click()");
-  await until("Array.from(document.querySelector('#preview > div')?.shadowRoot?.querySelectorAll('[data-fixed-label]')??[]).some(e=>e.dataset.componentNode==='study-label'&&e.textContent==='注意')");
+  await until("document.querySelector(\'#workspace-layout-state\').dataset.phase===\'ready\' && ("+"Array.from(document.querySelector('#preview > div')?.shadowRoot?.querySelectorAll('[data-fixed-label]')??[]).some(e=>e.dataset.componentNode==='study-label'&&e.textContent==='注意')"+")");
   await exec("document.querySelector('#preview > div').shadowRoot.querySelector('[data-component-node=study-label]').click()");
   if(!await exec("(()=>{const e=document.querySelector('#source');return e.value.slice(e.selectionStart,e.selectionEnd)==='注意の本文を入力してください。';})()"))throw Error('Study block source selection includes markup or loses body');
   await exec("document.querySelector('#save').click()");
@@ -2444,7 +2445,7 @@ async function smoke(){
   await exec("document.querySelector('#lab-library-bind').click()");
   await until("!document.querySelector('#lab-measure') && !document.querySelector('#open').disabled");
   await exec("document.querySelector('#preview-book').click()");
-  await until("Array.from(document.querySelector('#preview > div')?.shadowRoot?.querySelectorAll('[data-fixed-label]')??[]).some(e=>e.dataset.componentNode==='study-label'&&e.textContent==='確認：注意')");
+  await until("document.querySelector(\'#workspace-layout-state\').dataset.phase===\'ready\' && ("+"Array.from(document.querySelector('#preview > div')?.shadowRoot?.querySelectorAll('[data-fixed-label]')??[]).some(e=>e.dataset.componentNode==='study-label'&&e.textContent==='確認：注意')"+")");
   const studyYaml=await readFile(join(smokeRoot,'new-book','themes','default','theme.yaml'),'utf8');
   if(!studyYaml.includes('previewStudy:')||!studyYaml.includes('usage: study'))throw Error('Study shared design not persisted');
   // Create a new named library component without assigning any built-in study kind.
@@ -2508,7 +2509,7 @@ async function smoke(){
   await until("document.querySelector('#source').value==="+JSON.stringify(customBefore));
 
   await exec("document.querySelector('#preview-button').click()");
-  await until("Array.from(document.querySelector('#preview > div')?.shadowRoot?.querySelectorAll('[data-fixed-label]')??[]).some(e=>e.textContent==='用語解説')");
+  await until("document.querySelector(\'#workspace-layout-state\').dataset.phase===\'ready\' && ("+"Array.from(document.querySelector('#preview > div')?.shadowRoot?.querySelectorAll('[data-fixed-label]')??[]).some(e=>e.textContent==='用語解説')"+")");
   await exec("document.querySelector('#save').click()");
   await until("document.querySelector('#save').disabled && !document.querySelector('#open').disabled");
   await exec("document.querySelector('#study-design-lab').click()");
@@ -2520,7 +2521,7 @@ async function smoke(){
   await exec("document.querySelector('#lab-cancel').click()");
   await until("!document.querySelector('#lab-measure')");
   await exec("document.querySelector('#preview-book').click()");
-  await until("Array.from(document.querySelector('#preview > div')?.shadowRoot?.querySelectorAll('[data-fixed-label]')??[]).some(e=>e.textContent==='用語集')");
+  await until("document.querySelector(\'#workspace-layout-state\').dataset.phase===\'ready\' && ("+"Array.from(document.querySelector('#preview > div')?.shadowRoot?.querySelectorAll('[data-fixed-label]')??[]).some(e=>e.textContent==='用語集')"+")");
   // Add a number field to the warning design without changing its manuscript.
   await exec("(()=>{const e=document.querySelector('#study-design-kind');e.value='warning';e.dispatchEvent(new Event('change',{bubbles:true}));})()");
   await exec("document.querySelector('#study-design-lab').click()");
@@ -2537,11 +2538,11 @@ async function smoke(){
   await exec("document.querySelector('#study-append').click()");
   await until("document.querySelector('#source').value.split(':::callout{kind=\\\"warning\\\"}').length===3");
   await exec("document.querySelector('#preview-button').click()");
-  await until("(()=>{const nodes=Array.from(document.querySelector('#preview > div')?.shadowRoot?.querySelectorAll('[data-fixed-label]')??[]).filter(e=>e.dataset.componentNode==='study-label').map(e=>e.textContent);return nodes.some(t=>/^\\d+\\.1$/.test(t))&&nodes.some(t=>/^\\d+\\.2$/.test(t));})()");
+  await until("document.querySelector(\'#workspace-layout-state\').dataset.phase===\'ready\' && ("+"(()=>{const nodes=Array.from(document.querySelector('#preview > div')?.shadowRoot?.querySelectorAll('[data-fixed-label]')??[]).filter(e=>e.dataset.componentNode==='study-label').map(e=>e.textContent);return nodes.some(t=>/^\\d+\\.1$/.test(t))&&nodes.some(t=>/^\\d+\\.2$/.test(t));})()"+")");
   const readNumbers="Array.from(document.querySelector('#preview > div').shadowRoot.querySelectorAll('[data-fixed-label]')).filter(e=>e.dataset.componentNode==='study-label'&&/^\\d+\\.\\d+$/.test(e.textContent)).map(e=>e.textContent)";
   const partialNumbers=await exec(readNumbers);
   await exec("document.querySelector('#preview-book').click()");
-  await until("!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-fixed-label]')");
+  await until("document.querySelector(\'#workspace-layout-state\').dataset.phase===\'ready\' && ("+"!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-fixed-label]')"+")");
   if(JSON.stringify(await exec(readNumbers))!==JSON.stringify(partialNumbers))throw Error('Study number differs between selected manuscript and book');
   // Insert an identified question and linked explanation through the source editor.
   await exec("(()=>{const e=document.querySelector('#study-kind');e.value='exercise';e.dispatchEvent(new Event('change',{bubbles:true}));})()");
@@ -2557,10 +2558,10 @@ async function smoke(){
   await exec("document.querySelector('#study-append').click()");
   await until("document.querySelector('#source').value.includes("+JSON.stringify('answer-to="'+questionId+'"')+")");
   await exec("document.querySelector('#preview-button').click()");
-  await until("Array.from(document.querySelector('#preview > div')?.shadowRoot?.querySelectorAll('[data-fixed-label]')??[]).some(e=>/^解説 \\d+\\.1$/.test(e.textContent))");
+  await until("document.querySelector(\'#workspace-layout-state\').dataset.phase===\'ready\' && ("+"Array.from(document.querySelector('#preview > div')?.shadowRoot?.querySelectorAll('[data-fixed-label]')??[]).some(e=>/^解説 \\d+\\.1$/.test(e.textContent))"+")");
   const answerLabel=await exec("Array.from(document.querySelector('#preview > div').shadowRoot.querySelectorAll('[data-fixed-label]')).find(e=>/^解説 \\d+\\.1$/.test(e.textContent)).textContent");
   await exec("document.querySelector('#preview-book').click()");
-  await until("Array.from(document.querySelector('#preview > div')?.shadowRoot?.querySelectorAll('[data-fixed-label]')??[]).some(e=>e.textContent==="+JSON.stringify(answerLabel)+")");
+  await until("document.querySelector(\'#workspace-layout-state\').dataset.phase===\'ready\' && ("+"Array.from(document.querySelector('#preview > div')?.shadowRoot?.querySelectorAll('[data-fixed-label]')??[]).some(e=>e.textContent==="+JSON.stringify(answerLabel)+")"+")");
   // Create a new custom multi-slot component and insert it without modifying old instances.
   await exec("(()=>{const e=document.querySelector('#study-design-kind');e.value='custom';e.dispatchEvent(new Event('change',{bubbles:true}));})()");
   await exec("document.querySelector('#study-design-lab').click()");
@@ -2610,7 +2611,7 @@ async function smoke(){
   await exec("document.querySelector('#study-append').click()");
   await until("document.querySelector('#source').value.includes(':::slot{name=\\\"hint\\\"}')");
   await exec("document.querySelector('#preview-button').click()");
-  await until("!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-named-slot=hint]')");
+  await until("document.querySelector(\'#workspace-layout-state\').dataset.phase===\'ready\' && ("+"!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-named-slot=hint]')"+")");
   await exec("document.querySelector('#preview > div').shadowRoot.querySelector('[data-named-slot=hint]').click()");
   if(!await exec("(()=>{const e=document.querySelector('#source');return e.value.slice(e.selectionStart,e.selectionEnd)==='追加の原稿を入力してください。';})()"))throw Error('Named slot source selection is not independent');
   await exec("document.querySelector('#save').click()");
@@ -2669,7 +2670,7 @@ async function smoke(){
   await exec("document.querySelector('#editor-view-source').click()");
   await until("!document.querySelector('#source').hidden");
   await exec("document.querySelector('#preview-button').click()");
-  await until("document.querySelector('#preview > div')?.shadowRoot?.querySelectorAll('[data-named-slot=extra]').length===1");
+  await until("document.querySelector(\'#workspace-layout-state\').dataset.phase===\'ready\' && ("+"document.querySelector('#preview > div')?.shadowRoot?.querySelectorAll('[data-named-slot=extra]').length===1"+")");
   // Restore original draft and retain the legacy source insertion regression below.
   await setStructuredSource(beforeStructuredInsert);
   await until("document.querySelector('#source').value==="+JSON.stringify(beforeStructuredInsert));
@@ -2680,7 +2681,7 @@ async function smoke(){
   await exec("document.querySelector('#study-append').click()");
   await until("document.querySelector('#source').value.includes(':::slot{name=\\\"extra\\\"}')");
   await exec("document.querySelector('#preview-button').click()");
-  await until("document.querySelector('#preview > div')?.shadowRoot?.querySelectorAll('[data-named-slot=extra]').length===1");
+  await until("document.querySelector(\'#workspace-layout-state\').dataset.phase===\'ready\' && ("+"document.querySelector('#preview > div')?.shadowRoot?.querySelectorAll('[data-named-slot=extra]').length===1"+")");
   await exec("document.querySelector('#save').click()");
   await until("document.querySelector('#save').disabled && !document.querySelector('#open').disabled");
   // Verify multiline named-slot samples, persisted style and exact source selection.
@@ -2698,18 +2699,18 @@ async function smoke(){
   await until("!document.querySelector('#lab-measure')");
   await exec("(()=>{const e=document.querySelector('#source'),s=e.value,last=s.lastIndexOf('追加の原稿を入力してください。');if(last<0)throw Error('missing placeholder');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(e,s.slice(0,last)+"+JSON.stringify(sampleMulti)+"+s.slice(last+'追加の原稿を入力してください。'.length));e.dispatchEvent(new Event('input',{bubbles:true}));})()");
   await exec("document.querySelector('#preview-button').click()");
-  await until("document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-named-slot=extra]')?.textContent==="+JSON.stringify(sampleMulti));
+  await until("document.querySelector(\'#workspace-layout-state\').dataset.phase===\'ready\' && ("+"document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-named-slot=extra]')?.textContent==="+JSON.stringify(sampleMulti)+")");
   await exec("document.querySelector('#preview > div').shadowRoot.querySelector('[data-named-slot=extra]').click()");
   if(!await exec("(()=>{const e=document.querySelector('#source');return e.value.slice(e.selectionStart,e.selectionEnd)==="+JSON.stringify(sampleMulti)+";})()"))throw Error('Multiline named slot selection lost source');
   // The earlier imported static regular face cannot supply a genuine 700 weight.
   // Use the bundled variable face for the existing bold/italic regression.
   await exec("(()=>{const e=document.querySelector('#body-font');e.value='BCFont_NotoSansJP';e.dispatchEvent(new Event('change',{bubbles:true}));})()");
-  await until("document.querySelector('#body-font').value==='BCFont_NotoSansJP' && !document.querySelector('#preview > div')");
+  await until("document.querySelector('#body-font').value==='BCFont_NotoSansJP' && (document.querySelector('#workspace-layout-state').dataset.phase==='stale'&&document.querySelector('#preview > div')?.dataset.paperFreshness!=='current')");
   // Replace the final named slot body with styled logical text and select its exact raw envelope.
   const richRaw='**第一段落**。\n\n*第二段落*。',richLogical='第一段落。\n\n第二段落。';
   await exec("(()=>{const e=document.querySelector('#source'),s=e.value,last=s.lastIndexOf("+JSON.stringify(sampleMulti)+");if(last<0)throw Error('missing multiline body');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(e,s.slice(0,last)+"+JSON.stringify(richRaw)+"+s.slice(last+"+sampleMulti.length+"));e.dispatchEvent(new Event('input',{bubbles:true}));})()");
   await exec("document.querySelector('#preview-button').click()");
-  await until("document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-named-slot=extra]')?.textContent==="+JSON.stringify(richLogical));
+  await until("document.querySelector(\'#workspace-layout-state\').dataset.phase===\'ready\' && ("+"document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-named-slot=extra]')?.textContent==="+JSON.stringify(richLogical)+")");
   if(!await exec("(()=>{const s=document.querySelector('#preview > div').shadowRoot.querySelector('[data-named-slot=extra]');return Array.from(s.querySelectorAll('[data-inline-style]')).some(e=>e.style.fontWeight==='700'&&e.textContent==='第一段落')&&Array.from(s.querySelectorAll('[data-inline-style]')).some(e=>e.style.fontStyle==='italic'&&e.textContent==='第二段落');})()"))throw Error('Inline styles were not rendered');
   await exec("document.querySelector('#preview > div').shadowRoot.querySelector('[data-named-slot=extra]').click()");
   if(!await exec("(()=>{const e=document.querySelector('#source');return e.value.slice(e.selectionStart,e.selectionEnd)==="+JSON.stringify(richRaw)+";})()"))throw Error('Styled slot raw selection lost delimiters');
@@ -2723,7 +2724,7 @@ async function smoke(){
   const insertedSlotMath=beforeSlotMath.slice(0,slotMathAt)+'$x^2$'+beforeSlotMath.slice(slotMathAt);
   await until("document.querySelector('#source').value==="+JSON.stringify(insertedSlotMath));
   await exec("document.querySelector('#preview-button').click()");
-  await until("!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-named-slot=extra] [data-inline-math] math msup')");
+  await until("document.querySelector(\'#workspace-layout-state\').dataset.phase===\'ready\' && ("+"!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-named-slot=extra] [data-inline-math] math msup')"+")");
   await exec("document.querySelector('#preview > div').shadowRoot.querySelector('[data-named-slot=extra] [data-inline-math]').click()");
   if(!await exec("(()=>{const e=document.querySelector('#source');return e.value.slice(e.selectionStart,e.selectionEnd)==='$x^2$';})()"))throw Error('Named slot math selected incorrect source');
   await exec("document.querySelector('#source-inline-math').click()");
@@ -2734,7 +2735,7 @@ async function smoke(){
   const changedSlotMath=beforeSlotMath.slice(0,slotMathAt)+'$\\frac{a}{b}$'+beforeSlotMath.slice(slotMathAt);
   await until("document.querySelector('#source').value==="+JSON.stringify(changedSlotMath));
   await exec("document.querySelector('#preview-button').click()");
-  await until("!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-named-slot=extra] [data-inline-math] math mfrac')");
+  await until("document.querySelector(\'#workspace-layout-state\').dataset.phase===\'ready\' && ("+"!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-named-slot=extra] [data-inline-math] math mfrac')"+")");
   // Insert an independent equation at the internal blank of the named slot.
   const displayAt=beforeSlotMath.lastIndexOf('\n\n*第二段落*。')+1;
   if(displayAt<=0)throw Error('Missing named slot blank line');
@@ -2746,7 +2747,7 @@ async function smoke(){
   const insertedDisplay=beforeSlotMath.slice(0,displayAt)+'\n$$\nx^2\n$$\n'+beforeSlotMath.slice(displayAt);
   await until("document.querySelector('#source').value==="+JSON.stringify(insertedDisplay));
   await exec("document.querySelector('#preview-button').click()");
-  await until("!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-named-slot=extra] [data-slot-display-math] math[display=block] msup')");
+  await until("document.querySelector(\'#workspace-layout-state\').dataset.phase===\'ready\' && ("+"!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-named-slot=extra] [data-slot-display-math] math[display=block] msup')"+")");
   await exec("document.querySelector('#preview > div').shadowRoot.querySelector('[data-named-slot=extra] [data-slot-display-math]').click()");
   if(!await exec("(()=>{const e=document.querySelector('#source');return e.value.slice(e.selectionStart,e.selectionEnd)==="+JSON.stringify('$$\nx^2\n$$')+";})()"))throw Error('Component display formula selection mismatch');
   await exec("document.querySelector('#source-math').click()");
@@ -2756,9 +2757,9 @@ async function smoke(){
   await exec("document.querySelector('#math-apply').click()");
   await until("document.querySelector('#source').value==="+JSON.stringify(insertedDisplay.replace('$$\nx^2\n$$',()=> '$$\n\\frac{a}{b}\n$$')));
   await exec("document.querySelector('#preview-button').click()");
-  await until("!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-named-slot=extra] [data-slot-display-math] math mfrac')");
+  await until("document.querySelector(\'#workspace-layout-state\').dataset.phase===\'ready\' && ("+"!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-named-slot=extra] [data-slot-display-math] math mfrac')"+")");
   await setInlineMathSource(beforeSlotMath);
-  await until("document.querySelector('#source').value==="+JSON.stringify(beforeSlotMath)+" && !document.querySelector('#preview > div')");
+  await until("document.querySelector('#source').value==="+JSON.stringify(beforeSlotMath)+" && (document.querySelector('#workspace-layout-state').dataset.phase==='stale'&&document.querySelector('#preview > div')?.dataset.paperFreshness!=='current')");
   // A numbered formula can be inserted in the named slot in a single operation.
   await exec("(()=>{const e=document.querySelector('#source');e.focus();e.setSelectionRange("+displayAt+","+displayAt+");document.querySelector('#source-math').click();})()");
   await until("document.querySelector('#math-numbered')?.checked===false");
@@ -2776,16 +2777,16 @@ async function smoke(){
   await until("document.querySelector('#source').value.includes("+JSON.stringify('#'+insertedSlotEqId+' numbered="true"')+")&&!document.querySelector('#math-formula')");
   await until("(()=>{const e=document.querySelector('#source');return e.value.slice(e.selectionStart,e.selectionEnd)==='x^2';})()");
   await exec("document.querySelector('#preview-button').click()");
-  await until("!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-named-slot=extra] [data-slot-display-math] [data-equation-number]')");
+  await until("document.querySelector(\'#workspace-layout-state\').dataset.phase===\'ready\' && ("+"!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-named-slot=extra] [data-slot-display-math] [data-equation-number]')"+")");
   await setInlineMathSource(beforeSlotMath);
-  await until("document.querySelector('#source').value==="+JSON.stringify(beforeSlotMath)+" && !document.querySelector('#preview > div')");
+  await until("document.querySelector('#source').value==="+JSON.stringify(beforeSlotMath)+" && (document.querySelector('#workspace-layout-state').dataset.phase==='stale'&&document.querySelector('#preview > div')?.dataset.paperFreshness!=='current')");
   // Numbered component equation: paper selection includes the wrapper; editing changes only TeX.
   const nestedNumbered='::::callout{kind="note"}\n:::layout{#eq-gui-nested numbered="true"}\n$$\nx^2\n$$\n:::\n::::\n';
   const nestedNumberedSource=beforeSlotMath+'\n\n'+nestedNumbered;
   await setInlineMathSource(nestedNumberedSource);
   await until("document.querySelector('#source').value==="+JSON.stringify(nestedNumberedSource));
   await exec("document.querySelector('#preview-button').click()");
-  await until("!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-slot-display-math] [data-equation-number]')");
+  await until("document.querySelector(\'#workspace-layout-state\').dataset.phase===\'ready\' && ("+"!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-slot-display-math] [data-equation-number]')"+")");
   await exec("document.querySelector('#preview > div').shadowRoot.querySelector('[data-slot-display-math] [data-equation-number]').click()");
   await exec("document.querySelector('#source-math').click()");
   await until("document.querySelector('#math-formula')?.value==='x^2'&&document.querySelector('#math-equation-id')?.textContent.includes('eq-gui-nested')");
@@ -2803,7 +2804,7 @@ async function smoke(){
   const nestedId=enabledNestedSource.match(/:::layout\{#(eq-[a-f0-9-]+) numbered="true"\}/)?.[1];
   if(!nestedId||enabledNestedSource!==beforeSlotMath+'\n\n::::callout{kind="note"}\n:::layout{#'+nestedId+' numbered="true"}\n$$\nz^2\n$$\n:::\n::::\n')throw Error('Component numbering changed unrelated text');
   await exec("document.querySelector('#preview-button').click()");
-  await until("!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-slot-display-math] [data-equation-number]')");
+  await until("document.querySelector(\'#workspace-layout-state\').dataset.phase===\'ready\' && ("+"!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-slot-display-math] [data-equation-number]')"+")");
   await exec("document.querySelector('#preview > div').shadowRoot.querySelector('[data-slot-display-math] [data-equation-number]').click()");
   await exec("document.querySelector('#source-equation-numbering').click()");
   const disabledNestedSource=enabledNestedSource.replace('#'+nestedId+' numbered="true"','#'+nestedId+' numbered="false"');
@@ -2822,7 +2823,7 @@ async function smoke(){
   const nestedRefToken=':ref{target="'+nestedId+'" format="label-number"}';
   await until("document.querySelector('#source').value==="+JSON.stringify(nestedRefSource.replace('参照先。',()=> '参照先'+nestedRefToken+'。')));
   await exec("document.querySelector('#preview-book').click()");
-  await until("(()=>{const root=document.querySelector('#preview > div')?.shadowRoot,n=root?.querySelector('[data-slot-display-math] [data-equation-number]');return !!n&&root.textContent.includes('参照先式 '+n.textContent);})()");
+  await until("document.querySelector(\'#workspace-layout-state\').dataset.phase===\'ready\' && ("+"(()=>{const root=document.querySelector('#preview > div')?.shadowRoot,n=root?.querySelector('[data-slot-display-math] [data-equation-number]');return !!n&&root.textContent.includes('参照先式 '+n.textContent);})()"+")");
   // Inline math and plain-text styling may coexist with a resolved reference.
   const refBeforeInline=await exec("document.querySelector('#source').value");
   await exec("(()=>{const e=document.querySelector('#source'),p=e.value.lastIndexOf('参照先')+3;e.focus();e.setSelectionRange(p,p);document.querySelector('#source-inline-math').click();})()");
@@ -2836,19 +2837,19 @@ async function smoke(){
   const refWithStyle=refWithInline.replace('参照先$x^2$',()=> '**参照先**$x^2$');
   await until("document.querySelector('#source').value==="+JSON.stringify(refWithStyle));
   await exec("document.querySelector('#preview-book').click()");
-  await until("(()=>{const root=document.querySelector('#preview > div')?.shadowRoot,n=root?.querySelector('[data-slot-display-math] [data-equation-number]');return !!n&&root.textContent.includes('式 '+n.textContent)&&Array.from(root.querySelectorAll('[data-inline-style]')).some(e=>e.textContent==='参照先'&&e.style.fontWeight==='700');})()");
+  await until("document.querySelector(\'#workspace-layout-state\').dataset.phase===\'ready\' && ("+"(()=>{const root=document.querySelector('#preview > div')?.shadowRoot,n=root?.querySelector('[data-slot-display-math] [data-equation-number]');return !!n&&root.textContent.includes('式 '+n.textContent)&&Array.from(root.querySelectorAll('[data-inline-style]')).some(e=>e.textContent==='参照先'&&e.style.fontWeight==='700');})()"+")");
 
 
 
   await setInlineMathSource(beforeSlotMath);
-  await until("document.querySelector('#source').value==="+JSON.stringify(beforeSlotMath)+" && !document.querySelector('#preview > div')");
+  await until("document.querySelector('#source').value==="+JSON.stringify(beforeSlotMath)+" && (document.querySelector('#workspace-layout-state').dataset.phase==='stale'&&document.querySelector('#preview > div')?.dataset.paperFreshness!=='current')");
   // Apply/remove/replace formatting using the actual toolbar and textarea selection.
   const beforeFormat=await exec("document.querySelector('#source').value");
   await exec("(()=>{const e=document.querySelector('#source'),p=e.value.lastIndexOf('第一段落');e.focus();e.setSelectionRange(p,p+'第一段落'.length);})()");
   await until("!document.querySelector('#source-bold').disabled");
   await exec("document.querySelector('#source-bold').click()");
   await until("document.querySelector('#source').value.includes('第一段落。')&&!document.querySelector('#source').value.includes('**第一段落**')");
-  if(await exec("document.querySelector('#preview').children.length"))throw Error('Formatting did not invalidate preview');
+  if(!await exec("document.querySelector('#workspace-layout-state').dataset.phase==='stale'&&document.querySelector('#preview > div')?.dataset.paperFreshness==='previous'&&document.querySelector('#preview > div').inert"))throw Error('Formatting did not invalidate preview');
   await until("(()=>{const e=document.querySelector('#source');return e.value.slice(e.selectionStart,e.selectionEnd)==='第一段落';})()");
   await exec("document.querySelector('#source').dispatchEvent(new KeyboardEvent('keydown',{key:'i',ctrlKey:true,bubbles:true,cancelable:true}))");
   await until("document.querySelector('#source').value.includes('*第一段落*')");
@@ -2861,7 +2862,7 @@ async function smoke(){
   await exec("document.querySelector('#source-bold').click()");
   if(!await exec("document.querySelector('#source').value==="+JSON.stringify(beforeFormat)))throw Error('Formatting changed a protected directive header');
   await exec("document.querySelector('#preview-button').click()");
-  await until("document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-named-slot=extra] [data-inline-style]')?.style.fontWeight==='700'");
+  await until("document.querySelector(\'#workspace-layout-state\').dataset.phase===\'ready\' && ("+"document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-named-slot=extra] [data-inline-style]')?.style.fontWeight==='700'"+")");
   // Combine additional typed styles through actual toolbar controls.
   await exec("(()=>{const e=document.querySelector('#source'),p=e.value.lastIndexOf('第一段落');e.focus();e.setSelectionRange(p,p+'第一段落'.length);})()");
   await until("!document.querySelector('#source-underline').disabled");
@@ -2877,7 +2878,7 @@ async function smoke(){
   await exec("document.querySelector('#source-apply-font').click()");
   await until("document.querySelector('#source').value.includes('font=\\\"system-monospace\\\"')");
   await exec("document.querySelector('#preview-button').click()");
-  await until("(()=>{const s=document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-named-slot=extra] [data-inline-style]');return s?.textContent==='第一段落'&&s.style.fontFamily==='monospace'&&s.style.fontWeight==='400'&&s.style.fontStyle==='italic'&&s.style.textDecorationLine==='underline'&&s.style.color==='rgb(194, 65, 12)';})()");
+  await until("document.querySelector(\'#workspace-layout-state\').dataset.phase===\'ready\' && ("+"(()=>{const s=document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-named-slot=extra] [data-inline-style]');return s?.textContent==='第一段落'&&s.style.fontFamily==='monospace'&&s.style.fontWeight==='400'&&s.style.fontStyle==='italic'&&s.style.textDecorationLine==='underline'&&s.style.color==='rgb(194, 65, 12)';})()"+")");
   await exec("document.querySelector('#preview > div').shadowRoot.querySelector('[data-named-slot=extra]').click()");
   if(!await exec("(()=>{const e=document.querySelector('#source'),s=e.value.slice(e.selectionStart,e.selectionEnd);return s.startsWith(':style{')&&s.includes('font=\\\"system-monospace\\\"')&&s.endsWith('*第二段落*。');})()"))throw Error('Composite inline raw source range mismatch');
   // Exercise size and script controls on a new plain line without disturbing the composite regression.
@@ -2898,19 +2899,19 @@ async function smoke(){
   await exec("document.querySelector('#source-apply-size').click()");
   await until("document.querySelector('#source').value.includes('font-size=\\\"4.2mm\\\"')");
   await exec("document.querySelector('#preview-button').click()");
-  await until("(()=>{const spans=[...document.querySelector('#preview > div')?.shadowRoot?.querySelectorAll('[data-inline-style]')??[]];return spans.some(s=>s.textContent==='2'&&s.style.verticalAlign==='super')&&spans.some(s=>s.textContent==='2'&&s.style.verticalAlign==='sub')&&spans.some(s=>s.textContent==='大文字'&&Math.abs(parseFloat(s.style.fontSize)-4.2*96/25.4)<.01);})()");
+  await until("document.querySelector(\'#workspace-layout-state\').dataset.phase===\'ready\' && ("+"(()=>{const spans=[...document.querySelector('#preview > div')?.shadowRoot?.querySelectorAll('[data-inline-style]')??[]];return spans.some(s=>s.textContent==='2'&&s.style.verticalAlign==='super')&&spans.some(s=>s.textContent==='2'&&s.style.verticalAlign==='sub')&&spans.some(s=>s.textContent==='大文字'&&Math.abs(parseFloat(s.style.fontSize)-4.2*96/25.4)<.01);})()"+")");
   // Toggle an isolated styled line without losing text or changing existing list counters.
   const beforeList=await exec("document.querySelector('#source').value");
   await exec("(()=>{const e=document.querySelector('#source'),p=e.value.lastIndexOf('x^2^');e.focus();e.setSelectionRange(p,p+1);document.querySelector('#source-list-ordered').click();})()");
   await until("document.querySelector('#source').value.includes('1. x^2^')");
   await exec("document.querySelector('#preview-button').click()");
-  await until("document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-list-marker]')?.textContent==='1.'");
+  await until("document.querySelector(\'#workspace-layout-state\').dataset.phase===\'ready\' && ("+"document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-list-marker]')?.textContent==='1.'"+")");
   await exec("document.querySelector('#preview > div').shadowRoot.querySelector('[data-list-body]').click()");
   if(!await exec("(()=>{const e=document.querySelector('#source');return e.value.slice(e.selectionStart,e.selectionEnd).startsWith('x^2^');})()"))throw Error('List body selection includes marker');
   await exec("document.querySelector('#source-list-bullet').click()");
   await until("document.querySelector('#source').value.includes('- x^2^')");
   await exec("document.querySelector('#preview-button').click()");
-  await until("document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-list-marker]')?.textContent==='•'");
+  await until("document.querySelector(\'#workspace-layout-state\').dataset.phase===\'ready\' && ("+"document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-list-marker]')?.textContent==='•'"+")");
   await exec("document.querySelector('#preview > div').shadowRoot.querySelector('[data-list-body]').click()");
   await exec("document.querySelector('#source-list-bullet').click()");
   await until("document.querySelector('#source').value==="+JSON.stringify(beforeList));
@@ -2920,14 +2921,14 @@ async function smoke(){
   await exec("(()=>{const e=document.querySelector('#source');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(e,"+JSON.stringify(listSource)+");e.dispatchEvent(new Event('input',{bubbles:true}));})()");
   await until("document.querySelector('#source').value==="+JSON.stringify(listSource));
   await exec("document.querySelector('#preview-button').click()");
-  await until("(()=>{const root=document.querySelector('#preview > div')?.shadowRoot;return [...root?.querySelectorAll('[data-list-marker]')??[]].map(e=>e.textContent).join('|')==='3.|◦|4.|•';})()");
+  await until("document.querySelector(\'#workspace-layout-state\').dataset.phase===\'ready\' && ("+"(()=>{const root=document.querySelector('#preview > div')?.shadowRoot;return [...root?.querySelectorAll('[data-list-marker]')??[]].map(e=>e.textContent).join('|')==='3.|◦|4.|•';})()"+")");
   await exec("document.querySelector('#preview > div').shadowRoot.querySelector('[data-list-item=ordered]').click()");
   if(!await exec("(()=>{const e=document.querySelector('#source');return e.value.slice(e.selectionStart,e.selectionEnd)==='**第一項**';})()"))throw Error('List item did not select exact marker-free inline source');
   // Move the second root item under the preceding ordered item, then restore it.
   await exec("(()=>{const e=document.querySelector('#source'),p=e.value.lastIndexOf('第二項');e.focus();e.setSelectionRange(p,p+3);document.querySelector('#source-list-indent').click();})()");
   await until("document.querySelector('#source').value.includes('   1. 第二項')");
   await exec("document.querySelector('#preview-button').click()");
-  await until("(()=>{const root=document.querySelector('#preview > div')?.shadowRoot;return [...root?.querySelectorAll('[data-list-item]')??[]].some(e=>e.dataset.listDepth==='1'&&e.querySelector('[data-list-body]')?.textContent==='第二項');})()");
+  await until("document.querySelector(\'#workspace-layout-state\').dataset.phase===\'ready\' && ("+"(()=>{const root=document.querySelector('#preview > div')?.shadowRoot;return [...root?.querySelectorAll('[data-list-item]')??[]].some(e=>e.dataset.listDepth==='1'&&e.querySelector('[data-list-body]')?.textContent==='第二項');})()"+")");
   await exec("(()=>{const e=document.querySelector('#source'),p=e.value.lastIndexOf('第二項');e.focus();e.setSelectionRange(p,p+3);document.querySelector('#source-list-outdent').click();})()");
   await until("document.querySelector('#source').value==="+JSON.stringify(listSource));
   // Batch conversion of an isolated whole run, including styled source.
@@ -2943,7 +2944,7 @@ async function smoke(){
   await until("document.querySelector('#source').value.includes("+JSON.stringify(orderedBatch)+")");
   await until("(()=>{const e=document.querySelector('#source');return e.value.slice(e.selectionStart,e.selectionEnd)==="+JSON.stringify(orderedBatch)+";})()");
   await exec("document.querySelector('#preview-button').click()");
-  await until("(()=>{const root=document.querySelector('#preview > div')?.shadowRoot;return [...root?.querySelectorAll('[data-list-marker]')??[]].slice(-3).map(e=>e.textContent).join('|')==='1.|2.|3.';})()");
+  await until("document.querySelector(\'#workspace-layout-state\').dataset.phase===\'ready\' && ("+"(()=>{const root=document.querySelector('#preview > div')?.shadowRoot;return [...root?.querySelectorAll('[data-list-marker]')??[]].slice(-3).map(e=>e.textContent).join('|')==='1.|2.|3.';})()"+")");
   await exec("document.querySelector('#source-list-ordered').click()");
   await until("document.querySelector('#source').value==="+JSON.stringify(batchSource));
   // Insert and re-edit an independent formula through the actual GUI.
@@ -2970,7 +2971,7 @@ async function smoke(){
   const insertedMath=await exec("document.querySelector('#source').value");
   if(!insertedMath.startsWith(mathBase)||!insertedMath.includes('$$\n'+mathFormula+'\n$$'))throw Error('Math insertion changed original manuscript');
   await exec("document.querySelector('#preview-button').click()");
-  await until("!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-display-math] math mfrac')");
+  await until("document.querySelector(\'#workspace-layout-state\').dataset.phase===\'ready\' && ("+"!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-display-math] math mfrac')"+")");
   await exec("document.querySelector('#preview > div').shadowRoot.querySelector('[data-display-math]').click()");
   if(!await exec("(()=>{const e=document.querySelector('#source');return e.value.slice(e.selectionStart,e.selectionEnd)==="+JSON.stringify(mathFormula)+";})()"))throw Error('Formula source range mismatch');
   await exec("document.querySelector('#source-math').click()");
@@ -2988,9 +2989,9 @@ async function smoke(){
   await until("!!document.querySelector('#math-draft-preview math msqrt') && document.querySelectorAll('#math-draft-preview math mtable mtr').length===2");
   await exec("document.querySelector('#math-apply').click()");
   await until("document.querySelector('#source').value==="+JSON.stringify(insertedMath.replace(mathFormula,changedFormula)));
-  if(await exec("document.querySelector('#preview').children.length"))throw Error('Old formula preview was not invalidated');
+  if(!await exec("document.querySelector('#workspace-layout-state').dataset.phase==='stale'&&document.querySelector('#preview > div')?.dataset.paperFreshness==='previous'&&document.querySelector('#preview > div').inert"))throw Error('Old formula preview was not invalidated');
   await exec("document.querySelector('#preview-book').click()");
-  await until("!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-display-math] math msqrt') && document.querySelector('#preview > div').shadowRoot.querySelectorAll('[data-display-math] math mtable mtr').length===2");
+  await until("document.querySelector(\'#workspace-layout-state\').dataset.phase===\'ready\' && ("+"!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-display-math] math msqrt') && document.querySelector('#preview > div').shadowRoot.querySelectorAll('[data-display-math] math mtable mtr').length===2"+")");
   await exec("document.querySelector('#preview > div').shadowRoot.querySelector('[data-display-math]').click()");
   await exec("document.querySelector('#source-math').click()");
   await until("document.querySelector('#math-formula')?.value==="+JSON.stringify(changedFormula));
@@ -3011,7 +3012,7 @@ async function smoke(){
   const numberedSource=staleSource+'\n:::layout{#'+equationId+' numbered="true"}\n$$\nx^2\n$$\n:::\n\n';
   await until("document.querySelector('#source').value==="+JSON.stringify(numberedSource));
   await exec("document.querySelector('#preview-button').click()");
-  await until("!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-equation-number]')");
+  await until("document.querySelector(\'#workspace-layout-state\').dataset.phase===\'ready\' && ("+"!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-equation-number]')"+")");
   await exec("document.querySelector('#preview > div').shadowRoot.querySelector('[data-equation-number]').click()");
   await exec("document.querySelector('#source-math').click()");
   await until("document.querySelector('#math-formula')?.value==='x^2'&&document.querySelector('#math-numbered')?.checked===true&&document.querySelector('#math-numbered')?.disabled===true");
@@ -3021,7 +3022,7 @@ async function smoke(){
   await until("document.querySelector('#source').value==="+JSON.stringify(editedNumbered));
   await until("(()=>{const e=document.querySelector('#source');return e.value.slice(e.selectionStart,e.selectionEnd)==='y^2';})()");
   await exec("document.querySelector('#preview-book').click()");
-  await until("!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-equation-number]')");
+  await until("document.querySelector(\'#workspace-layout-state\').dataset.phase===\'ready\' && ("+"!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-equation-number]')"+")");
   // Insert a reference to the generated persistent ID, never to its displayed number.
   await exec("(()=>{const e=document.querySelector('#source'),p=e.value.lastIndexOf('追記。')+2;e.focus();e.setSelectionRange(p,p);document.querySelector('#source-equation-reference').click();})()");
   await until("document.querySelector('#equation-reference-target')?.value==="+JSON.stringify(equationId));
@@ -3034,7 +3035,7 @@ async function smoke(){
   await until("document.querySelector('#source').value==="+JSON.stringify(referenced));
   await until("(()=>{const e=document.querySelector('#source');return e.value.slice(e.selectionStart,e.selectionEnd)==="+JSON.stringify(equationToken)+";})()");
   await exec("document.querySelector('#preview-book').click()");
-  await until("(()=>{const root=document.querySelector('#preview > div')?.shadowRoot,n=root?.querySelector('[data-equation-number]');return !!n&&root.textContent.includes('式 '+n.textContent);})()");
+  await until("document.querySelector(\'#workspace-layout-state\').dataset.phase===\'ready\' && ("+"(()=>{const root=document.querySelector('#preview > div')?.shadowRoot,n=root?.querySelector('[data-equation-number]');return !!n&&root.textContent.includes('式 '+n.textContent);})()"+")");
   // Numbering cannot be removed while a reference points to that equation.
   await exec("document.querySelector('#preview > div').shadowRoot.querySelector('[data-equation-number]').click()");
   await exec("document.querySelector('#source-equation-numbering').click()");
@@ -3049,7 +3050,7 @@ async function smoke(){
   await exec("document.querySelector('#source-equation-numbering').click()");
   await until("document.querySelector('#source').value==="+JSON.stringify(editedNumbered));
   await exec("document.querySelector('#preview-book').click()");
-  await until("(()=>{const root=document.querySelector('#preview > div')?.shadowRoot,math=[...root?.querySelectorAll('math')??[]];return math.length>0&&math.every(m=>m.style.fontFamily.includes('BCFont_STIXTwoMath'))&&[...document.fonts].some(f=>f.family.replace(/[\"']/g,'')==='BCFont_STIXTwoMath'&&f.status==='loaded');})()");
+  await until("document.querySelector(\'#workspace-layout-state\').dataset.phase===\'ready\' && ("+"(()=>{const root=document.querySelector('#preview > div')?.shadowRoot,math=[...root?.querySelectorAll('math')??[]];return math.length>0&&math.every(m=>m.style.fontFamily.includes('BCFont_STIXTwoMath'))&&[...document.fonts].some(f=>f.family.replace(/[\"']/g,'')==='BCFont_STIXTwoMath'&&f.status==='loaded');})()"+")");
   const bundledTheme=await readFile(join(smokeRoot,'new-book','themes','default','theme.yaml'),'utf8');
   if(!bundledTheme.includes('stix-two-math'))throw Error('Bundled math theme role missing');
   // Import a genuine math font through the same permission-gated project font manager.
@@ -3063,9 +3064,9 @@ async function smoke(){
   const mathAlias=await exec("[...document.querySelector('#math-font').options].find(o=>/^BCFont_[a-f0-9]{64}$/.test(o.value)).value");
   const oldTextFonts=await exec("[document.querySelector('#body-font').value,document.querySelector('#heading-font').value]");
   await exec("(()=>{const e=document.querySelector('#math-font');e.value="+JSON.stringify(mathAlias)+";e.dispatchEvent(new Event('change',{bubbles:true}));})()");
-  await until("!document.querySelector('#save-theme').disabled && !document.querySelector('#preview > div')");
+  await until("!document.querySelector('#save-theme').disabled && (document.querySelector('#workspace-layout-state').dataset.phase==='stale'&&document.querySelector('#preview > div')?.dataset.paperFreshness!=='current')");
   await exec("document.querySelector('#preview-book').click()");
-  await until("(()=>{const math=[...document.querySelector('#preview > div')?.shadowRoot?.querySelectorAll('math')??[]];return math.length>0&&math.every(m=>m.style.fontFamily.includes("+JSON.stringify(mathAlias)+"));})()");
+  await until("document.querySelector(\'#workspace-layout-state\').dataset.phase===\'ready\' && ("+"(()=>{const math=[...document.querySelector('#preview > div')?.shadowRoot?.querySelectorAll('math')??[]];return math.length>0&&math.every(m=>m.style.fontFamily.includes("+JSON.stringify(mathAlias)+"));})()"+")");
   if(JSON.stringify(await exec("[document.querySelector('#body-font').value,document.querySelector('#heading-font').value]"))!==JSON.stringify(oldTextFonts))throw Error('Math role changed text fonts');
   await exec("document.querySelector('#preview > div').shadowRoot.querySelector('[data-equation-number]').click()");
   await exec("document.querySelector('#source-math').click()");
