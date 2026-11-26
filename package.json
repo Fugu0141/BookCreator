@@ -11,7 +11,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "npm run build && node --test tests/*.test.mjs",
     "preview:demo": "node demo/start-preview.mjs",
-    "preview:smoke": "node tests/browser-preview.mjs"
+    "preview:smoke": "node tests/browser-preview.mjs",
+    "test:math-pdf": "node tests/math-pdf-preflight.mjs"
   },
   "devDependencies": {
     "typescript": "5.8.3"
