@@ -138,7 +138,7 @@ async function run(){
 // Existing regression scenarios still use the real controls, but reach them through
 // the appropriate workflow surface rather than invoking hidden DOM controls.
 function workspaceSmokeExec(){
-  const raw=js=>win.webContents.executeJavaScript(js);
+  const raw=async js=>{try{return await win.webContents.executeJavaScript(js);}catch(e){throw Error('Renderer script failed: '+js.slice(0,800)+'; '+String(e.message??e),{cause:e});}};
   const routeFor=selector=>{
     if(/^#(?:open|new-project|new-title|new-folder|new-size|create-project)$/.test(selector))return 'home';
     if(/^#(?:font-manager|font-license|font-license-text|font-copy|import-font|image-manager|image-copy|import-image|lab-level|component-lab|paragraph-lab|study-design-kind|study-design-lab|body-font|body-weight|heading-font|heading-weight|math-font|save-theme)$/.test(selector))return 'design';
@@ -326,14 +326,14 @@ async function packageSmoke(){
   await until("document.querySelector('#workspace-layout-state').dataset.phase==='ready'&&document.querySelector('#workspace-layout-state').dataset.scope==='book'&&document.querySelectorAll('[data-layout-page]').length>1");
   if(!await exec("document.querySelectorAll('[data-layout-page]').length===document.querySelector('#preview > div').shadowRoot.querySelectorAll('[data-page]').length&&document.querySelector('#layout-page-scope').textContent.includes('書籍全体')&&document.querySelector('.layout-page-info').textContent.includes('chapter')&&document.querySelector('#layout-prev').disabled"))throw Error('Page list does not represent measured pages');
   await exec("document.querySelector('#layout-next').click()");
-  await until("document.querySelector('[data-layout-page=2]').getAttribute('aria-current')==='page'&&document.querySelector('#preview').scrollTop>0&&document.querySelector('#layout-page-jump').value==='2'");
-  await exec("document.querySelector('[data-layout-page=1]').click()");
-  await until("document.querySelector('[data-layout-page=1]').getAttribute('aria-current')==='page'&&document.querySelector('#preview').scrollTop<20");
+  await until("document.querySelector('[data-layout-page=\"2\"]').getAttribute('aria-current')==='page'&&document.querySelector('#preview').scrollTop>0&&document.querySelector('#layout-page-jump').value==='2'");
+  await exec("document.querySelector('[data-layout-page=\"1\"]').click()");
+  await until("document.querySelector('[data-layout-page=\"1\"]').getAttribute('aria-current')==='page'&&document.querySelector('#preview').scrollTop<20");
   await exec("(()=>{const e=document.querySelector('#layout-page-jump');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,'2');e.dispatchEvent(new Event('input',{bubbles:true}));})()");
   await exec("document.querySelector('#layout-jump').click()");
-  await until("document.querySelector('[data-layout-page=2]').getAttribute('aria-current')==='page'");
+  await until("document.querySelector('[data-layout-page=\"2\"]').getAttribute('aria-current')==='page'");
   await exec("document.querySelector('#layout-prev').click()");
-  await until("document.querySelector('[data-layout-page=1]').getAttribute('aria-current')==='page'");
+  await until("document.querySelector('[data-layout-page=\"1\"]').getAttribute('aria-current')==='page'");
   await exec("document.querySelector('#mode-writing').click()");
   await setNavigationSource(sample);
   await until("document.querySelector('#workspace-layout-state').dataset.phase==='stale'&&!document.querySelector('#layout-pages')&&!document.querySelector('#preview > div')");
