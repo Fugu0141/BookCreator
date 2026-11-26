@@ -24,6 +24,7 @@ contextBridge.exposeInMainWorld('bookcreator',Object.freeze({
   saveTypography:(revision,roles)=>ipcRenderer.invoke('bookcreator:saveTypography',revision,roles),
   readBook:()=>ipcRenderer.invoke('bookcreator:readBook'),
   readPreviewBook:token=>ipcRenderer.invoke('bookcreator:readPreviewBook',token),
+  readPreviewImage:(token,id)=>ipcRenderer.invoke('bookcreator:readPreviewImage',token,id),
   saveBookSettings:(revision,settings)=>ipcRenderer.invoke('bookcreator:saveBookSettings',revision,settings),
   componentRecovery:request=>ipcRenderer.invoke('bookcreator:component-recovery',request),
   settingsRecovery:request=>ipcRenderer.invoke('bookcreator:settings-recovery',request),

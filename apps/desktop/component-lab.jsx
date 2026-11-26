@@ -1,3 +1,4 @@
+import {measurementLane} from './measurement-lane.mjs';
 import React,{useState,useRef,useEffect} from 'react';
 import {useLabViewport,LabViewportControls} from './lab-viewport.jsx';
 import {createLabMeasurementGate} from './lab-measurement-gate.mjs';
@@ -172,8 +173,8 @@ export function ComponentLab({design,typography,width,height,onApply:saveDesign,
       const {component,namedSlots:rawSlots}=resolveNamedSlotPresence(compiled,namedSlotDefinitions(value).filter(n=>!n.optional||!omittedSlots.has(n.name)).map(({name})=>({name,text:(Object.hasOwn(slotSamples,name)?slotSamples[name]:'追加の原稿サンプルです。')})));
       const sampleRequests=isStudy?previewStudySamples(sample,rawSlots.map(s=>({name:s.name,text:s.request.text})),sampleBcm,sampleDeps):[{name:'content',request:{text:sample}}];
       const namedSlots=rawSlots.map(s=>({...s,request:{...s.request,...sampleRequests.find(r=>r.name===s.name).request,...(typography.mathFontFamily?{mathFontFamily:typography.mathFontFamily}:{})}}));
-      const result=await createPlainTextPagePreview(document,{revision:String(job),fingerprint:'component-lab-'+job,width,height,resolveImage,blocks:[{origin:{documentId:'sample',revision:String(job),blockKey:'heading'},request:{...sampleRequests[0].request,...(typography.mathFontFamily?{mathFontFamily:typography.mathFontFamily}:{}),width,fontSize:compiled.fontSize,lineHeight:compiled.lineHeight,...compiled.textStyle,...(isStudy?multilineTextOptions(sample,compiled.paragraphGap):{})},splitPolicy:'strict',component,...(namedSlots.length?{namedSlots}:{})}]});
-      if(!measurement.current.isCurrent(job))return;
+      const result=await measurementLane.run(()=>createPlainTextPagePreview(document,{revision:String(job),fingerprint:'component-lab-'+job,width,height,resolveImage,blocks:[{origin:{documentId:'sample',revision:String(job),blockKey:'heading'},request:{...sampleRequests[0].request,...(typography.mathFontFamily?{mathFontFamily:typography.mathFontFamily}:{}),width,fontSize:compiled.fontSize,lineHeight:compiled.lineHeight,...compiled.textStyle,...(isStudy?multilineTextOptions(sample,compiled.paragraphGap):{})},splitPolicy:'strict',component,...(namedSlots.length?{namedSlots}:{})}]}),{current:()=>measurement.current.isCurrent(job)});
+      if(!result||!measurement.current.isCurrent(job))return;
       if(!target.current)return;
       target.current.replaceChildren(result.element);
       const root=result.element.shadowRoot;

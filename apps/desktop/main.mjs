@@ -35,6 +35,7 @@ const PAGE='bookcreator://app/index.html';
 const ASSETS=new Map([['/index.html',['index.html','text/html; charset=utf-8']],['/renderer.js',['build/renderer.js','text/javascript; charset=utf-8']],['/style.css',['style.css','text/css; charset=utf-8']]]);
 let win,workspace,closing=false,busy=false,projectFontAssets=new Map();
 const previewReadLane=createPreviewReadLane();
+const previewImageLane=createPreviewReadLane();
 let smokeFontImports=0;
 async function loadProjectFonts(next){
   const faces=await next.fonts(true);const assets=new Map();
@@ -47,7 +48,7 @@ function sender(event){
 }
 function handle(name,fn){
   ipcMain.handle('bookcreator:'+name,async(event,...args)=>{
-    try{sender(event);if(busy)throw Error('Workspace operation in progress');previewReadLane.invalidate();busy=true;
+    try{sender(event);if(busy)throw Error('Workspace operation in progress');previewReadLane.invalidate();previewImageLane.invalidate();busy=true;
       try{return {ok:true,value:await fn(...args)};}finally{busy=false;}
     }catch(e){return {ok:false,error:{code:e.code??'ERROR',message:String(e.message??e)}};}
   });
@@ -190,6 +191,15 @@ async function run(){
       const [token]=args,current=requireWorkspace();
       if(typeof token!=='string'||token!==settingsToken)throw Error('Invalid preview session');
       const value=await previewReadLane.read(token,()=>!busy&&!closing&&workspace===current&&settingsToken===token,()=>current.readBook());
+      return {ok:true,value};
+    }catch(e){return {ok:false,error:{code:e.code??'ERROR',message:String(e.message??e)}};}
+  });
+  ipcMain.handle('bookcreator:readPreviewImage',async(event,...args)=>{
+    try{
+      sender(event);checkArgs(args,2);
+      const [token,id]=args,current=requireWorkspace();
+      if(typeof token!=='string'||token!==settingsToken||typeof id!=='string'||!/^[a-f0-9]{64}$/.test(id))throw Error('Invalid preview image request');
+      const value=await previewImageLane.read(token+':'+id,()=>!busy&&!closing&&workspace===current&&settingsToken===token,async()=>new Uint8Array((await current.image(id)).bytes));
       return {ok:true,value};
     }catch(e){return {ok:false,error:{code:e.code??'ERROR',message:String(e.message??e)}};}
   });
@@ -527,6 +537,7 @@ async function packageSmoke(){
   await until("document.querySelectorAll('#component-catalog .catalog-card').length===7");
   await exec("(()=>{const e=document.querySelector('#component-search');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,'H3');e.dispatchEvent(new Event('input',{bubbles:true}));})()");
   await until("document.querySelectorAll('#component-catalog .catalog-card').length===1&&!!document.querySelector('[data-catalog-edit=heading-3]')");
+  await until("(()=>{const card=document.querySelector('[data-component-key=heading-3]'),sample=card?.querySelector('.catalog-measured-paper > div');return card?.querySelector('.catalog-measured')?.dataset.previewPhase==='ready'&&sample?.inert===true&&!!sample.shadowRoot?.querySelector('[data-page]')&&!!sample.shadowRoot?.querySelector('[data-start]');})()");
   await exec("(()=>{const e=document.querySelector('#component-search');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,'');e.dispatchEvent(new Event('input',{bubbles:true}));})()");
   await exec("(()=>{const e=document.querySelector('#component-filter');e.value='all';e.dispatchEvent(new Event('change',{bubbles:true}));})()");
   await until("document.querySelectorAll('#component-catalog .catalog-card').length>=15");
