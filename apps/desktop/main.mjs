@@ -244,14 +244,16 @@ async function packageSmoke(){
   // Chromium UI zoom exercises reduced CSS viewports; it is not a native OS DPI change.
   const originalZoom=win.webContents.getZoomFactor();
   const baselineWidth=await exec("innerWidth");
+  if(baselineWidth<=900||baselineWidth/2>900)throw Error('Package smoke requires a CSS viewport crossing 900px at 200% zoom; baseline='+baselineWidth);
+  const responsiveReady="(document.querySelector('.workspace-shell').dataset.workspaceMode!=='writing'||document.querySelector('.workspace-main').classList.contains('compact-writing')===(innerWidth<=900))";
   const atUiZoom=async(factor,check)=>{
     win.webContents.setZoomFactor(originalZoom*factor);
     try{
-      await until("Math.abs(innerWidth-"+baselineWidth+"/"+factor+")<8");
+      await until("Math.abs(innerWidth-"+baselineWidth+"/"+factor+")<8&&"+responsiveReady);
       await until(check);
     }finally{
       win.webContents.setZoomFactor(originalZoom);
-      await until("Math.abs(innerWidth-"+baselineWidth+")<8");
+      await until("Math.abs(innerWidth-"+baselineWidth+")<8&&"+responsiveReady);
     }
   };
   const visibleWithinWindow=selectors=>"(()=>{const nodes="+JSON.stringify(selectors)+".map(s=>document.querySelector(s));return nodes.every(e=>{if(!e||!e.getClientRects().length)return false;const r=e.getBoundingClientRect();return r.width>0&&r.height>0&&r.left>=-1&&r.right<=innerWidth+1&&r.top>=-1&&r.bottom<=innerHeight+1;});})()";
@@ -296,9 +298,11 @@ async function packageSmoke(){
   await exec("document.querySelector('#mode-writing').click()");
   await until("document.querySelector('.workspace-shell').dataset.workspaceMode==='writing'&&!!document.querySelector('#source').getClientRects().length&&document.querySelector('#source').value==="+JSON.stringify(sample));
   const workspaceKey=(key,ctrl=false)=>exec("(()=>{const e=document.querySelector('#source');e.dispatchEvent(new KeyboardEvent('keydown',{key:"+JSON.stringify(key)+",ctrlKey:"+JSON.stringify(ctrl)+",bubbles:true,cancelable:true}));})()");
+  await until("!document.querySelector('.workspace-main').classList.contains('compact-writing')&&!document.querySelector('#workspace-outline').hidden&&!document.querySelector('.editor').hidden&&!document.querySelector('#toggle-outline').disabled");
   const editorWidth=await exec("document.querySelector('.editor').getBoundingClientRect().width");
   await exec("document.querySelector('#toggle-outline').click()");
-  await until("document.querySelector('#workspace-outline').hidden&&document.querySelector('#toggle-outline').getAttribute('aria-expanded')==='false'&&document.querySelector('.editor').getBoundingClientRect().width>"+editorWidth);
+  await until("document.querySelector('#workspace-outline').hidden&&document.querySelector('#toggle-outline').getAttribute('aria-expanded')==='false'");
+  await until("document.querySelector('.editor').getBoundingClientRect().width>"+editorWidth);
   await exec("document.querySelector('#toggle-outline').click()");
   await until("!document.querySelector('#workspace-outline').hidden");
   await exec("document.querySelector('#shortcut-help-toggle').click()");
@@ -329,10 +333,9 @@ async function packageSmoke(){
     await until("!document.querySelector('.editor').hidden&&document.querySelector('.paper').hidden&&document.querySelector('#source').value==="+JSON.stringify(sample));
   }finally{
     win.webContents.setZoomFactor(originalZoom);
-    await until("!document.querySelector('.workspace-main').classList.contains('compact-writing')&&!document.querySelector('#workspace-outline').hidden&&!document.querySelector('.editor').hidden");
+    await until("!document.querySelector('.workspace-main').classList.contains('compact-writing')&&!document.querySelector('#workspace-outline').hidden&&!document.querySelector('.editor').hidden&&document.querySelector('.paper').hidden&&document.querySelector('#toggle-paper').getAttribute('aria-pressed')==='false'");
   }
-  // Return to the existing wide writing configuration.
-  await exec("(()=>{const b=document.querySelector('#toggle-paper');if(b.getAttribute('aria-pressed')==='true')b.click();})()");
+  // Opening the paper in compact mode must not turn on wide-mode split view.
   if(!await exec("document.querySelector('#source').value==="+JSON.stringify(sample)))throw Error('UI zoom altered manuscript');
   // Round-trip structured edits, explicit cancel and opaque BCM preservation.
   const structuredFixture='# 見出し\n\n本文を編集します。\n\n$$\nx^2\n$$\n\n'+sample.slice(sample.indexOf(':::layout'));
