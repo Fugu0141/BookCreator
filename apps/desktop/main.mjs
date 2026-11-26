@@ -323,14 +323,32 @@ async function packageSmoke(){
   win.webContents.setZoomFactor(originalZoom*2);
   try{
     await until("document.querySelector('.workspace-main').classList.contains('compact-writing')&&!document.querySelector('#compact-editor').hidden");
+    // UX-09e: explicit surface navigation restores focus and source selection.
+    await exec("(()=>{const e=document.querySelector('#source');e.focus();e.setSelectionRange(2,5);})()");
     await exec("document.querySelector('#toggle-outline').click()");
-    await until("!document.querySelector('#workspace-outline').hidden&&document.querySelector('.editor').hidden&&document.querySelector('.paper').hidden");
+    await until("!document.querySelector('#workspace-outline').hidden&&document.querySelector('.editor').hidden&&document.querySelector('.paper').hidden&&document.activeElement.matches('[data-section=chapter]')");
     await exec("document.querySelector('[data-section=chapter]').click()");
-    await until("!document.querySelector('.editor').hidden&&document.querySelector('#workspace-outline').hidden");
+    await until("!document.querySelector('.editor').hidden&&document.querySelector('#workspace-outline').hidden&&document.activeElement.id==='source'&&document.activeElement.selectionStart===2&&document.activeElement.selectionEnd===5");
     await exec("document.querySelector('#toggle-paper').click()");
-    await until("!document.querySelector('.paper').hidden&&document.querySelector('.editor').hidden&&document.querySelector('#workspace-outline').hidden");
+    await until("!document.querySelector('.paper').hidden&&document.querySelector('.editor').hidden&&document.querySelector('#workspace-outline').hidden&&document.activeElement.id==='writing-paper'");
     await exec("document.querySelector('#compact-editor').click()");
-    await until("!document.querySelector('.editor').hidden&&document.querySelector('.paper').hidden&&document.querySelector('#source').value==="+JSON.stringify(sample));
+    await until("!document.querySelector('.editor').hidden&&document.querySelector('.paper').hidden&&document.activeElement.id==='source'&&document.activeElement.selectionStart===2&&document.activeElement.selectionEnd===5&&document.querySelector('#source').value==="+JSON.stringify(sample));
+    await exec("document.querySelector('#editor-view-structured').click()");
+    await until("!!document.querySelector('[data-structured-kind=heading] [data-rich-edit]')");
+    await exec("document.querySelector('#toggle-outline').click()");
+    await until("document.activeElement.matches('[data-section=chapter]')");
+    await exec("document.querySelector('[data-section=chapter]').click()");
+    await until("document.activeElement.id==='writing-editor'&&!document.querySelector('#structured-editor').hidden");
+    // An unapplied structural draft must not be hidden by compact navigation.
+    await exec("document.querySelector('[data-structured-kind=heading] [data-rich-edit]').click()");
+    await until("document.activeElement.id==='structured-rich-value'&&document.querySelector('#toggle-outline').disabled&&document.querySelector('#toggle-paper').disabled&&document.querySelector('#compact-editor').disabled");
+    await exec("(()=>{const e=document.querySelector('#structured-rich-value');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(e,'未確定の見出し');e.dispatchEvent(new Event('input',{bubbles:true}));})()");
+    await exec("document.querySelector('#toggle-paper').click()");
+    await until("!document.querySelector('.editor').hidden&&document.querySelector('.paper').hidden&&document.querySelector('#structured-rich-value').value==='未確定の見出し'&&document.querySelector('#source').value==="+JSON.stringify(sample));
+    await exec("document.querySelector('#structured-cancel').click()");
+    await until("!document.querySelector('#toggle-outline').disabled&&document.querySelector('#source').value==="+JSON.stringify(sample));
+    await exec("document.querySelector('#editor-view-source').click()");
+    await until("!document.querySelector('#source').hidden");
   }finally{
     win.webContents.setZoomFactor(originalZoom);
     await until("!document.querySelector('.workspace-main').classList.contains('compact-writing')&&!document.querySelector('#workspace-outline').hidden&&!document.querySelector('.editor').hidden&&document.querySelector('.paper').hidden&&document.querySelector('#toggle-paper').getAttribute('aria-pressed')==='false'");
