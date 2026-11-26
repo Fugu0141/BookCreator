@@ -1062,12 +1062,91 @@ async function packageSmoke(){
   await until("document.querySelector('.workspace-shell').dataset.workspaceMode==='writing'&&!document.querySelector('#open').disabled");
   await exec("document.querySelector('[data-section=chapter]').click()");
   await until("document.querySelector('#source').value==="+JSON.stringify(sample+'\n追記。\n'));
-  const report='PASS portable Windows package: isolated renderer, workspace, math, bundled fonts, numbering, save';
+  await writingJourneySmoke();
+  const report='PASS portable Windows package: isolated renderer, workspace, math, bundled fonts, numbering, save, new-book writing journey and renderer reload';
   if(process.env.BC_PACKAGE_SMOKE_REPORT)await writeFile(process.env.BC_PACKAGE_SMOKE_REPORT,report+'\n',{flag:'wx'});
   console.log(report);
   // Chromium still holds profile databases until the process exits on Windows.
   // The package test runner owns and removes the isolated parent after exit.
   closing=true;win.destroy();app.exit(0);
+}
+// UX-10a: a continuous journey using only visible, enabled UI controls.
+// Unlike the legacy smoke helper, do not automatically navigate or open panels.
+async function writingJourneySmoke(){
+  const raw=js=>win.webContents.executeJavaScript(js);
+  const until=async(label,js)=>{for(let i=0;i<150;i++){if(await raw(js))return;await new Promise(r=>setTimeout(r,100));}throw Error('Writing journey: '+label+'; '+await raw("document.querySelector('#status')?.textContent"));};
+  const click=async selector=>{
+    await until('reachable '+selector,"(()=>{const e=document.querySelector("+JSON.stringify(selector)+");return !!e?.getClientRects().length&&!e.disabled;})()");
+    await raw("document.querySelector("+JSON.stringify(selector)+").click()");
+  };
+  const input=async(selector,value)=>{
+    await until('editable '+selector,"(()=>{const e=document.querySelector("+JSON.stringify(selector)+");return !!e?.getClientRects().length&&!e.disabled&&!e.readOnly;})()");
+    await raw("(()=>{const e=document.querySelector("+JSON.stringify(selector)+");const proto=e.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;Object.getOwnPropertyDescriptor(proto,'value').set.call(e,"+JSON.stringify(value)+");e.dispatchEvent(new Event('input',{bubbles:true}));})()");
+  };
+  const mode=which=>"document.querySelector('.workspace-shell').dataset.workspaceMode==="+JSON.stringify(which);
+  const title='執筆フロー検証書籍',folder='writing-journey';
+  const paragraph='二次方程式の解き方を学びます。';
+  const problem='次の方程式を解いてみましょう。';
+  const manuscript=join(smokeRoot,folder,'manuscript','chapter-01.md');
+  await click('#mode-home');
+  await until('home',mode('home'));
+  await click('#new-project');
+  await input('#new-title',title);
+  await input('#new-folder',folder);
+  await until('default A5',"document.querySelector('#new-size').value==='A5'");
+  await click('#create-project');
+  await until('created book',mode('writing')+"&&!!document.querySelector('[data-section=chapter-01]')&&!document.querySelector('[data-section=chapter-01]').disabled");
+  if(!(await readFile(join(smokeRoot,folder,'book.yaml'),'utf8')).includes(title))throw Error('Writing journey: new manifest not saved');
+  await click('[data-section=chapter-01]');
+  await until('starter manuscript',"document.querySelector('#source').value.includes('ここから原稿を書き始めます。')&&!document.querySelector('#editor-view-structured').disabled");
+  const initial=await readFile(manuscript,'utf8');
+  await click('#editor-view-structured');
+  await click('[data-structured-kind=paragraph] [data-rich-edit]');
+  await input('#structured-rich-value',paragraph);
+  await click('#structured-apply');
+  await until('paragraph committed',"document.querySelector('#source').value.includes("+JSON.stringify(paragraph)+")&&!document.querySelector('#structured-apply')");
+  const insert=async(category,selector)=>{
+    await click('#structured-insert-toggle');
+    await click('[data-insert-category='+category+']');
+    await click('#structured-append');
+    await until('insert '+category,"!!document.querySelector("+JSON.stringify(selector)+")&&document.querySelector('#structured-insert-panel').hidden");
+  };
+  await insert('math','[data-structured-kind=math]');
+  await click('[data-structured-kind=math] [data-structured-edit]');
+  await input('#structured-value','x^2-5x+6=0');
+  await click('#structured-apply');
+  await until('math committed',"document.querySelector('#source').value.includes('x^2-5x+6=0')&&!document.querySelector('#structured-apply')");
+  await insert('study','[data-study-kind=example]');
+  await click('[data-study-kind=example] [data-study-edit]');
+  await input('[data-study-value=content]',problem);
+  await click('#structured-study-apply');
+  await until('study committed',"document.querySelector('#source').value.includes("+JSON.stringify(problem)+")&&!document.querySelector('#structured-study-apply')");
+  const expected=await raw("document.querySelector('#source').value");
+  if(!expected.includes(paragraph)||!expected.includes('x^2-5x+6=0')||!expected.includes(problem)||await readFile(manuscript,'utf8')!==initial)throw Error('Writing journey: draft was lost or saved implicitly');
+  await click('#mode-layout');
+  await until('layout mode',mode('layout'));
+  await click('#preview-book');
+  await until('whole book preview',"document.querySelector('#workspace-layout-state').dataset.phase==='ready'&&document.querySelector('#workspace-layout-state').dataset.scope==='book'&&!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-display-math] math')");
+  await click('#mode-writing');
+  await until('return to manuscript',mode('writing')+"&&document.querySelector('#source').value==="+JSON.stringify(expected));
+  await click('#save');
+  await until('saved',"document.querySelector('#workspace-save-state').textContent==='保存済み'");
+  if(await readFile(manuscript,'utf8')!==expected)throw Error('Writing journey: saved manuscript differs');
+  // Start a fresh renderer in the same isolated Electron process/profile.
+  // This verifies catalog reload from disk; not a full OS/process restart.
+  await win.loadURL(PAGE);
+  await until('fresh renderer home',mode('home')+"&&!![...document.querySelectorAll('.hub-project-open')].find(e=>e.querySelector('strong')?.textContent==="+JSON.stringify(title)+")");
+  await raw("(()=>{const e=[...document.querySelectorAll('.hub-project-open')].find(e=>e.querySelector('strong')?.textContent==="+JSON.stringify(title)+");if(!e?.getClientRects().length||e.disabled)throw Error('New project not accessible');e.click();})()");
+  await until('reopened book',mode('writing')+"&&!!document.querySelector('[data-section=chapter-01]')&&!document.querySelector('[data-section=chapter-01]').disabled");
+  await click('[data-section=chapter-01]');
+  await until('reloaded exact source',"document.querySelector('#source').value==="+JSON.stringify(expected)+"&&document.querySelector('#workspace-save-state').textContent==='保存済み'&&document.querySelector('#workspace-layout-state').dataset.phase==='idle'");
+  await click('#editor-view-structured');
+  await until('reloaded GUI',"!!document.querySelector('[data-structured-kind=math] math')&&!!document.querySelector('[data-study-kind=example]')&&document.querySelector('#structured-editor').textContent.includes("+JSON.stringify(paragraph)+")");
+  await click('#mode-layout');
+  await click('#preview-book');
+  await until('recomposed book',"document.querySelector('#workspace-layout-state').dataset.phase==='ready'&&document.querySelector('#workspace-layout-state').dataset.scope==='book'&&!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-display-math] math')");
+  if(await readFile(manuscript,'utf8')!==expected)throw Error('Writing journey: reload or compose changed saved manuscript');
+  console.log('PASS UX-10a new A5 book, structured writing, math, study component, whole-book composition, explicit save and fresh renderer reopen');
 }
 async function smoke(){
   const exec=workspaceSmokeExec();
