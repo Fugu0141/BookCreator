@@ -55,3 +55,6 @@ jobs:
         working-directory: BookCreator/apps/desktop
       - run: xvfb-run -a npm run test:desktop
         working-directory: BookCreator/apps/desktop
+      - name: Synthetic book performance benchmark
+        run: xvfb-run -a npm run benchmark
+        working-directory: BookCreator/apps/desktop
