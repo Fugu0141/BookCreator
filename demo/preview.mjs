@@ -1,4 +1,5 @@
-import {prepareBrowserPreview,previewSourceRange} from '/app/dist/index.js';
+import {makeMathTextbook,makeLibrary,expectedNumbers,size as mathSize} from '/fixtures/math-textbook.mjs';
+import {prepareBrowserPreview,prepareBookBrowserPreview,defaultHeadingDesign,previewSourceRange} from '/app/dist/index.js';
 import {scanDocument,validateScannedBlocks,indexBlockIds,parseReferenceToken} from '/bcm/dist/index.js';
 import {createPlainTextPagePreview,parsePreviewMath,parseDisplayMath} from '/engine/dist/index.js';
 const source=document.querySelector('#source'),width=document.querySelector('#width'),height=document.querySelector('#height');
@@ -82,6 +83,19 @@ if(new URLSearchParams(location.search).has('smoke')){
     if(source.value.slice(source.selectionStart,source.selectionEnd)!==eqFormula)throw Error('Numbered equation selection mismatch');
     source.value='[unsupported](https://example.invalid)';source.dispatchEvent(new Event('input'));if(target.children.length)throw Error('Stale preview remained');
     await render();if(latest||target.children.length)throw Error('Unsupported input rendered');
-    report.textContent='PASS '+JSON.stringify({pages,sourceMapping:true,staleGuard:true});
+    // Exercise the same three-document textbook as the node integration suite,
+    // using the actual browser measurement and MathML rendering path.
+    const docs=makeMathTextbook();
+    const textbook=prepareBookBrowserPreview(docs,'textbook','textbook-smoke',mathSize,deps,undefined,undefined,undefined,undefined,undefined,makeLibrary(defaultHeadingDesign));
+    if(!textbook.options)throw Error('Textbook compilation failed: '+JSON.stringify(textbook.diagnostics));
+    const paper=await createPlainTextPagePreview(document,textbook.options);
+    const root=paper.element.shadowRoot;
+    const labels=Array.from(root.querySelectorAll('[data-equation-number]'),n=>n.textContent).sort();
+    const expected=expectedNumbers.map(([,n])=>'('+n+')').sort();
+    if(JSON.stringify(labels)!==JSON.stringify(expected))throw Error('Textbook numbers mismatch: '+JSON.stringify(labels));
+    if(paper.plan.pages.length<3||paper.publicationReady!==false)throw Error('Textbook must use multi-page experimental output');
+    if(root.querySelectorAll('math mtable').length<3||!root.querySelector('math mfrac')||!root.querySelector('[data-named-slot=hint] [data-equation-number]'))throw Error('Textbook math layout missing');
+    if(!root.textContent.includes('次章の定義は 式 (2.1)')||!root.textContent.includes('式 (2.2)'))throw Error('Textbook reference label missing');
+    report.textContent='PASS '+JSON.stringify({pages,sourceMapping:true,staleGuard:true,textbookPages:paper.plan.pages.length,textbookEquations:labels.length});
   }catch(e){report.textContent='FAIL '+String(e);}
 }else void render();

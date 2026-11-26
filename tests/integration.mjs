@@ -1,3 +1,4 @@
+import {makeMathTextbook,makeLibrary as makeMathLibrary,typography as mathTypography,size as mathSize,formulas as mathFormulas,expectedNumbers} from './fixtures/math-textbook.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {resolve} from 'node:path';
@@ -1211,4 +1212,46 @@ test('Component Lab numbered samples share an isolated chapter and local referen
   }
   const plain=previewStudySamples('本文 $x$。',[{name:'hint',text:'ヒント。'}],true,deps);
   assert.equal(plain[0].request.inlineMath[0].formula,'x');
+});
+
+
+test('three-manuscript textbook regression: numbering, reordering, font roles, source maps and editing',()=>{
+  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds,validateDisplayMath:engine.parseDisplayMath,validateInlineMath:engine.parsePreviewMath,parseReference:bcm.parseReferenceToken};
+  const library=makeMathLibrary(defaultHeadingDesign);
+  const run=docs=>prepareBookBrowserPreview(docs,'1','math-textbook',mathSize,deps,mathTypography,undefined,undefined,undefined,undefined,library);
+  for(const nl of ['\n','\r\n']){
+    const docs=makeMathTextbook(nl);
+    const before=run(docs);assert.deepEqual(before.diagnostics,[]);
+    const targets=equationReferenceTargets(docs,deps);
+    assert.deepEqual(targets.map(t=>[t.id,t.number]),expectedNumbers);
+    const sections=before.options.sections;
+    assert.equal(sections.length,3);
+    const study=sections[0].blocks.find(b=>b.origin.persistentId==='example-quadratic');
+    assert.equal(study.request.mathFontFamily,mathTypography.mathFontFamily);
+    assert.equal(study.namedSlots[0].request.mathFontFamily,mathTypography.mathFontFamily);
+    assert.deepEqual(study.request.inlineMath.filter(a=>a.display).map(a=>a.equationNumber),['1.3']);
+    assert.deepEqual(study.namedSlots[0].request.inlineMath.map(a=>a.equationNumber),['1.2']);
+    assert.ok(sections[0].blocks.some(b=>b.request.text.includes('次章の定義は 式 (2.1)')));
+    assert.ok(sections[2].blocks.some(b=>b.request.text.includes('式 (2.2)')));
+    for(const [request,name,id] of [[study.request,undefined,'eq-factor'],[study.namedSlots[0].request,'hint','eq-discriminant']]){
+      const a=request.inlineMath.find(a=>a.display),range=previewSourceRange(study,{textStart:a.start,textEnd:a.start+1},name);
+      assert.ok(docs[0].source.slice(range.start,range.end).startsWith(':::layout{#'+id));
+    }
+    const reordered=[docs[1],docs[0],docs[2]];
+    assert.deepEqual(equationReferenceTargets(reordered,deps).map(t=>[t.id,t.number]),[['eq-derivative','1.1'],['eq-aligned','1.2'],['eq-quadratic','2.1'],['eq-discriminant','2.2'],['eq-factor','2.3'],['eq-matrix','3.1']]);
+    const reorderedPreview=run(reordered);assert.deepEqual(reorderedPreview.diagnostics,[]);
+    assert.ok(reorderedPreview.options.sections[1].blocks.some(b=>b.request.text.includes('次章の定義は 式 (1.1)')));
+    const context={documents:docs,documentId:'quadratic'},source=docs[0].source,at=source.indexOf(mathFormulas.factor);
+    const edited=planComponentDisplayMath(source,at,at+mathFormulas.factor.length,'(x-3)(x-2)=0',deps,context);
+    const next=bcm.applyPatches(source,[edited.patch]);
+    assert.equal(next,source.replace(mathFormulas.factor,'(x-3)(x-2)=0'));
+    const revised=[{...docs[0],source:next},...docs.slice(1)];
+    assert.deepEqual(run(revised).diagnostics,[]);
+    assert.deepEqual(equationReferenceTargets(revised,deps).map(t=>[t.id,t.number]),expectedNumbers);
+    assert.throws(()=>planEquationNumbering(revised,'quadratic',edited.selection.start,edited.selection.end,false,undefined,deps),RangeError);
+    const missing=docs.map(d=>({...d,source:d.source.replace('#eq-derivative','#eq-missing')}));
+    assert.equal(run(missing).options,undefined);
+    const duplicate=docs.map(d=>({...d,source:d.source.replace('#eq-matrix','#eq-factor')}));
+    assert.equal(run(duplicate).options,undefined);
+  }
 });
