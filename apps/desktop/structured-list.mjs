@@ -66,3 +66,31 @@ export function planListAction(source,row,request,{scan,parseInline,applyPatches
   if(after.diagnostics.length||after.rows.length!==before.rows.length||after.rows.some((r,i)=>i!==at&&(r.kind!==before.rows[i].kind||r.raw!==before.rows[i].raw))||!['paragraph','list'].includes(after.rows[at]?.kind))throw Error('周囲の構造が変化するため中止しました。');
   return next;
 }
+
+// A hierarchy operation may stage a validated intermediate source, never commit it.
+export function listDraftRow(source,draft,{scan,parseInline,project}){
+  if(draft.source!==source)throw Error('原稿が変更されました。');
+  const before=project(source,scan,parseInline),at=before.rows.findIndex(r=>r.range.start===draft.row.range.start&&r.raw===draft.row.raw);
+  if(before.diagnostics.length||at<0||!before.rows[at].list)throw Error('対象リストが変更されました。');
+  const layout=draft.listLayout??source,after=project(layout,scan,parseInline);
+  if(after.diagnostics.length||after.rows.length!==before.rows.length||after.rows.some((r,i)=>i!==at&&(r.kind!==before.rows[i].kind||r.raw!==before.rows[i].raw))||!after.rows[at].list)throw Error('リスト以外の構造が変化しました。');
+  const row=after.rows[at];
+  // Require unchanged bytes before and after the list, including blank lines.
+  const original=before.rows[at];
+  if(layout.slice(0,row.range.start)!==source.slice(0,original.range.start)||layout.slice(row.range.end)!==source.slice(original.range.end))throw Error('リスト以外の原文が変化しました。');
+  return row;
+}
+export function planListDraft(source,draft,options){
+  const row=listDraftRow(source,draft,options);
+  return planListValues(draft.listLayout??source,row,draft.values,options);
+}
+export function splitListInput(value,start,end,parseInline){
+  if(start!==end||!Number.isInteger(start)||start<0||start>value.length)return null;
+  if(start===value.length)return [value,''];
+  try{
+    const p=parseInline(value);
+    if(p.text!==value||p.inlineMath.length||p.inlineStyles.length||p.sourceMap.segments.some(s=>s.derived))return null;
+    if(!new Set(Array.from(new Intl.Segmenter(undefined,{granularity:'grapheme'}).segment(value),g=>g.index)).has(start))return null;
+    return [value.slice(0,start),value.slice(start)];
+  }catch{return null;}
+}

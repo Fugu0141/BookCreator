@@ -535,6 +535,26 @@ async function packageSmoke(){
   await until("document.querySelector('#source').value==="+JSON.stringify(addedList));
   await exec("document.querySelector('#structured-undo').click()");
   await until("document.querySelector('#source').value==="+JSON.stringify(orderedFixture));
+  // UX-08f-4d: keyboard insertion, empty-row removal, IME guard, draft hierarchy and undo.
+  await exec("document.querySelector('[data-list-edit]').click()");
+  await until("!!document.querySelector('[data-list-value=\"0\"]')");
+  const listKey=(i,key,shift=false,ime=false)=>exec("(()=>{const e=document.querySelector('[data-list-value=\""+i+"\"]');e.focus();e.setSelectionRange(e.value.length,e.value.length);e.dispatchEvent(new KeyboardEvent('keydown',{key:"+JSON.stringify(key)+",shiftKey:"+shift+",isComposing:"+ime+",bubbles:true,cancelable:true}));})()");
+  await listKey(0,'Enter',false,true);
+  await until("document.querySelectorAll('[data-list-value]').length===2");
+  await listKey(0,'Enter');
+  await until("document.querySelectorAll('[data-list-value]').length===3&&document.activeElement.dataset.listValue==='1'&&document.querySelector('#structured-list-apply').disabled");
+  await listKey(1,'Backspace');
+  await until("document.querySelectorAll('[data-list-value]').length===2&&document.activeElement.dataset.listValue==='0'&&document.querySelector('#source').value==="+JSON.stringify(orderedFixture));
+  await listKey(1,'Tab');
+  await until("document.querySelector('[data-list-item=\"1\"]').dataset.depth==='1'&&document.querySelector('#source').value==="+JSON.stringify(orderedFixture));
+  await listKey(1,'Tab',true);
+  await until("document.querySelector('[data-list-item=\"1\"]').dataset.depth==='0'&&document.querySelector('#structured-list-apply').disabled");
+  await listKey(1,'Tab');
+  await until("!document.querySelector('#structured-list-apply').disabled");
+  await exec("document.querySelector('#structured-list-apply').click()");
+  await until("document.querySelector('#source').value.includes('   2. 次の文章。')&&!document.querySelector('#structured-list-apply')");
+  await exec("document.querySelector('#structured-undo').click()");
+  await until("document.querySelector('#source').value==="+JSON.stringify(orderedFixture));
   await exec("(()=>{const e=document.querySelector('[data-structured-kind=list] details.structured-block-menu');if(!e.open)e.querySelector('summary').click();})()");
   await exec("document.querySelector('[data-list-convert=bullet]').click()");
   await until("document.querySelector('#source').value==="+JSON.stringify('# 章\n\n- 最初の文章。\n- 次の文章。\n'));
