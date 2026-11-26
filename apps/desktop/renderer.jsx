@@ -495,7 +495,7 @@ function App(){
       setStudyLinkDraft(null);commitStructured(next);setStatus('教材部品のID・関連付けを反映しました（未保存）。');
     });
   }
-  function applyStructured(draft){if(busy||structuredComposing||!file?.editable||draft!==structuredDraft||draft.inlineEdit||draft.source!==text)return;try{const next=draft.equation?planStructuredEquation(text,draft.row,draft.value,{scan:scanDocument,applyPatches,validateMath:parseDisplayMath}):draft.study?planStudyEdit(text,draft.study,draft.values,{scan:scanDocument,applyPatches}):planStructuredEdit(text,draft.row,draft.value,{scan:scanDocument,applyPatches,validateMath:parseDisplayMath,parseInline:parseStructuredInline,level:draft.level});if(next===text)return;commitStructured(next);setStructuredDraft(null);setStatus('ブロックの変更を反映しました（未保存）。');}catch(e){setStatus(String(e.message??e));}}
+  function applyStructured(draft){if(busy||structuredComposing||!file?.editable||draft!==structuredDraft||draft.inlineEdit||draft.richError||draft.source!==text)return;try{const next=draft.equation?planStructuredEquation(text,draft.row,draft.value,{scan:scanDocument,applyPatches,validateMath:parseDisplayMath}):draft.study?planStudyEdit(text,draft.study,draft.values,{scan:scanDocument,applyPatches}):planStructuredEdit(text,draft.row,draft.value,{scan:scanDocument,applyPatches,validateMath:parseDisplayMath,parseInline:parseStructuredInline,level:draft.level});if(next===text)return;commitStructured(next);setStructuredDraft(null);setStatus('ブロックの変更を反映しました（未保存）。');}catch(e){setStatus(String(e.message??e));}}
   const componentBaseDisabled=routeBlocked||!validPaper(page)||themeDirty;
   const headingDisabled=componentBaseDisabled||!theme?.componentEditable;
   const paragraphDisabled=componentBaseDisabled||!theme?.paragraphEditable;
