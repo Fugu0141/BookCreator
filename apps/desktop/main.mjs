@@ -182,6 +182,15 @@ function workspaceSmokeExec(){
         }
         if(!visible)throw Error('Cannot open writing panel '+panel);
       }
+      const formatClick=selectors.find(s=>/^#source-(?:bold|italic|underline|combined|apply-color|clear-color|apply-font|clear-font|apply-size|clear-size|super|sub|clear-baseline)$/.test(s));
+      if(formatClick&&js.includes('.click()')){
+        let enabled=false;
+        for(let i=0;i<100;i++){
+          if(await raw("!!document.querySelector("+JSON.stringify(formatClick)+")?.getClientRects().length&&!document.querySelector("+JSON.stringify(formatClick)+").disabled")){enabled=true;break;}
+          await new Promise(r=>setTimeout(r,50));
+        }
+        if(!enabled)throw Error('Cannot use selected text format '+formatClick);
+      }
       if(selectors.some(s=>/^#study-(?:instance-id|generate-id|answer-to|include-optional)$/.test(s))&&!await raw("document.querySelector('#study-insertion-details')?.open")){
         await raw("document.querySelector('#study-insertion-details summary').click()");
         if(!await raw("document.querySelector('#study-insertion-details').open"))throw Error('Cannot open study insertion details');
@@ -218,10 +227,16 @@ async function packageSmoke(){
   await exec("document.querySelector('#mode-writing').click()");
   await until("document.querySelector('.workspace-shell').dataset.workspaceMode==='writing'&&!!document.querySelector('#source').getClientRects().length&&document.querySelector('#source').value==="+JSON.stringify(sample));
   if(!await exec("document.querySelector('.writing-toolbar button').getClientRects().length>0&&[...document.querySelectorAll('.writing-tool-panel')].every(e=>e.hidden)"))throw Error('Writing default exposes detailed commands');
+  await exec("(()=>{const e=document.querySelector('#source');e.focus();e.setSelectionRange(0,0);})()");
+  await until("['bold','italic','underline'].every(id=>document.querySelector('#source-'+id).disabled)");
+  await exec("(()=>{const e=document.querySelector('#source'),p=e.value.indexOf('本文');e.focus();e.setSelectionRange(p,p+2);})()");
+  await until("['bold','italic','underline'].every(id=>!document.querySelector('#source-'+id).disabled)");
   await exec("document.querySelector('#writing-panel-math').click()");
   await until("!document.querySelector('#writing-tools-math').hidden&&document.querySelector('#writing-tools-format').hidden");
   await exec("document.querySelector('#writing-panel-format').click()");
-  await until("document.querySelector('#writing-tools-math').hidden&&!document.querySelector('#writing-tools-format').hidden");
+  await until("document.querySelector('#writing-tools-math').hidden&&!document.querySelector('#writing-tools-format').hidden&&!document.querySelector('#format-selection-controls').hidden");
+  await exec("(()=>{const e=document.querySelector('#source');e.focus();e.setSelectionRange(0,0);})()");
+  await until("document.querySelector('#format-selection-controls').hidden&&document.querySelector('#format-selection-hint').textContent.includes('文字を選択')&&document.querySelector('#source-bold').disabled");
   if(!await exec("document.querySelector('#source').value==="+JSON.stringify(sample)))throw Error('Toolbar panel switch changed manuscript');
   await exec("document.querySelector('#writing-panel-format').click()");
   await until("[...document.querySelectorAll('.writing-tool-panel')].every(e=>e.hidden)");
@@ -1129,7 +1144,9 @@ async function smoke(){
   await exec("document.querySelector('#math-apply').click()");
   const refWithInline=refBeforeInline.replace('参照先'+nestedRefToken,()=> '参照先$x^2$'+nestedRefToken);
   await until("document.querySelector('#source').value==="+JSON.stringify(refWithInline));
-  await exec("(()=>{const e=document.querySelector('#source'),p=e.value.lastIndexOf('参照先');e.focus();e.setSelectionRange(p,p+3);document.querySelector('#source-bold').click();})()");
+  await exec("(()=>{const e=document.querySelector('#source'),p=e.value.lastIndexOf('参照先');e.focus();e.setSelectionRange(p,p+3);})()");
+  await until("!document.querySelector('#source-bold').disabled");
+  await exec("document.querySelector('#source-bold').click()");
   const refWithStyle=refWithInline.replace('参照先$x^2$',()=> '**参照先**$x^2$');
   await until("document.querySelector('#source').value==="+JSON.stringify(refWithStyle));
   await exec("document.querySelector('#preview-book').click()");
@@ -1141,7 +1158,9 @@ async function smoke(){
   await until("document.querySelector('#source').value==="+JSON.stringify(beforeSlotMath)+" && !document.querySelector('#preview > div')");
   // Apply/remove/replace formatting using the actual toolbar and textarea selection.
   const beforeFormat=await exec("document.querySelector('#source').value");
-  await exec("(()=>{const e=document.querySelector('#source'),p=e.value.lastIndexOf('第一段落');e.focus();e.setSelectionRange(p,p+'第一段落'.length);document.querySelector('#source-bold').click();})()");
+  await exec("(()=>{const e=document.querySelector('#source'),p=e.value.lastIndexOf('第一段落');e.focus();e.setSelectionRange(p,p+'第一段落'.length);})()");
+  await until("!document.querySelector('#source-bold').disabled");
+  await exec("document.querySelector('#source-bold').click()");
   await until("document.querySelector('#source').value.includes('第一段落。')&&!document.querySelector('#source').value.includes('**第一段落**')");
   if(await exec("document.querySelector('#preview').children.length"))throw Error('Formatting did not invalidate preview');
   await until("(()=>{const e=document.querySelector('#source');return e.value.slice(e.selectionStart,e.selectionEnd)==='第一段落';})()");
@@ -1151,12 +1170,16 @@ async function smoke(){
   await exec("document.querySelector('#source-bold').click()");
   await until("document.querySelector('#source').value==="+JSON.stringify(beforeFormat));
   await until("(()=>{const e=document.querySelector('#source');return e.value.slice(e.selectionStart,e.selectionEnd)==='第一段落';})()");
-  await exec("(()=>{const e=document.querySelector('#source'),p=e.value.indexOf('answer-to');e.focus();e.setSelectionRange(p,p+9);document.querySelector('#source-bold').click();})()");
+  await exec("(()=>{const e=document.querySelector('#source'),p=e.value.indexOf('answer-to');e.focus();e.setSelectionRange(p,p+9);})()");
+  await until("!document.querySelector('#source-bold').disabled");
+  await exec("document.querySelector('#source-bold').click()");
   if(!await exec("document.querySelector('#source').value==="+JSON.stringify(beforeFormat)))throw Error('Formatting changed a protected directive header');
   await exec("document.querySelector('#preview-button').click()");
   await until("document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-named-slot=extra] [data-inline-style]')?.style.fontWeight==='700'");
   // Combine additional typed styles through actual toolbar controls.
-  await exec("(()=>{const e=document.querySelector('#source'),p=e.value.lastIndexOf('第一段落');e.focus();e.setSelectionRange(p,p+'第一段落'.length);document.querySelector('#source-underline').click();})()");
+  await exec("(()=>{const e=document.querySelector('#source'),p=e.value.lastIndexOf('第一段落');e.focus();e.setSelectionRange(p,p+'第一段落'.length);})()");
+  await until("!document.querySelector('#source-underline').disabled");
+  await exec("document.querySelector('#source-underline').click()");
   await until("document.querySelector('#source').value.includes(':style{text=\\\"第一段落\\\" weight=\\\"700\\\" underline=\\\"true\\\"}')");
   await until("(()=>{const e=document.querySelector('#source');return e.value.slice(e.selectionStart,e.selectionEnd)==='第一段落';})()");
   await exec("document.querySelector('#source-italic').click()");
@@ -1176,11 +1199,17 @@ async function smoke(){
   const metricSource=metricBase.replace(/\\n*$/,'')+'\n\nx2 と H2O。大文字。\n';
   await exec("(()=>{const e=document.querySelector('#source');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(e,"+JSON.stringify(metricSource)+");e.dispatchEvent(new Event('input',{bubbles:true}));})()");
   await until("document.querySelector('#source').value==="+JSON.stringify(metricSource));
-  await exec("(()=>{const e=document.querySelector('#source'),p=e.value.lastIndexOf('x2')+1;e.focus();e.setSelectionRange(p,p+1);document.querySelector('#source-super').click();})()");
+  await exec("(()=>{const e=document.querySelector('#source'),p=e.value.lastIndexOf('x2')+1;e.focus();e.setSelectionRange(p,p+1);})()");
+  await until("!document.querySelector('#source-super').disabled");
+  await exec("document.querySelector('#source-super').click()");
   await until("document.querySelector('#source').value.includes('x^2^')");
-  await exec("(()=>{const e=document.querySelector('#source'),p=e.value.lastIndexOf('H2O')+1;e.focus();e.setSelectionRange(p,p+1);document.querySelector('#source-sub').click();})()");
+  await exec("(()=>{const e=document.querySelector('#source'),p=e.value.lastIndexOf('H2O')+1;e.focus();e.setSelectionRange(p,p+1);})()");
+  await until("!document.querySelector('#source-sub').disabled");
+  await exec("document.querySelector('#source-sub').click()");
   await until("document.querySelector('#source').value.includes('H~2~O')");
-  await exec("(()=>{const e=document.querySelector('#source'),p=e.value.lastIndexOf('大文字');e.focus();e.setSelectionRange(p,p+3);document.querySelector('#source-apply-size').click();})()");
+  await exec("(()=>{const e=document.querySelector('#source'),p=e.value.lastIndexOf('大文字');e.focus();e.setSelectionRange(p,p+3);})()");
+  await until("!document.querySelector('#source-apply-size').disabled");
+  await exec("document.querySelector('#source-apply-size').click()");
   await until("document.querySelector('#source').value.includes('font-size=\\\"4.2mm\\\"')");
   await exec("document.querySelector('#preview-button').click()");
   await until("(()=>{const spans=[...document.querySelector('#preview > div')?.shadowRoot?.querySelectorAll('[data-inline-style]')??[]];return spans.some(s=>s.textContent==='2'&&s.style.verticalAlign==='super')&&spans.some(s=>s.textContent==='2'&&s.style.verticalAlign==='sub')&&spans.some(s=>s.textContent==='大文字'&&Math.abs(parseFloat(s.style.fontSize)-4.2*96/25.4)<.01);})()");
