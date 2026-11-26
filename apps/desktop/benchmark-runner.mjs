@@ -16,7 +16,7 @@ export async function runBookBenchmark(win,app,root,fixture){
     const deadline=performance.now()+60000;
     while(performance.now()<deadline){
       if(await raw(js))return;
-      if(await raw("document.querySelector('#workspace-layout-state')?.dataset.phase==='failed'"))throw Error('Benchmark failed: '+label+'; '+await raw("document.querySelector('#status')?.textContent"));
+      if(await raw("document.querySelector('#workspace-layout-state')?.dataset.phase==='failed'"))throw Error('Benchmark failed: '+label+'; '+await raw("document.querySelector('#workspace-diagnostic-list')?.textContent||document.querySelector('#status')?.textContent"));
       await sleep(25);
     }
     throw Error('Benchmark timeout: '+label);
@@ -55,6 +55,10 @@ export async function runBookBenchmark(win,app,root,fixture){
     for(let i=1;i<=5;i++){await setSource(large.source+'\n連続編集確認 '+i+'\n');if(i<5)await sleep(35);}
   },paperText('連続編集確認 5')+"&&!"+paperText('連続編集確認 4')+"&&document.activeElement.id==='source'");
   await measure('large-revert','manuscript',()=>setSource(large.source),"!"+paperText('連続編集確認 5')+"&&document.querySelector('#workspace-save-state').textContent==='保存済み'");
+  // Exercise the existing hard boundary separately from the successful workloads.
+  await setSource(fixture.oversizedSource);
+  await until('oversized blocks rejected',"document.querySelector('#workspace-layout-state')?.dataset.phase==='failed'&&document.querySelector('#workspace-diagnostic-list')?.textContent.includes('128')&&document.querySelector('#preview > div')?.dataset.paperFreshness==='previous'&&document.querySelector('#preview > div').inert");
+  await measure('large-limit-recovery','manuscript',()=>setSource(large.source),"document.querySelector('#workspace-save-state').textContent==='保存済み'");
   await measure('whole-book-open','book',()=>click('#mode-layout'));
   await raw("document.querySelector('#preview > div').dataset.paperProbe='old'");
   await measure('whole-book-repeat','book',()=>click('#preview-book'),"document.querySelector('#preview > div').dataset.paperProbe!=='old'");
@@ -63,5 +67,5 @@ export async function runBookBenchmark(win,app,root,fixture){
   await click('#performance-toggle');
   await until('metrics',"document.querySelector('#performance-summary tbody tr[data-stage=layout][data-category=book]')?.dataset.success>0&&document.querySelector('#performance-memory')?.dataset.phase==='ready'");
   const summary=await raw("Array.from(document.querySelectorAll('#performance-summary tbody tr')).map(tr=>({stage:tr.dataset.stage,category:tr.dataset.category,values:Array.from(tr.querySelectorAll('td')).map(td=>td.textContent)}))");
-  console.log('BENCH report '+JSON.stringify({version:1,chapters:fixture.chapters.map(c=>({id:c.id,characters:c.source.length,sections:c.sections})),initialMemory,finalMemory:memory(),samples,summary}));
+  console.log('BENCH report '+JSON.stringify({version:2,chapters:fixture.chapters.map(c=>({id:c.id,characters:c.source.length,sections:c.sections,blocks:c.blocks})),initialMemory,finalMemory:memory(),samples,summary}));
 }
