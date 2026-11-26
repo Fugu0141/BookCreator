@@ -75,6 +75,23 @@ jobs:
             if ($process.ExitCode -ne 0) { throw "Packaged app failed: $($process.ExitCode)" }
             if (-not (Test-Path $env:BC_PACKAGE_SMOKE_REPORT) -or -not (Select-String -Path $env:BC_PACKAGE_SMOKE_REPORT -Pattern 'PASS portable Windows package' -Quiet)) { throw 'Missing packaged smoke completion marker' }
             Get-Content $env:BC_PACKAGE_SMOKE_REPORT
+            # Launch a separate executable only after the original process exited.
+            # Reuse precisely the profile that completed the first journey.
+            $profiles = @(Get-ChildItem -LiteralPath $smokeParent -Directory -Filter 'bc-electron-*')
+            if ($profiles.Count -ne 1) { throw 'Expected exactly one first-phase smoke profile' }
+            $env:BC_PACKAGE_RESTART_ROOT = $profiles[0].FullName
+            $restartOut = Join-Path $env:RUNNER_TEMP 'bc-package-restart-stdout.txt'
+            $restartErr = Join-Path $env:RUNNER_TEMP 'bc-package-restart-stderr.txt'
+            $env:BC_PACKAGE_SMOKE_REPORT = Join-Path $env:RUNNER_TEMP 'bc-package-restart-report.txt'
+            $restart = Start-Process -FilePath (Join-Path $isolated 'BookCreator.exe') -ArgumentList '--package-restart-smoke' -WorkingDirectory $env:RUNNER_TEMP -RedirectStandardOutput $restartOut -RedirectStandardError $restartErr -PassThru
+            if (-not $restart.WaitForExit(180000)) {
+              taskkill /PID $restart.Id /T /F
+              throw 'Packaged restart timeout'
+            }
+            Get-Content $restartOut,$restartErr -ErrorAction SilentlyContinue
+            if ($restart.ExitCode -ne 0) { throw "Packaged restart failed: $($restart.ExitCode)" }
+            if (-not (Test-Path $env:BC_PACKAGE_SMOKE_REPORT) -or -not (Select-String -Path $env:BC_PACKAGE_SMOKE_REPORT -Pattern 'PASS UX-10d portable Windows process restart' -Quiet)) { throw 'Missing restart smoke completion marker' }
+            Get-Content $env:BC_PACKAGE_SMOKE_REPORT
           } finally {
             # Clean only the runner-owned profile tree, after Electron process exit.
             try {
@@ -84,7 +101,7 @@ jobs:
               }
               if (Test-Path -LiteralPath $smokeParent) { throw 'Test profile cleanup failed after process exit' }
             } finally {
-              Remove-Item Env:BC_PACKAGE_SMOKE_TMP -ErrorAction SilentlyContinue
+              Remove-Item Env:BC_PACKAGE_SMOKE_TMP,Env:BC_PACKAGE_RESTART_ROOT,Env:BC_PACKAGE_SMOKE_REPORT -ErrorAction SilentlyContinue
               Move-Item -LiteralPath $isolated -Destination $package
             }
           }
