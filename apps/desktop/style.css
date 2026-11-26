@@ -555,3 +555,6 @@ body{font-family:BCFont_NotoSansJP,system-ui,sans-serif}.font-control,.typograph
 #lab-status,#paragraph-status{overflow-wrap:anywhere}
 .lab-recovery-status{color:#e2e8f0}
 .lab-recovery-status[data-phase=error]{color:#ffd1ca}
+
+/* UX-10h-3e: distinguish the retained, non-interactive previous edition. */
+#preview > [data-paper-freshness=previous]{opacity:.58;pointer-events:none}
