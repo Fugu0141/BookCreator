@@ -131,6 +131,49 @@ jobs:
             if ($verify.ExitCode -ne 0) { throw "Crash recovery verification failed: $($verify.ExitCode)" }
             if (-not (Test-Path $env:BC_PACKAGE_SMOKE_REPORT) -or -not (Select-String -Path $env:BC_PACKAGE_SMOKE_REPORT -Pattern 'PASS UX-10f-3 forced process recovery' -Quiet)) { throw 'Missing crash recovery completion marker' }
             Get-Content $env:BC_PACKAGE_SMOKE_REPORT
+            # Additional pairs use the same isolated test profile, never a
+            # user's process. Keep the original manuscript crash test intact.
+            foreach ($kind in @('settings','components')) {
+              $env:BC_PACKAGE_SMOKE_REPORT = Join-Path $smokeParent "crash-$kind-ready.txt"
+              $out = Join-Path $env:RUNNER_TEMP "bc-crash-$kind-prepare-out.txt"
+              $err = Join-Path $env:RUNNER_TEMP "bc-crash-$kind-prepare-err.txt"
+              $child = Start-Process -FilePath (Join-Path $isolated 'BookCreator.exe') -ArgumentList "--package-crash-$kind-prepare" -WorkingDirectory $env:RUNNER_TEMP -RedirectStandardOutput $out -RedirectStandardError $err -PassThru
+              try {
+                $ready = $false
+                $deadline = [DateTime]::UtcNow.AddSeconds(120)
+                while ([DateTime]::UtcNow -lt $deadline) {
+                  $child.Refresh()
+                  if ($child.HasExited) { throw "$kind preparation exited early: $($child.ExitCode)" }
+                  if (Test-Path -LiteralPath $env:BC_PACKAGE_SMOKE_REPORT) {
+                    $marker = (Get-Content -LiteralPath $env:BC_PACKAGE_SMOKE_REPORT -Raw).Trim()
+                    if ($marker -eq "READY UX-10g-6 $kind $($child.Id)") { $ready = $true; break }
+                  }
+                  Start-Sleep -Milliseconds 200
+                }
+                if (-not $ready) { throw "Missing $kind ready marker" }
+                taskkill /PID $child.Id /T /F
+                if ($LASTEXITCODE -ne 0 -or -not $child.WaitForExit(15000)) { throw "Could not force-terminate isolated $kind executable" }
+                if ($child.ExitCode -eq 0) { throw "Expected abnormal $kind exit" }
+              } finally {
+                $child.Refresh()
+                if (-not $child.HasExited) { taskkill /PID $child.Id /T /F; $null = $child.WaitForExit(15000) }
+                Get-Content $out,$err -ErrorAction SilentlyContinue
+              }
+              $env:BC_PACKAGE_SMOKE_REPORT = Join-Path $smokeParent "crash-$kind-verified.txt"
+              $out = Join-Path $env:RUNNER_TEMP "bc-crash-$kind-verify-out.txt"
+              $err = Join-Path $env:RUNNER_TEMP "bc-crash-$kind-verify-err.txt"
+              $child = Start-Process -FilePath (Join-Path $isolated 'BookCreator.exe') -ArgumentList "--package-crash-$kind-verify" -WorkingDirectory $env:RUNNER_TEMP -RedirectStandardOutput $out -RedirectStandardError $err -PassThru
+              try {
+                if (-not $child.WaitForExit(180000)) { throw "$kind crash verification timeout" }
+                if ($child.ExitCode -ne 0) { throw "$kind crash verification failed: $($child.ExitCode)" }
+                if (-not (Test-Path -LiteralPath $env:BC_PACKAGE_SMOKE_REPORT) -or (Get-Content -LiteralPath $env:BC_PACKAGE_SMOKE_REPORT -Raw).Trim() -ne "PASS UX-10g-6 forced process recovery $kind") { throw "Missing $kind completion marker" }
+                Get-Content $env:BC_PACKAGE_SMOKE_REPORT
+              } finally {
+                $child.Refresh()
+                if (-not $child.HasExited) { taskkill /PID $child.Id /T /F; $null = $child.WaitForExit(15000) }
+                Get-Content $out,$err -ErrorAction SilentlyContinue
+              }
+            }
           } finally {
             # Clean only the runner-owned profile tree, after Electron process exit.
             try {
