@@ -38,7 +38,7 @@ export function inspectStaticFont(bytes){
   ranges.sort((a,b)=>a[0]-b[0]);if(ranges.some((r,i)=>i>0&&r[0]<ranges[i-1][1]))bad('Overlapping font tables');
   for(const tag of ['head','hhea','hmtx','maxp','cmap','name','OS/2','post'])if(!tables.has(tag))bad('Missing font table: '+tag);
   if(format==='ttf'&&(!tables.has('glyf')||!tables.has('loca'))||format==='otf'&&!tables.has('CFF '))bad('Unsupported outline type');
-  if(['fvar','gvar','CFF2','COLR','CPAL','CBDT','CBLC','sbix','SVG ','MATH'].some(t=>tables.has(t)))bad('Variable, color and math fonts are not supported yet');
+  if(['fvar','gvar','CFF2','COLR','CPAL','CBDT','CBLC','sbix','SVG '].some(t=>tables.has(t)))bad('Variable and color fonts are not supported yet');
   const os=tables.get('OS/2'),head=tables.get('head'),names=tables.get('name');
   if(os.length<64||head.length<54||names.length<6||tables.get('cmap').length<4||head.readUInt32BE(12)!==0x5f0f3cf5)bad('Malformed font metadata');
   const weight=os.readUInt16BE(4),fsType=os.readUInt16BE(8),selection=os.readUInt16BE(62);
@@ -56,7 +56,14 @@ export function inspectStaticFont(bytes){
   const pick=ids=>{for(const id of ids){const v=values.filter(x=>x.id===id).sort((a,b)=>b.score-a.score)[0];if(v)return v.value;}};
   const family=pick([16,1]),style=pick([17,2]);
   if(!family||!style)bad('No supported Unicode family/subfamily name');
-  return {format,family,style,weight,fsType};
+  // Structural MATH preflight; Chromium still owns sandboxed decoding and actual layout.
+  const math=tables.get('MATH');
+  if(math){
+    if(weight!==400||math.length<10||math.readUInt32BE(0)!==0x00010000)bad('Expected a regular OpenType MATH 1.0 face');
+    const offsets=[math.readUInt16BE(4),math.readUInt16BE(6),math.readUInt16BE(8)];
+    if(offsets.some(o=>o<10||o+2>math.length)||new Set(offsets).size!==3)bad('Invalid OpenType MATH subtable offsets');
+  }
+  return {format,family,style,weight,fsType,hasMathTable:!!math};
 }
 function permission(v){
   if(!record(v)||v.copyAllowed!==true||typeof v.embedAllowed!=='boolean'||!label(v.license,120)||typeof v.licenseText!=='string'||!v.licenseText.trim()||v.licenseText.length>16000||/[\p{Cs}\u0000]/u.test(v.licenseText))bad('Explicit permission and license text are required');
@@ -80,7 +87,7 @@ export function projectFonts(root){
       if((total+=bytes.length)>MAX_TOTAL||digest(bytes)!==id)bad('Font catalog hash or size mismatch');
       const meta=inspectStaticFont(bytes);
       if(meta.fsType&2)bad('Restricted font is not supported');
-      if(['format','family','style','weight','fsType'].some(k=>meta[k]!==m[k]))bad('Font metadata mismatch');
+      if(['format','family','style','weight','fsType'].some(k=>meta[k]!==m[k])||(m.hasMathTable??false)!==meta.hasMathTable)bad('Font metadata mismatch');
       const info={id:'font-'+id,sha256:id,alias:fontAlias(id),...meta,...rights};
       result.push(includeBytes?{...info,bytes}:info);
     }

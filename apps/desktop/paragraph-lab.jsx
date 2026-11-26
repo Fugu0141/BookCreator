@@ -1,7 +1,7 @@
 import React,{useEffect,useRef,useState} from 'react';
 import {defaultParagraphDesign,compileParagraphDesign,multilineTextOptions,previewSampleInline} from '../../dist/index.js';
 import {createPlainTextPagePreview,parsePreviewMath} from '../../../BookCreator_LayoutEngine/dist/index.js';
-export function ParagraphLab({design,bodyFont,fontOptions,width,height,busy,onApply,onCancel,library,binding,libraryEditable,libraryMessage,onLibraryAction}){
+export function ParagraphLab({design,bodyFont,mathFontFamily,fontOptions,width,height,busy,onApply,onCancel,library,binding,libraryEditable,libraryMessage,onLibraryAction}){
   const entries=(library?.entries??[]).filter(e=>e.usage==='paragraph');
   const [libraryId,setLibraryId]=useState(binding??''),[libraryName,setLibraryName]=useState(()=>entries.find(e=>e.id===binding)?.name??'');
   const entry=entries.find(e=>e.id===libraryId),used=!!entry&&binding===entry.id;
@@ -18,7 +18,7 @@ export function ParagraphLab({design,bodyFont,fontOptions,width,height,busy,onAp
     invalidate();const job=generation.current;
     try{
       const compiled=compileParagraphDesign(draft,bodyFont);
-      const result=await createPlainTextPagePreview(document,{revision:String(job),fingerprint:'paragraph-lab-'+job,width,height,blocks:[{origin:{documentId:'sample',revision:String(job),blockKey:'paragraph'},request:{...previewSampleInline(sample,sampleBcm,parsePreviewMath),width,fontSize:compiled.fontSize,lineHeight:compiled.lineHeight,...compiled.textStyle,...multilineTextOptions(sample,compiled.paragraphGap)},splitPolicy:'allow',component:compiled.component}]});
+      const result=await createPlainTextPagePreview(document,{revision:String(job),fingerprint:'paragraph-lab-'+job,width,height,blocks:[{origin:{documentId:'sample',revision:String(job),blockKey:'paragraph'},request:{...previewSampleInline(sample,sampleBcm,parsePreviewMath),...(mathFontFamily?{mathFontFamily}:{}),width,fontSize:compiled.fontSize,lineHeight:compiled.lineHeight,...compiled.textStyle,...multilineTextOptions(sample,compiled.paragraphGap)},splitPolicy:'allow',component:compiled.component}]});
       if(job!==generation.current)return;target.current.append(result.element);setReady(true);setMessage(result.plan.pages.length+' ページ · '+result.slices.length+' 断片');
     }catch(e){if(job===generation.current)setMessage(String(e.message??e));}
   }
