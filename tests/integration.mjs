@@ -731,7 +731,7 @@ test('numbered equations resolve stable IDs and forward/cross-file references in
   const logical=paragraph.request.text.indexOf('2.1'),range=previewSourceRange(paragraph,{textStart:logical+1,textEnd:logical+2});
   assert.equal(a.slice(range.start,range.end),ref);
   assert.ok(blocks.some(b=>b.request.text==='前の 1.1 を参照。'));
-  const moved=run([{...docs[0]},{...docs[1],source:b.replace(eq('eq-b','\\frac{a}{b}')+'\n'+eq('eq-c','x+1'),eq('eq-c','x+1')+'\n'+eq('eq-b','\\frac{a}{b}'))}]);
+  const moved=run([{...docs[0]},{...docs[1],source:b.replace(eq('eq-b','\\frac{a}{b}')+'\n'+eq('eq-c','x+1'),()=>eq('eq-c','x+1')+'\n'+eq('eq-b','\\frac{a}{b}'))}]);
   assert.deepEqual(moved.diagnostics,[]);
   assert.ok(moved.options.sections[0].blocks.some(b=>b.request?.text.includes('式 (2.2)')));
   assert.equal(prepareBrowserPreview(docs[0],'1','single',size,deps).options,undefined,'cross-file references require book context');
