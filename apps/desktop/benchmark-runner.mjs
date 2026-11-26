@@ -50,6 +50,8 @@ export async function runBookBenchmark(win,app,root,fixture){
   const mathStats=()=>raw("JSON.parse(document.querySelector('#performance-math-cache').dataset.stats)");
   const paragraphStats=()=>raw("JSON.parse(document.querySelector('#performance-paragraph-cache').dataset.stats)");
   const paragraphEmpty=s=>Object.values(s).every(n=>n===0);
+  const pageStats=()=>raw("JSON.parse(document.querySelector('#performance-page-cache').dataset.stats)");
+  const pageEmpty=s=>Object.values(s).every(n=>n===0);
   const mathEmpty=s=>Object.values(s).every(v=>v.entries===0&&v.hits===0&&v.misses===0);
   await click('#open');
   await until('open',"document.querySelector('.workspace-shell').dataset.workspaceMode==='writing'&&!document.querySelector('#open').disabled");
@@ -76,8 +78,8 @@ export async function runBookBenchmark(win,app,root,fixture){
   if(await readFile(join(root,'book.yaml'),'utf8')!==fixture.manifest)throw Error('Benchmark changed manifest');
   await click('#performance-toggle');
   await until('metrics',"document.querySelector('#performance-summary tbody tr[data-stage=layout][data-category=book]')?.dataset.success>0&&document.querySelector('#performance-memory')?.dataset.phase==='ready'");
-  async function readPhaseSample(scope,enabled,mathEnabled=false,paragraphEnabled=false){
-    const selector='#performance-phase-summary tr[data-scope='+scope+'][data-cache-enabled='+String(enabled)+'][data-math-cache-enabled='+String(mathEnabled)+'][data-paragraph-cache-enabled='+String(paragraphEnabled)+']';
+  async function readPhaseSample(scope,enabled,mathEnabled=false,paragraphEnabled=false,pageEnabled=false){
+    const selector='#performance-phase-summary tr[data-scope='+scope+'][data-cache-enabled='+String(enabled)+'][data-math-cache-enabled='+String(mathEnabled)+'][data-paragraph-cache-enabled='+String(paragraphEnabled)+'][data-page-cache-enabled='+String(pageEnabled)+']';
     const sample=await raw("(()=>{const e=document.querySelector("+JSON.stringify(selector)+");return e?{count:Number(e.dataset.count),timings:JSON.parse(e.dataset.latest)}:null;})()");
     if(!sample||!Number.isSafeInteger(sample.count)||sample.count<1||
       Object.keys(sample.timings).length!==phaseKeys.length||!phaseKeys.every(k=>Number.isFinite(sample.timings[k])&&sample.timings[k]>=0))
@@ -86,7 +88,8 @@ export async function runBookBenchmark(win,app,root,fixture){
   }
   await readPhaseSample('manuscript',false,false,true);
   await readPhaseSample('book',false,false,true);
-  const baselineCache=await cacheStats(),baselineMath=await mathStats(),baselineParagraph=await paragraphStats();
+  const baselineCache=await cacheStats(),baselineMath=await mathStats(),baselineParagraph=await paragraphStats(),baselinePage=await pageStats();
+  if(await raw("document.querySelector('#performance-page-cache-enabled').checked")||!pageEmpty(baselinePage))throw Error('Experimental page cache must start disabled and empty');
   if(await raw("document.querySelector('#performance-cache-enabled').checked||document.querySelector('#performance-math-cache-enabled').checked||!document.querySelector('#performance-paragraph-cache-enabled').checked")||Object.values(baselineCache).some(n=>n!==0)||!mathEmpty(baselineMath)||baselineParagraph.entries<=0||baselineParagraph.hits<=0||baselineParagraph.misses<=0)throw Error('Expected default incremental cache reuse and disabled legacy caches');
   // Keep each paired comparison isolated from the default incremental mode.
   await click('#performance-paragraph-cache-enabled');
@@ -275,5 +278,52 @@ export async function runBookBenchmark(win,app,root,fixture){
   }
   await setParagraphComparison(true);
   const paragraphEditComparison=summarizeCacheComparison(paragraphEditComparisons.map(s=>({label:'cache-pair-'+s.pair+'-'+s.arm,scope:'manuscript',elapsedMs:s.elapsedMs})),'manuscript');
-  console.log('BENCH report '+JSON.stringify({version:9,fixtureVersion:2,defaultParagraphCacheEnabled:true,paragraphEditComparison,paragraphEditComparisons,cacheComparison,phaseComparisons,mathComparison,mathComparisons,paragraphComparison,paragraphComparisons,chapters:fixture.chapters.map(c=>({id:c.id,characters:c.source.length,sections:c.sections,blocks:c.blocks})),initialMemory,finalMemory:memory(),samples,summary,baselineCache,baselineMath,baselineParagraph,finalCache}));
+  // Hold incremental paragraph measurement enabled and isolate page templates.
+  await measure('page-comparison-open','book',()=>click('#mode-layout'));
+  if(await paperSignature()!==cachedPaper)throw Error('Page comparison baseline paper differs');
+  async function setPageComparison(enabled){
+    await click('#performance-toggle');
+    const checked=()=>raw("document.querySelector('#performance-page-cache-enabled').checked");
+    if(await checked())await click('#performance-page-cache-enabled');
+    if(enabled)await click('#performance-page-cache-enabled');
+    if(await checked()!==enabled||!pageEmpty(await pageStats()))throw Error('Page cache toggle/reset failed');
+    if(!await raw("document.querySelector('#performance-paragraph-cache-enabled').checked&&!document.querySelector('#performance-cache-enabled').checked&&!document.querySelector('#performance-math-cache-enabled').checked"))throw Error('Page comparison requires only incremental paragraph cache enabled');
+    await click('#performance-close');
+  }
+  async function readPageComparison(enabled){
+    await click('#performance-toggle');
+    const stats=await pageStats(),phase=await readPhaseSample('book',false,false,true,enabled),paragraph=await paragraphStats();
+    await click('#performance-close');return {stats,phase,paragraph};
+  }
+  const pageComparisons=[];
+  for(const {pair,order} of cacheComparisonPlan()){
+    for(const arm of order){
+      const enabled=arm==='warm';
+      await setParagraphComparison(true);
+      await setPageComparison(enabled);
+      await repeat('page-prime-'+pair+'-'+arm);
+      const prime=await readPageComparison(enabled);
+      const label='page-pair-'+pair+'-'+arm;
+      await repeat(label);
+      const after=await readPageComparison(enabled);
+      const sample=samples.find(s=>s.label===label);
+      if(after.phase.count!==prime.phase.count+1)throw Error('Expected one page phase sample');
+      if(after.paragraph.misses!==prime.paragraph.misses||after.paragraph.hits<=prime.paragraph.hits)throw Error('Expected warm paragraph reuse in both page arms');
+      if(enabled){
+        if(prime.stats.entries<=0||after.stats.hits<=prime.stats.hits)throw Error('Expected warm page template reuse');
+        if(['hits','misses','bypasses'].reduce((n,k)=>n+after.stats[k]-prime.stats[k],0)!==sample.pages)throw Error('Page cache counters must cover every page');
+      }else if(!pageEmpty(prime.stats)||!pageEmpty(after.stats))throw Error('Disabled page cache accumulated data');
+      pageComparisons.push({pair,arm,elapsedMs:sample.elapsedMs,pages:sample.pages,memory:sample.memory,timings:after.phase.timings,prime:prime.stats,after:after.stats});
+    }
+  }
+  const pageComparison=summarizeCacheComparison(pageComparisons.map(s=>({label:'cache-pair-'+s.pair+'-'+s.arm,scope:'book',elapsedMs:s.elapsedMs})));
+  await setPageComparison(true);
+  await repeat('page-session-release-prime');
+  if((await readPageComparison(true)).stats.entries<=0)throw Error('Expected populated page cache before book session release');
+  await click('#mode-home');await click('#open');
+  await until('page session reopened',"document.querySelector('.workspace-shell').dataset.workspaceMode==='writing'&&!document.querySelector('#open').disabled&&!document.querySelector('#source').value");
+  await click('#performance-toggle');
+  if(!pageEmpty(await pageStats()))throw Error('Page cache survived book reopen');
+  await click('#performance-close');await setPageComparison(false);
+  console.log('BENCH report '+JSON.stringify({version:10,fixtureVersion:2,defaultParagraphCacheEnabled:true,baselinePage,pageComparison,pageComparisons,paragraphEditComparison,paragraphEditComparisons,cacheComparison,phaseComparisons,mathComparison,mathComparisons,paragraphComparison,paragraphComparisons,chapters:fixture.chapters.map(c=>({id:c.id,characters:c.source.length,sections:c.sections,blocks:c.blocks})),initialMemory,finalMemory:memory(),samples,summary,baselineCache,baselineMath,baselineParagraph,finalCache}));
 }
