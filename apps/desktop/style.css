@@ -477,3 +477,27 @@ body{font-family:BCFont_NotoSansJP,system-ui,sans-serif}.font-control,.typograph
 .structured-block[data-focused=true]:focus-within{border-color:var(--bc-primary);box-shadow:0 0 0 1px var(--bc-primary)}
 .structured-block:focus-visible,.structured-editor button:focus-visible,.structured-editor select:focus-visible,.structured-editor summary:focus-visible{outline:2px solid var(--bc-primary);outline-offset:2px}
 .structured-block{scroll-margin-block:12px}
+
+/* UX-09d: one writing surface at a time in a reduced CSS viewport. */
+.workspace-main.mode-writing.compact-writing,.workspace-main.mode-writing.compact-writing.with-paper,.workspace-main.mode-writing.compact-writing.with-paper.outline-collapsed,.workspace-main.mode-writing.compact-writing:not(.outline-collapsed){grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr)}
+.workspace-main.mode-writing.compact-writing>.paper,.workspace-main.mode-writing.compact-writing>.editor,.workspace-main.mode-writing.compact-writing>.workspace-outline{grid-column:1;grid-row:1}
+.workspace-main.mode-writing.compact-writing>.workspace-outline{padding:12px}
+.workspace-main.mode-writing.compact-writing>.editor,.workspace-main.mode-writing.compact-writing>.paper{padding:8px}
+.workspace-panel-actions #compact-editor[aria-pressed=true],.workspace-panel-actions #toggle-paper[aria-pressed=true],.workspace-panel-actions #toggle-outline[aria-expanded=true]{background:#d5e6f2;color:#163e5b;border-color:#7b9eb9}
+.structured-insert-fields select,.structured-rich-editor textarea,.mixed-text-field textarea,.structured-inline-tools input{min-width:0;max-width:100%}
+.structured-block-heading,.structured-actions,.mixed-field-tools{min-width:0;max-width:100%}
+.structured-content,.structured-content pre{overflow-wrap:anywhere;min-width:0;max-width:100%}
+@media(max-width:900px){
+ .workspace-tools>.controls,.workspace-panel-actions{gap:4px;flex-wrap:wrap}
+ .workspace-panel-actions button{padding:6px 9px;font-size:12px}
+ .structured-block{padding:8px}
+ .structured-insert-fields label{flex-basis:150px}
+ .structured-writing-header{flex-wrap:wrap}
+}
+@media(max-height:500px){
+ .workspace-main.mode-writing.compact-writing>.editor{overflow:auto;overscroll-behavior:contain}
+ .structured-rich-editor textarea{min-height:72px}
+}
+
+/* UX-09e: programmatically focused surfaces have a visible keyboard target. */
+.workspace-main.compact-writing>#writing-editor:focus-visible,.workspace-main.compact-writing>#writing-paper:focus-visible,.workspace-main.compact-writing>#workspace-outline:focus-visible{outline:2px solid #2176b3;outline-offset:-2px}
