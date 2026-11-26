@@ -131,8 +131,11 @@ export async function runBookBenchmark(win,app,root,fixture){
     }
   }
   const cacheComparison=summarizeCacheComparison(samples);
-  // Restore the normal setting before verifying book-session release.
+  // Restore and populate the cache so the session-release assertion is not vacuous.
   await setComparisonCache(true);
+  await repeat('cache-session-release-prime');
+  const releasePrime=await readComparisonStats(true);
+  if(releasePrime.stats.entries<=0)throw Error('Expected populated cache before book session release');
   await click('#performance-toggle');
   const summary=await raw("Array.from(document.querySelectorAll('#performance-summary tbody tr')).map(tr=>({stage:tr.dataset.stage,category:tr.dataset.category,values:Array.from(tr.querySelectorAll('td')).map(td=>td.textContent)}))");
   await click('#performance-close');await click('#mode-home');await click('#open');
