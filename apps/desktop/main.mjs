@@ -504,6 +504,24 @@ async function packageSmoke(){
   await until("!document.querySelector('#structured-rich-value')&&document.querySelector('#source').value==="+JSON.stringify(richExpected));
   await exec("document.querySelector('#structured-undo').click()");
   await until("document.querySelector('#source').value==="+JSON.stringify(richFixture));
+  // UX-08f-5d: plain rich editing transitions into a mixed draft without losing text/style.
+  await exec("document.querySelector('[data-rich-edit]').click()");
+  await setRichValue('重要な文章です。追加。');
+  await exec("(()=>{const e=document.querySelector('#structured-rich-value');e.focus();e.setSelectionRange(3,3);document.querySelector('#rich-math-insert').click();})()");
+  await until("!!document.querySelector('#rich-math-formula')&&document.querySelector('#structured-apply').disabled");
+  await exec("document.querySelector('#rich-math-cancel').click()");
+  await until("document.querySelector('#structured-rich-value').value==='重要な文章です。追加。'&&!document.querySelector('#rich-math-formula')");
+  await exec("(()=>{const e=document.querySelector('#structured-rich-value');e.focus();e.setSelectionRange(3,3);document.querySelector('#rich-math-insert').click();})()");
+  await until("!!document.querySelector('#rich-math-formula')");
+  await exec("(()=>{const e=document.querySelector('#rich-math-formula');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,'x^2');e.dispatchEvent(new Event('input',{bubbles:true}));})()");
+  await until("!document.querySelector('#rich-math-update').disabled");
+  await exec("document.querySelector('#rich-math-update').click()");
+  await until("!!document.querySelector('[data-mixed-math] math')&&document.querySelector('#source').value==="+JSON.stringify(richFixture));
+  await exec("document.querySelector('#structured-apply').click()");
+  const richMathExpected=richFixture.replace('な文章です。','な$x^2$文章です。追加。');
+  await until("document.querySelector('#source').value==="+JSON.stringify(richMathExpected));
+  await exec("document.querySelector('#structured-undo').click()");
+  await until("document.querySelector('#source').value==="+JSON.stringify(richFixture));
   await exec("document.querySelector('#editor-view-source').click()");
   // UX-08f-4b: caret split, join, list conversion, item edits and safe indentation.
   const paragraphFixture='# 章\n\n最初の文章。次の文章。\n';
@@ -709,6 +727,22 @@ async function packageSmoke(){
   await until("document.querySelector('#source').value==="+JSON.stringify(retargeted));
   await exec("document.querySelector('#structured-undo').click()");
   await until("document.querySelector('#source').value==="+JSON.stringify(twoRefs));
+  await exec("document.querySelector('#editor-view-source').click()");
+  await setStructuredSource(formulaSource);
+  await exec("document.querySelector('#editor-view-structured').click()");
+  await exec("document.querySelector('[data-rich-edit]').click()");
+  await setRichValue('新しい本文です。');
+  await exec("(()=>{const e=document.querySelector('#structured-rich-value');e.focus();e.setSelectionRange(5,5);document.querySelector('#rich-reference-insert').click();})()");
+  await until("!!document.querySelector('#equation-reference-target')");
+  await exec("document.querySelector('#equation-reference-cancel').click()");
+  await until("!document.querySelector('#equation-reference-editor')&&document.querySelector('#structured-rich-value').value==='新しい本文です。'");
+  await exec("(()=>{const e=document.querySelector('#structured-rich-value');e.focus();e.setSelectionRange(5,5);document.querySelector('#rich-reference-insert').click();})()");
+  await until("!!document.querySelector('#equation-reference-target')");
+  await exec("document.querySelector('#equation-reference-apply').click()");
+  const richRefExpected=formulaSource.replace('本文です。','新しい本文:ref{target="'+structuredEqId+'" format="label-number"}です。');
+  await until("!document.querySelector('#equation-reference-editor')&&document.querySelector('#source').value==="+JSON.stringify(richRefExpected));
+  await exec("document.querySelector('#structured-undo').click()");
+  await until("document.querySelector('#source').value==="+JSON.stringify(formulaSource));
   await exec("document.querySelector('#editor-view-source').click()");
   await setStructuredSource(sample);
   await until("document.querySelector('#source').value==="+JSON.stringify(sample));
