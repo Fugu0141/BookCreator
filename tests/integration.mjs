@@ -599,11 +599,16 @@ test('BCM display math -> strict engine block and exact formula offsets (LF and 
 test('display math rejects incomplete fences, unsupported formulas and absent validator',()=>{
   const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds,validateDisplayMath:engine.parseDisplayMath};
   const run=(source,d=deps)=>prepareBrowserPreview({documentId:'math',revision:'1',source,startOn:'page'},'1','math',{width:100000,height:70000},d);
-  for(const source of ['$$\n\n$$\n','$$\nx+y\n\\input{secret}\n$$\n','$$\nx^2\n','$$\n\\input{secret}\n$$\n','$$\nx^2^3\n$$\n','$$\n'+ 'x'.repeat(2049)+'\n$$\n','$$\rx+1\r$$\r',':::callout{kind="note"}\n$$\nx\n$$\n:::\n']){
+  for(const source of ['$$\n\n$$\n','$$\nx+y\n\\input{secret}\n$$\n','$$\nx^2\n','$$\n\\input{secret}\n$$\n','$$\nx^2^3\n$$\n','$$\n'+ 'x'.repeat(2049)+'\n$$\n','$$\rx+1\r$$\r',':::callout{kind="note"}\n$$\n\\input{secret}\n$$\n:::\n']){
     assert.equal(run(source).options,undefined,source);
   }
   assert.equal(run('$$\nx\n$$\n',{...deps,validateDisplayMath:undefined}).options,undefined);
   assert.ok(run('$$\nx\n$$').options);
+  // Strict study callouts support display atoms, including when no inline math validator is supplied.
+  const callout=run(':::callout{kind="note"}\n$$\nx\n$$\n:::\n');
+  assert.deepEqual(callout.diagnostics,[]);
+  assert.deepEqual(callout.options.blocks[0].request.inlineMath,[{start:0,formula:'x',display:true}]);
+  assert.equal(run(':::callout{kind="note"}\n$$\nx\n$$\n:::\n',{...deps,validateDisplayMath:undefined}).options,undefined);
 });
 
 
