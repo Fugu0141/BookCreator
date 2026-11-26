@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
-import {editDocument,compileMeasuredManuscript,canReviewLayout,prepareBrowserPreview,prepareBookBrowserPreview,defaultHeadingDesign,defaultParagraphDesign,previewSourceRange,planInlineFormat,planListFormat,planListIndent,planListBatch,inspectDisplayMath,planDisplayMath,inspectInlineMath,planInlineMath,previewSampleInline,equationReferenceTargets,planEquationReference,planEquationNumbering} from '../dist/index.js';
+import {editDocument,compileMeasuredManuscript,canReviewLayout,prepareBrowserPreview,prepareBookBrowserPreview,defaultHeadingDesign,defaultParagraphDesign,previewSourceRange,planInlineFormat,planListFormat,planListIndent,planListBatch,inspectDisplayMath,planDisplayMath,inspectInlineMath,planInlineMath,inspectComponentDisplayMath,planComponentDisplayMath,previewSampleInline,equationReferenceTargets,planEquationReference,planEquationNumbering} from '../dist/index.js';
 const load = (variable, fallback) => import(pathToFileURL(resolve(process.env[variable] ?? fallback)).href);
 const bcm = await load('BCM_DIST', '../BookCreator_Markdown/dist/index.js');
 const engine = await load('ENGINE_DIST', '../BookCreator_LayoutEngine/dist/index.js');
@@ -874,4 +874,44 @@ test('Lab BCM sample conversion is opt-in, bounded, and excludes source mappings
   assert.deepEqual(previewSampleInline(sample,true,engine.parsePreviewMath),{text:'係数 \uFFFC です。',inlineStyles:[{start:0,end:2,fontWeight:700}],inlineMath:[{start:3,formula:'\\frac{1}{2}'}]});
   assert.throws(()=>previewSampleInline('式 $\\input{secret}$',true,engine.parsePreviewMath),RangeError);
   assert.throws(()=>previewSampleInline('式 $x',true,engine.parsePreviewMath),RangeError);
+});
+
+
+test('component display formulas retain scanner fences, slot-local mapping and exact GUI patches',()=>{
+  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds,validateDisplayMath:engine.parsePreviewMath,validateInlineMath:engine.parsePreviewMath};
+  const size={width:100000,height:100000},id='component-00000000-0000-4000-8000-000000000001';
+  const design={...defaultHeadingDesign(),direction:'column',children:[{id:'content',type:'content'},{id:'hint',type:'slot',name:'hint',width:'fill',fontSize:3500,lineHeight:1.5,color:'#123456'}]};
+  const library={schemaVersion:3,entries:[{id,name:'数式部品',usage:'study',design}]};
+  for(const nl of ['\n','\r\n']){
+    const fence=['$$','\\frac{1}{2}','$$'].join(nl),hintFence=['$$','\\sqrt{x}','$$'].join(nl);
+    const source=['::::component{name="'+id+'" #q-math}',':::slot{name="content"}','**問題**。','',fence,'','次の式 $x^2$ です。',':::','',':::slot{name="hint"}','ヒント。','',hintFence,'','結び。',':::','::::',''].join(nl);
+    const doc={documentId:'slots',revision:'1',source,startOn:'page'};
+    const run=raw=>prepareBookBrowserPreview([{...doc,source:raw}],'1','display-slot',size,deps,undefined,undefined,undefined,undefined,undefined,library);
+    const p=run(source);assert.deepEqual(p.diagnostics,[]);
+    const block=p.options.sections[0].blocks[0],hint=block.namedSlots[0];
+    assert.equal(block.origin.persistentId,'q-math');
+    assert.deepEqual(block.request.inlineMath.map(a=>[a.formula,a.display]),[['\\frac{1}{2}',true],['x^2',undefined]]);
+    assert.deepEqual(hint.request.inlineMath.map(a=>[a.formula,a.display]),[['\\sqrt{x}',true]]);
+    for(const [req,name,raw] of [[block.request,undefined,fence],[hint.request,'hint',hintFence]]){
+      const atom=req.inlineMath[0],range=previewSourceRange(block,{textStart:atom.start,textEnd:atom.start+1},name);
+      assert.equal(source.slice(range.start,range.end),raw);
+    }
+    const start=source.indexOf(hintFence),end=start+hintFence.length;
+    assert.equal(inspectComponentDisplayMath(source,start,end,deps).slot,'hint');
+    const edit=planComponentDisplayMath(source,start,end,'y^2',deps),next=bcm.applyPatches(source,[edit.patch]);
+    assert.equal(next,source.replace(hintFence,()=>['$$','y^2','$$'].join(nl)));
+    assert.ok(run(next).options);
+    assert.throws(()=>planInlineMath(source,start,end,'x',deps),RangeError);
+    const insert=source.indexOf('ヒント。')+'ヒント。'.length+nl.length;
+    const plan=planComponentDisplayMath(source,insert,insert,'z^2',deps);
+    const added=bcm.applyPatches(source,[plan.patch]);
+    assert.ok(run(added).options);
+    assert.equal(added.slice(plan.selection.start,plan.selection.end),'z^2');
+    assert.equal(run(added).options.sections[0].blocks[0].namedSlots[0].request.inlineMath.length,2);
+    assert.throws(()=>planComponentDisplayMath(source,source.indexOf('name="hint"'),source.indexOf('name="hint"'),'z',deps),RangeError);
+    assert.equal(run(source.replace(hintFence,()=>['$$','x','y','$$'].join(nl))).options,undefined);
+    const sample=previewSampleInline(['前。','',fence,'','後。'].join(nl),true,engine.parsePreviewMath,true);
+    assert.equal(sample.inlineMath[0].display,true);
+    assert.throws(()=>previewSampleInline(fence,true,engine.parsePreviewMath),RangeError);
+  }
 });

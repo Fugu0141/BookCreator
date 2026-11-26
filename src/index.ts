@@ -38,7 +38,7 @@ export * from './inline-edit.js';
 
 export {planListIndent,planListBatch} from './list-edit.js';
 
-export {inspectDisplayMath,planDisplayMath,inspectInlineMath,planInlineMath} from './math-edit.js';
+export {inspectDisplayMath,planDisplayMath,inspectInlineMath,planInlineMath,inspectComponentDisplayMath,planComponentDisplayMath} from './math-edit.js';
 
 export {equationReferenceTargets,planEquationReference} from './equation-reference-edit.js';
 
