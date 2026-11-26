@@ -14,7 +14,7 @@ test('only valid numeric phase records are copied and bounded',()=>{
   assert.equal(m.record('book',1,timing(2)),false);
   m.record('book',false,timing(2));m.record('manuscript',true,timing(3));
   const rows=m.snapshot();assert.deepEqual(rows.map(r=>r.measurementMs),[2,3]);
-  assert.deepEqual(Object.keys(rows[0]),['scope','cacheEnabled',...phaseKeys]);
+  assert.deepEqual(Object.keys(rows[0]),['scope','cacheEnabled','mathCacheEnabled',...phaseKeys]);
   rows[0].imagesMs=999;assert.equal(m.snapshot()[0].imagesMs,2);
   m.clear();assert.deepEqual(m.snapshot(),[]);
 });
@@ -22,9 +22,11 @@ test('phase summary separates scope and cache mode; latest differs from median',
   const m=createPreviewPhaseMetrics();
   for(const n of [2,8,4,20])m.record('book',true,timing(n));
   m.record('book',false,timing(5));m.record('manuscript',true,timing(6));
-  const [warm,disabled,chapter]=summarizePreviewPhases(m.snapshot());
+  m.record('book',true,timing(7),true);
+  const [warm,disabled,chapter,math]=summarizePreviewPhases(m.snapshot());
   assert.equal(warm.count,4);assert.deepEqual(warm.median,timing(6));assert.deepEqual(warm.latest,timing(20));
   assert.equal(disabled.cacheEnabled,false);assert.deepEqual(disabled.median,timing(5));
   assert.equal(chapter.scope,'manuscript');assert.deepEqual(chapter.latest,timing(6));
+  assert.equal(math.mathCacheEnabled,true);assert.equal(math.count,1);assert.deepEqual(math.latest,timing(7));
   assert.deepEqual(summarizePreviewPhases([]),[]);
 });
