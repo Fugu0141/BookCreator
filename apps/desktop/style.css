@@ -416,3 +416,18 @@ body{font-family:BCFont_NotoSansJP,system-ui,sans-serif}.font-control,.typograph
 .structured-link-editor label{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:8px 0;font-size:12px;color:var(--bc-muted)}
 .structured-link-editor input,.structured-link-editor select{min-width:0;max-width:100%;font-size:12px}
 .structured-link-editor p{font-size:12px;overflow-wrap:anywhere}
+
+/* UX-08f-4a: logical text draft, contextual tools and quiet block controls. */
+.structured-block-menu{margin-top:6px;color:var(--bc-muted);font-size:12px}
+.structured-block-menu>summary{cursor:pointer;width:fit-content;padding:5px 0}
+.structured-block-menu .structured-block-operations{margin-top:2px}
+.structured-rich-editor textarea{width:100%;box-sizing:border-box;min-height:84px;resize:vertical;font:inherit;line-height:1.7;margin:6px 0}
+.rich-format-toolbar{align-items:center;margin-bottom:8px}
+.rich-format-toolbar details{flex:1 1 auto;font-size:12px}
+.rich-format-toolbar details>summary{cursor:pointer;padding:4px 6px}
+.rich-format-toolbar details .structured-actions{padding:8px;border:1px solid var(--bc-border);border-radius:4px;background:#f6f9fb;align-items:center}
+.rich-format-toolbar label{display:flex;align-items:center;gap:4px;margin:0}
+.rich-format-toolbar input[type=number]{width:70px}
+.rich-text-preview{margin:8px 0;padding:8px;border:1px solid var(--bc-border);border-radius:4px;background:#f6f9fb}
+.rich-text-preview small{color:var(--bc-muted)}
+.rich-text-preview .structured-content{background:white;padding:8px;margin-top:4px;min-height:24px}
