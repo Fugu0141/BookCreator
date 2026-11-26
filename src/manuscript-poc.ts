@@ -1,4 +1,4 @@
-import {parsePreviewInline} from './inline-preview.js';
+import {parsePreviewInline,type ComponentEquation} from './inline-preview.js';
 import {validNamedSlot,type NamedSlotSource} from './preview-component.js';
 import {studyKind,customStudyId,type StudyKind} from './study-blocks.js';
 // Experimental adapter for a deliberately limited scanner subset, not a full BCM compiler.
@@ -9,7 +9,7 @@ export interface Scan {source:string;blocks:readonly ScanBlock[];diagnostics:rea
 export interface Manuscript {documentId:string;revision:string;source:string;startOn:'page'|'continuous'}
 export interface Origin {documentId:string;revision:string;blockKey:string;range:Range;persistentId?:string}
 export type SemanticListItem=({kind:'bullet'}|{kind:'ordered';number:number})&{depth:number};
-export interface SemanticItem {equationNumber?:string;kind:'heading'|'paragraph'|'figure'|'study'|'list'|'math';listItem?:SemanticListItem;studyKind?:StudyKind;componentId?:string;sourceTextStart?:number;namedSlots?:NamedSlotSource[];origin:Origin;text:string;level?:number;attributes?:Readonly<Record<string,string>>}
+export interface SemanticItem {componentEquations?:ComponentEquation[];equationNumber?:string;kind:'heading'|'paragraph'|'figure'|'study'|'list'|'math';listItem?:SemanticListItem;studyKind?:StudyKind;componentId?:string;sourceTextStart?:number;namedSlots?:NamedSlotSource[];origin:Origin;text:string;level?:number;attributes?:Readonly<Record<string,string>>}
 type MeasuredBlock={kind:'block';origin:Origin;width:number;unitHeights:readonly number[];splitPolicy:'allow'|'strict';startPosition?:'page-top';startPositionSource?:'component'};
 type Break={kind:'pagebreak';origin:Origin};
 interface Input {schemaVersion:1;revision:string;fingerprint:string;content:{width:number;height:number};sections:{id:string;startOn:'page'|'continuous';blocks:(MeasuredBlock|Break)[]}[]}
@@ -151,26 +151,37 @@ export function prepareManuscript<S extends Scan>(documents:readonly Manuscript[
           emit({kind:'math',origin:origin(b.range,h.id),text:match[2],sourceTextStart:child.range.start+match[1].length,attributes:attrs},content.width);
           continue;
         }
+        const isWrapped=(c:ScanBlock)=>c.kind==='directive'&&c.closed&&c.header.kind==='container'&&c.header.name==='layout';
+        const isBody=(c:ScanBlock)=>c.kind==='raw'||c.kind==='math'||isWrapped(c);
         const readBody=(blocks:readonly ScanBlock[],parent:Range,headerEnd:number)=>{
           const visible=blocks.filter(c=>c.kind!=='blank');
-          if(!visible.length||visible.some(c=>c.kind!=='raw'&&c.kind!=='math'))return;
+          if(!visible.length||visible.some(c=>!isBody(c)))return;
           const first=visible[0],last=visible.at(-1)!;
           if(first.range.start<headerEnd||last.range.end>parent.end)return;
           const text=stripEnd(doc.source.slice(first.range.start,last.range.end));
+          const componentEquations:ComponentEquation[]=[];
+          for(const c of visible){
+            if(c.kind!=='directive')continue;
+            const attrs=Object.fromEntries(c.header.attributes.map(a=>[a.key,a.value])),children=c.children.filter(k=>k.kind!=='blank'),math=children[0];
+            if(!isWrapped(c)||children.length!==1||math?.kind!=='math'||Object.keys(attrs).some(k=>k!=='numbered')||(attrs.numbered!==undefined&&!['true','false'].includes(attrs.numbered))||(!c.header.id&&attrs.numbered===undefined))return;
+            const raw=doc.source.slice(math.range.start,math.range.end),match=/^(\$\$[ \t]*(?:\r\n|\n))([\s\S]+?)(?:\r\n|\n)\$\$[ \t]*(?:\r\n|\n)?$/.exec(raw);
+            if(!match||!deps.validateDisplayMath||!match[2].trim()||match[2].length>2048)return;
+            componentEquations.push({range:{start:c.range.start,end:c.range.start+stripEnd(doc.source.slice(c.range.start,c.range.end)).length},formulaStart:math.range.start+match[1].length,formula:match[2],id:c.header.id,numbered:attrs.numbered==='true'});
+          }
           try{
-            const parsed=parsePreviewInline(text,first.range.start,deps.validateInlineMath,undefined,true,deps.validateDisplayMath);
-            const math=visible.filter(c=>c.kind==='math'),atoms=parsed.inlineMath.filter(a=>a.display);
+            const parsed=parsePreviewInline(text,first.range.start,deps.validateInlineMath,undefined,true,deps.validateDisplayMath,componentEquations);
+            const math=visible.filter(c=>c.kind==='math'||isWrapped(c)),atoms=parsed.inlineMath.filter(a=>a.display);
             if(math.length!==atoms.length||atoms.some((a,i)=>{
               const seg=parsed.sourceMap.segments.find(s=>s.start===a.start)!;
               return seg.outerStart!==math[i].range.start||seg.outerEnd!==math[i].range.start+stripEnd(doc.source.slice(math[i].range.start,math[i].range.end)).length;
             }))return;
           }catch{return;}
-          return {text,sourceTextStart:first.range.start};
+          return {text,sourceTextStart:first.range.start,componentEquations};
         };
         if(!kind&&!componentId){unsupported(b.range,'Unsupported study container');continue;}
-        let primary:{text:string;sourceTextStart:number}|undefined;
-        const namedSlots:NamedSlotSource[]=[];
-        if(children.length&&children.every(c=>c.kind==='raw'||c.kind==='math'))primary=readBody(b.children,b.range,h.range.end);
+        let primary:ReturnType<typeof readBody>;
+        const namedSlots:NamedSlotSource[]=[],nestedEquations:ComponentEquation[]=[];
+        if(children.length&&children.every(isBody))primary=readBody(b.children,b.range,h.range.end);
         else if(h.name==='component'&&children.length>=1&&children.length<=9){
           const names=new Set<string>();let invalid=false;
           for(const slot of children){
@@ -178,12 +189,12 @@ export function prepareManuscript<S extends Scan>(documents:readonly Manuscript[
             const name=slot.header.attributes[0].value,source=readBody(slot.children,slot.range,slot.header.range.end);
             if((name!=='content'&&!validNamedSlot(name))||names.has(name)||!source){invalid=true;break;}
             names.add(name);
-            if(name==='content')primary=source;else namedSlots.push({name,...source});
+            if(name==='content')primary=source;else {const {componentEquations,...slotSource}=source;namedSlots.push({name,...slotSource});nestedEquations.push(...componentEquations);}
           }
           if(invalid)primary=undefined;
         }
         if(!primary){unsupported(b.range,'Expected plain paragraphs or explicit content and named slots containing plain paragraphs');continue;}
-        emit({kind:'study',...(kind?{studyKind:kind}:{componentId}),origin:origin(b.range,h.id),...primary,...(namedSlots.length?{namedSlots}:{}),attributes:attrs},content.width);
+        emit({kind:'study',...(kind?{studyKind:kind}:{componentId}),origin:origin(b.range,h.id),...primary,...(primary.componentEquations.length||nestedEquations.length?{componentEquations:[...primary.componentEquations,...nestedEquations].sort((a,b)=>a.range.start-b.range.start)}:{componentEquations:undefined}),...(namedSlots.length?{namedSlots}:{}),attributes:attrs},content.width);
       }else if(b.kind==='directive'&&b.closed&&b.header.kind==='leaf'){
         const h=b.header, attrs=Object.fromEntries(h.attributes.map(a=>[a.key,a.value]));
         if(h.name==='pagebreak'&&!h.id&&Object.keys(attrs).every(k=>k==='side')&&(attrs.side===undefined||attrs.side==='any')){
@@ -212,12 +223,14 @@ export function prepareManuscript<S extends Scan>(documents:readonly Manuscript[
         if(!chapterActive)beginEquationChapter();
         item.equationNumber=equationChapter+'.'+(++equationIndex);
       }
+      for(const eq of item.componentEquations??[])if(eq.numbered)eq.equationNumber=equationChapter+'.'+(++equationIndex);
     }
     if(!chapterActive&&section.blocks.some(b=>b.kind==='block'))beginEquationChapter();
   }
   // Links refer to persistent instance IDs, never positions or displayed numbers.
   const byId=new Map(items.filter(i=>i.origin.persistentId).map(i=>[i.origin.persistentId!,i]));
-  for(const ref of references){const target=byId.get(ref.target);if(target?.kind!=='math'||!target.equationNumber)diagnostics.push({code:'BC_EQUATION_REFERENCE',message:'Reference target must be a numbered equation: '+ref.target,documentId:ref.documentId,range:ref.range});}
+  const equationIds=new Set(numberedEquationTargets(items).map(t=>t.id));
+  for(const ref of references){if(!equationIds.has(ref.target))diagnostics.push({code:'BC_EQUATION_REFERENCE',message:'Reference target must be a numbered equation: '+ref.target,documentId:ref.documentId,range:ref.range});}
   for(const item of items){
     if(item.kind!=='study'||!item.attributes?.['answer-to'])continue;
     const id=item.attributes['answer-to'],target=byId.get(id);
@@ -227,6 +240,14 @@ export function prepareManuscript<S extends Scan>(documents:readonly Manuscript[
   }
   if(diagnostics.length)return failed();
   return {input,items,diagnostics,publicationReady:false};
+}
+
+/** Ordered reference targets include nested equations without turning them into page blocks. */
+export function numberedEquationTargets(items:readonly SemanticItem[]){
+  return items.flatMap(i=>[
+    ...(i.kind==='math'&&i.origin.persistentId&&i.equationNumber?[{id:i.origin.persistentId,number:i.equationNumber,documentId:i.origin.documentId,formula:i.text}]:[]),
+    ...(i.componentEquations??[]).flatMap(e=>e.id&&e.equationNumber?[{id:e.id,number:e.equationNumber,documentId:i.origin.documentId,formula:e.formula}]:[])
+  ]);
 }
 
 export function compileMeasuredManuscript<S extends Scan>(documents:readonly Manuscript[],revision:string,fingerprint:string,content:Input['content'],deps:Dependencies<S>):{input?:Input;items:SemanticItem[];diagnostics:Issue[];publicationReady:false} {
