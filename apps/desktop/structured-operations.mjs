@@ -23,6 +23,8 @@ export function studyInsertionSlots(kind,theme){
 const blankGap=(source,a,b)=>a&&b&&/^(?:[ \t]*(?:\r\n|\n))+$/.test(source.slice(a.range.end,b.range.start));
 export function canBlockOperation(source,rows,index,action){
   const row=rows[index];
+  if(action==='split')return row?.kind==='paragraph'&&row.payload!==null&&row.payload.includes('\n');
+  if(action==='join')return row?.kind==='paragraph'&&rows[index+1]?.kind==='paragraph'&&blankGap(source,row,rows[index+1]);
   if(action==='insert')return index===rows.length||!!row&&(index===0||blankGap(source,rows[index-1],row));
   if(!simple(row))return false;
   if(action==='duplicate')return canBlockOperation(source,rows,index+1,'insert');
@@ -38,7 +40,24 @@ export function planBlockOperation(source,request,{scan,parseInline,applyPatches
   const eol=source.includes('\r\n')?'\r\n':'\n';
   const expected=rows.slice();
   let patch;
-  if(action==='insert'||action==='duplicate'){
+  if(action==='split'||action==='join'){
+    const row=rows[index];
+    if(action==='split'){
+      // Split on an existing hard-line boundary, keeping all source bytes.
+      const m=/\r?\n/.exec(stripEnd(row.raw));if(!m)throw Error('分割する改行がありません。');
+      const offset=row.range.start+m.index+m[0].length;
+      patch={range:{start:offset,end:offset},expected:'',replacement:m[0]};
+      const parts=projectBlocks(row.raw.slice(0,m.index+m[0].length)+m[0]+row.raw.slice(m.index+m[0].length),scan,parseInline).rows;
+      if(parts.length!==2||parts.some(r=>r.kind!=='paragraph'))throw Error('安全に段落分割できません。');
+      expected.splice(index,1,...parts);
+    }else{
+      const right=rows[index+1],gap=source.slice(row.range.end,right.range.start);
+      patch={range:{start:row.range.end,end:right.range.start},expected:gap,replacement:''};
+      const joined=projectBlocks(row.raw+right.raw,scan,parseInline).rows;
+      if(joined.length!==1||joined[0].kind!=='paragraph')throw Error('安全に結合できません。');
+      expected.splice(index,2,joined[0]);
+    }
+  }else if(action==='insert'||action==='duplicate'){
     const at=action==='duplicate'?index+1:index;
     let raw;
     if(action==='duplicate')raw=stripEnd(rows[index].raw)+eol;
