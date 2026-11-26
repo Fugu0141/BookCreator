@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
-import {editDocument,compileMeasuredManuscript,canReviewLayout,prepareBrowserPreview,prepareBookBrowserPreview,defaultHeadingDesign,defaultParagraphDesign,previewSourceRange,planInlineFormat,planListFormat,planListIndent,planListBatch,inspectDisplayMath,planDisplayMath,inspectInlineMath,planInlineMath,equationReferenceTargets,planEquationReference} from '../dist/index.js';
+import {editDocument,compileMeasuredManuscript,canReviewLayout,prepareBrowserPreview,prepareBookBrowserPreview,defaultHeadingDesign,defaultParagraphDesign,previewSourceRange,planInlineFormat,planListFormat,planListIndent,planListBatch,inspectDisplayMath,planDisplayMath,inspectInlineMath,planInlineMath,equationReferenceTargets,planEquationReference,planEquationNumbering} from '../dist/index.js';
 const load = (variable, fallback) => import(pathToFileURL(resolve(process.env[variable] ?? fallback)).href);
 const bcm = await load('BCM_DIST', '../BookCreator_Markdown/dist/index.js');
 const engine = await load('ENGINE_DIST', '../BookCreator_LayoutEngine/dist/index.js');
@@ -807,5 +807,30 @@ test('GUI equation reference insertion uses book order, exact patches and stable
     assert.throws(()=>planEquationReference(updated,'a',p+5,p+5,'eq-next','number',deps),RangeError);
     assert.throws(()=>equationReferenceTargets([...docs,{...docs[1],documentId:'c'}],deps),RangeError);
     assert.deepEqual(equationReferenceTargets([docs[0],{...docs[1],source:formula.replace('true','false')}],deps),[]);
+  }
+});
+
+
+test('GUI equation numbering toggles preserve identity and refuse referenced targets across files',()=>{
+  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds,validateDisplayMath:engine.parsePreviewMath,validateInlineMath:engine.parsePreviewMath,parseReference:bcm.parseReferenceToken};
+  for(const nl of ['\n','\r\n']){
+    const source=['# 章','','$$','x^2','$$','','結び。',''].join(nl);
+    const doc={documentId:'a',revision:'1',source,startOn:'page'},other={documentId:'b',revision:'1',source:'別の本文。',startOn:'page'};
+    const p=source.indexOf('x^2'),plan=planEquationNumbering([doc,other],'a',p,p+3,true,'eq-toggle',deps);
+    const numbered=bcm.applyPatches(source,[plan.patch]);
+    assert.equal(numbered,source.slice(0,plan.patch.range.start)+[':::layout{#eq-toggle numbered="true"}','$$','x^2','$$',':::',''].join(nl)+source.slice(plan.patch.range.end));
+    assert.equal(numbered.slice(plan.selection.start,plan.selection.end),'x^2');
+    const updated={...doc,source:numbered};
+    const pos=plan.selection.start;
+    assert.deepEqual(equationReferenceTargets([updated,other],deps),[{id:'eq-toggle',number:'1.1',documentId:'a',formula:'x^2'}]);
+    const ref={...other,source:'参照 :ref{target="eq-toggle"}。'};
+    assert.throws(()=>planEquationNumbering([updated,ref],'a',pos,pos+3,false,undefined,deps),RangeError);
+    assert.throws(()=>planEquationNumbering([updated,other],'a',pos,pos+3,false,'eq-new',deps),RangeError);
+    const off=planEquationNumbering([updated,other],'a',pos,pos+3,false,undefined,deps),disabled=bcm.applyPatches(numbered,[off.patch]);
+    assert.equal(disabled,numbered.replace('numbered="true"','numbered="false"'));
+    assert.equal(disabled.slice(off.selection.start,off.selection.end),'x^2');
+    const on=planEquationNumbering([{...doc,source:disabled},other],'a',off.selection.start,off.selection.end,true,undefined,deps);
+    assert.equal(bcm.applyPatches(disabled,[on.patch]),numbered);
+    assert.throws(()=>planEquationNumbering([doc,{...other,source:[':::layout{#eq-toggle numbered="true"}','$$','y','$$',':::',''].join(nl)}],'a',p,p+3,true,'eq-toggle',deps),RangeError);
   }
 });
