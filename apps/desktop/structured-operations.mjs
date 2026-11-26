@@ -23,6 +23,8 @@ export function studyInsertionSlots(kind,theme){
 const blankGap=(source,a,b)=>a&&b&&/^(?:[ \t]*(?:\r\n|\n))+$/.test(source.slice(a.range.end,b.range.start));
 export function canBlockOperation(source,rows,index,action){
   const row=rows[index];
+  if(action==='split')return row?.kind==='paragraph'&&row.payload!==null&&row.payload.includes('\n');
+  if(action==='join')return row?.kind==='paragraph'&&rows[index+1]?.kind==='paragraph'&&blankGap(source,row,rows[index+1]);
   if(action==='insert')return index===rows.length||!!row&&(index===0||blankGap(source,rows[index-1],row));
   if(!simple(row))return false;
   if(action==='duplicate')return canBlockOperation(source,rows,index+1,'insert');
@@ -34,11 +36,42 @@ export function planBlockOperation(source,request,{scan,parseInline,applyPatches
   const before=projectBlocks(source,scan,parseInline),rows=before.rows;
   if(before.diagnostics.length||request.source!==source)throw Error('原稿が変化しました。構造を確認してください。');
   const {action,index}=request;
-  if(!Number.isInteger(index)||!canBlockOperation(source,rows,index,action))throw Error('この位置・ブロックでは操作できません。');
+  const caretSplit=action==='split'&&Number.isSafeInteger(request.offset)&&rows[index]?.kind==='paragraph'&&rows[index].payload!==null;
+  if(!Number.isInteger(index)||(!caretSplit&&!canBlockOperation(source,rows,index,action)))throw Error('この位置・ブロックでは操作できません。');
   const eol=source.includes('\r\n')?'\r\n':'\n';
   const expected=rows.slice();
   let patch;
-  if(action==='insert'||action==='duplicate'){
+  if(action==='split'||action==='join'){
+    const row=rows[index];
+    if(action==='split'){
+      // Split on an existing hard-line boundary, keeping all source bytes.
+      let at,separator;
+      if(caretSplit){
+        const body=stripEnd(row.raw);
+        if(row.inline?.inlineStyles.length||row.inline?.inlineMath.length||row.inline?.text!==row.payload||request.offset<=0||request.offset>=row.payload.length)throw Error('書式・数式のない本文の途中で分割してください。');
+        const boundaries=new Set(Array.from(new Intl.Segmenter(undefined,{granularity:'grapheme'}).segment(row.payload),g=>g.index));
+        if(!boundaries.has(request.offset))throw Error('文字の途中では分割できません。');
+        const prefix=row.payload.slice(0,request.offset);
+        at=(row.raw.includes('\r\n')?prefix.replace(/\n/g,'\r\n'):prefix).length;
+        if(!body.slice(0,at).trim()||!body.slice(at).trim())throw Error('空の段落は作成できません。');
+        separator=body.slice(0,at).endsWith('\n')||body.slice(at).startsWith('\n')||body.slice(at).startsWith('\r\n')?eol:eol+eol;
+      }else{
+        const m=/\r?\n/.exec(stripEnd(row.raw));if(!m)throw Error('分割する改行がありません。');
+        at=m.index+m[0].length;separator=m[0];
+      }
+      const offset=row.range.start+at;
+      patch={range:{start:offset,end:offset},expected:'',replacement:separator};
+      const parts=projectBlocks(row.raw.slice(0,at)+separator+row.raw.slice(at),scan,parseInline).rows;
+      if(parts.length!==2||parts.some(r=>r.kind!=='paragraph'))throw Error('安全に段落分割できません。');
+      expected.splice(index,1,...parts);
+    }else{
+      const right=rows[index+1],gap=source.slice(row.range.end,right.range.start);
+      patch={range:{start:row.range.end,end:right.range.start},expected:gap,replacement:''};
+      const joined=projectBlocks(row.raw+right.raw,scan,parseInline).rows;
+      if(joined.length!==1||joined[0].kind!=='paragraph')throw Error('安全に結合できません。');
+      expected.splice(index,2,joined[0]);
+    }
+  }else if(action==='insert'||action==='duplicate'){
     const at=action==='duplicate'?index+1:index;
     let raw;
     if(action==='duplicate')raw=stripEnd(rows[index].raw)+eol;
