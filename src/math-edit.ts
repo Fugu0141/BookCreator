@@ -18,7 +18,7 @@ function scanned(source:string,scan:Scanner){
   return parsed.blocks;
 }
 function fence(raw:string){
-  return /^(\$\$[ \t]*(?:\r\n|\n))([^\r\n]+)(?:\r\n|\n)\$\$[ \t]*(?:\r\n|\n)?$/.exec(raw);
+  return /^(\$\$[ \t]*(?:\r\n|\n))([\s\S]+?)(?:\r\n|\n)\$\$[ \t]*(?:\r\n|\n)?$/.exec(raw);
 }
 /** Select one top-level existing formula or a caret on a top-level blank line / EOF. */
 export function inspectDisplayMath(source:string,start:number,end:number,scan:Scanner):Target{
@@ -31,7 +31,7 @@ export function inspectDisplayMath(source:string,start:number,end:number,scan:Sc
   if(b&&(b.kind==='math'||wrapped)){
     const math=wrapped?children[0]:b;
     const match=fence(source.slice(math.range.start,math.range.end));
-    if(!match)return fail('Only a single-line display formula can be edited');
+    if(!match)return fail('Only a scanner-owned display formula can be edited');
     const p=math.range.start+match[1].length;
     return {mode:'edit',start:p,end:p+match[2].length,formula:match[2],blockStart:b.range.start,blockEnd:b.range.end,...(wrapped&&b.kind==='directive'?{numbered:attrs.numbered==='true',equationId:b.header.id}:{})};
   }
@@ -39,9 +39,20 @@ export function inspectDisplayMath(source:string,start:number,end:number,scan:Sc
   const p=start===source.length?start:b!.range.start;
   return {mode:'insert',start:p,end:p,formula:'x^2'};
 }
+/** Textareas use LF; restore the manuscript's uniform newline convention for the edited formula. */
+function formulaForSource(source:string,formula:string){
+  if(typeof formula!=='string'||!formula.trim()||formula.length>2048||/[\$]|\r(?!\n)/.test(formula))return fail('Expected a supported display formula');
+  if(!formula.includes('\n'))return formula;
+  const endings=new Set(source.match(/\r\n|\r|\n/g)??[]);
+  if(endings.has('\r')||endings.size>1)return fail('Mixed or unsupported line endings');
+  const normalized=formula.replace(/\r\n|\n/g,endings.has('\r\n')?'\r\n':'\n');
+  if(normalized.length>2048)return fail('Display formula exceeds source limit');
+  return normalized;
+}
 /** Exact BCM patch; never change fences when editing or reinterpret protected source. */
 export function planDisplayMath(source:string,start:number,end:number,formula:string,scan:Scanner,validate:(formula:string)=>unknown,numberedId?:string):InlineEditPlan{
-  if(typeof formula!=='string'||!formula.trim()||formula.length>2048||/[\r\n]/.test(formula)||typeof validate!=='function')return fail('Expected a single-line supported formula');
+  if(typeof validate!=='function')return fail('Display math validator unavailable');
+  formula=formulaForSource(source,formula);
   validate(formula);
   const target=inspectDisplayMath(source,start,end,scan),before=scanned(source,scan);
   if(numberedId!==undefined){
@@ -100,7 +111,7 @@ function inlineContext<S extends Scan>(source:string,start:number,end:number,dep
   });
   const p=candidates.find(s=>start>=s.start&&end<=s.end);
   if(!p)return fail('Place the caret in ordinary body text or a study text slot, or select one inline formula');
-  const parsed=parsePreviewInline(p.text,p.start,deps.validateInlineMath,undefined,true);
+  const parsed=parsePreviewInline(p.text,p.start,deps.validateInlineMath,undefined,true,deps.validateDisplayMath);
   const rows:Scan['blocks'][number][]=[];
   function collect(children:Scan['blocks']){for(const b of children){if(b.kind==='raw')rows.push(b);else if(b.kind==='directive')collect(b.children);}}
   collect(blocks);
@@ -174,7 +185,7 @@ export function inspectComponentDisplayMath<S extends Scan>(source:string,start:
   if(!slot||slot.sourceTextStart===undefined)return fail('Place the caret within a component text slot');
   const slotStart=slot.sourceTextStart;
   if(source.slice(slotStart,slotStart+slot.text.length)!==slot.text)return fail('Cannot establish exact component slot source');
-  const parsed=parsePreviewInline(slot.text,slot.sourceTextStart,deps.validateInlineMath,undefined,true);
+  const parsed=parsePreviewInline(slot.text,slot.sourceTextStart,deps.validateInlineMath,undefined,true,deps.validateDisplayMath);
   const base={component:true as const,slot:slot.name,ownerStart:owner.range.start,ownerEnd:owner.range.end};
   for(const atom of parsed.inlineMath.filter(a=>a.display)){
     const seg=parsed.sourceMap.segments.find(s=>s.start===atom.start)!;
@@ -189,8 +200,9 @@ export function inspectComponentDisplayMath<S extends Scan>(source:string,start:
   return {...base,mode:'insert',start:line.range.start,end:line.range.start,formula:'x^2'};
 }
 export function planComponentDisplayMath<S extends Scan>(source:string,start:number,end:number,formula:string,deps:PreparationDependencies<S>):InlineEditPlan{
-  if(typeof formula!=='string'||!formula.trim()||formula.length>2048||/[\r\n$]/.test(formula)||!deps.validateInlineMath)return fail('Expected a supported single-line formula');
-  deps.validateInlineMath(formula);
+  if(!deps.validateDisplayMath)return fail('Display math validator unavailable');
+  formula=formulaForSource(source,formula);
+  deps.validateDisplayMath(formula);
   const target=inspectComponentDisplayMath(source,start,end,deps);
   if(!target)return fail('Expected a component display formula');
   const endings=new Set(source.match(/\r\n|\r|\n/g)??[]);

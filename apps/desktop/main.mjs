@@ -161,7 +161,7 @@ async function smoke(){
   // Reuse the math dialog to edit a clicked inline atom and insert another at a caret.
   await exec("document.querySelector('#source-inline-math').click()");
   await until("document.querySelector('#math-formula')?.value==="+JSON.stringify(inlineMathSource.slice(1,-1)));
-  const setInlineDraft=value=>exec("(()=>{const e=document.querySelector('#math-formula');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,"+JSON.stringify(value)+");e.dispatchEvent(new Event('input',{bubbles:true}));})()");
+  const setInlineDraft=value=>exec("(()=>{const e=document.querySelector('#math-formula');Object.getOwnPropertyDescriptor(e instanceof HTMLTextAreaElement?HTMLTextAreaElement.prototype:HTMLInputElement.prototype,'value').set.call(e,"+JSON.stringify(value)+");e.dispatchEvent(new Event('input',{bubbles:true}));})()");
   await setInlineDraft(' x');
   await until("document.querySelector('#math-apply')?.disabled===true");
   await exec("document.querySelector('#math-cancel').click()");
@@ -1007,21 +1007,22 @@ async function smoke(){
   if(!await exec("(()=>{const e=document.querySelector('#source');return e.value.slice(e.selectionStart,e.selectionEnd)==="+JSON.stringify(mathFormula)+";})()"))throw Error('Formula source range mismatch');
   await exec("document.querySelector('#source-math').click()");
   await until("document.querySelector('#math-formula')?.value==="+JSON.stringify(mathFormula));
-  const setMathInput=value=>exec("(()=>{const e=document.querySelector('#math-formula');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,"+JSON.stringify(value)+");e.dispatchEvent(new Event('input',{bubbles:true}));})()");
+  const setMathInput=value=>exec("(()=>{const e=document.querySelector('#math-formula');Object.getOwnPropertyDescriptor(e instanceof HTMLTextAreaElement?HTMLTextAreaElement.prototype:HTMLInputElement.prototype,'value').set.call(e,"+JSON.stringify(value)+");e.dispatchEvent(new Event('input',{bubbles:true}));})()");
   await setMathInput('\\input{secret}');
   await until("document.querySelector('#math-apply')?.disabled===true&&!document.querySelector('#math-draft-preview math')");
   await exec("document.querySelector('#math-cancel').click()");
   if(await exec("document.querySelector('#source').value")!==insertedMath)throw Error('Cancel changed source');
   await exec("document.querySelector('#source-math').click()");
   await until("!!document.querySelector('#math-editor')");
-  const changedFormula='\\sqrt{x^2+1}';
+  const changedFormula=['\\begin{aligned}','  x&=\\sqrt{x^2+1} \\\\','  &=y','\\end{aligned}'].join('\n');
+  if(!await exec("document.querySelector('#math-formula').tagName==='TEXTAREA'"))throw Error('Display formula editor must accept multiple lines');
   await setMathInput(changedFormula);
-  await until("!!document.querySelector('#math-draft-preview math msqrt')");
+  await until("!!document.querySelector('#math-draft-preview math msqrt') && document.querySelectorAll('#math-draft-preview math mtable mtr').length===2");
   await exec("document.querySelector('#math-apply').click()");
   await until("document.querySelector('#source').value==="+JSON.stringify(insertedMath.replace(mathFormula,changedFormula)));
   if(await exec("document.querySelector('#preview').children.length"))throw Error('Old formula preview was not invalidated');
   await exec("document.querySelector('#preview-book').click()");
-  await until("!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-display-math] math msqrt')");
+  await until("!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-display-math] math msqrt') && document.querySelector('#preview > div').shadowRoot.querySelectorAll('[data-display-math] math mtable mtr').length===2");
   await exec("document.querySelector('#preview > div').shadowRoot.querySelector('[data-display-math]').click()");
   await exec("document.querySelector('#source-math').click()");
   await until("document.querySelector('#math-formula')?.value==="+JSON.stringify(changedFormula));

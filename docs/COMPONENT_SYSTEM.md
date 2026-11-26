@@ -317,3 +317,8 @@ LayoutEngine #26 の確定SHAを使用。フォント管理でライセンス確
 ### M04 — 標準数式フォント STIX Two Math
 
 新規書籍は本文・見出しにNoto Sans JP、数式にSTIX Two Math Regularを指定する。既存テーマのmathロール省略は従来のシステム自動選択を維持し、勝手に再組版結果を変更しない。mathロール `font: stix-two-math, weight: 400` を明示選択すると同梱fontを使用する。自動選択、インポート済みMATHフォントにも切替可能。Fontsource等の分割サブセットではなくGoogle Fontsリポジトリの固定revision 477b6577b3a9a9e3229eb8e0946da806d2cf822b の完全TTFとOFL.txtをビルド時取得、Git blob SHA-1照合、SFNT/MATH事前検査。任意の `BC_STIX_SOURCE_DIR` で同一固定ファイルをオフラインビルド入力に指定可能。生成物にフォント・ライセンス・SHA-256を含め、起動時も固定blobとmanifestを照合する。実行時は既存のbookcreator://app許可リスト・CSP経由のみ、ネット取得なし。数式フォントのバイト列をプレビューフィンガープリントに含める。出典 https://github.com/google/fonts/tree/477b6577b3a9a9e3229eb8e0946da806d2cf822b/ofl/stixtwomath 、上流 https://github.com/stipub/stixfonts 、SIL OFL 1.1。正式配布パッケージ・出版保証・全glyph検証は別途。CI未確認。
+
+
+### M04 — 複数行の独立数式原稿
+
+LayoutEngine #27の確定SHAをpin。BCMの独立数式フェンスはLF/CRLFとインデントを含む式本体をそのまま保持し、専用parseDisplayMathで安全に解析する。通常独立式・layoutで採番した独立式・strict参考書部品の本文/名前付きスロット・Component Labで対応。数式エディタは独立数式のみtextarea化、インラインは従来の1行inputと単一行文法のまま。編集時にtextareaの改行を原稿の統一された改行形式に戻す。元のフェンス・永続ID・参照・UTF-16範囲を保全。入力ソースの改行自体は数式の組版上の改行ではない。aligned/matrix等の行区切り記法を使う。既存2048文字・AST・セル制限維持。混在改行原稿への複数行挿入・部品内採番・書籍文脈必須の部品編集は対象外。CI未確認。

@@ -5,7 +5,7 @@ import {installCanvasDrag,highlightCanvasSelection,focusCanvasSelection} from '.
 import {duplicateComponentNode,subtreeSize,isComponentLocked,lockedChange} from './component-operations.mjs';
 import {proportionalImageSize,emptyCrop,updateCrop} from './image-frame.mjs';
 import {alignCanvasRects,measuredAlignment} from './canvas-alignment.mjs';
-import {createPlainTextPagePreview,parsePreviewMath} from '../../../BookCreator_LayoutEngine/dist/index.js';
+import {createPlainTextPagePreview,parsePreviewMath,parseDisplayMath} from '../../../BookCreator_LayoutEngine/dist/index.js';
 
 // Immutable tree edits; IDs remain stable when wrapping or unwrapping a group.
 const flatten=(children,depth=0)=>children.flatMap(n=>[{node:n,depth},...(n.type==='group'?flatten(n.children,depth+1):[])]);
@@ -150,8 +150,8 @@ export function ComponentLab({design,typography,width,height,onApply,onCancel,bu
       const compiled=customOnly?compileCustomStudyBlock({id:'component-00000000-0000-4000-8000-000000000001',name:libraryName.trim()||libraryEntry?.name||'独自部品',usage:'study',design:value},studyTitle||undefined,typography.body,{chapter:3,index:2,sequence:8},answerSample):isStudy?compileStudyBlock(level,studyTitle||undefined,typography.body,value,{chapter:3,index:2,sequence:8},answerSample):compileHeadingDesign(value,typography.heading,{'chapter-number':'3','chapter-title':sampleLevel===1?sample:'書籍制作の基礎','heading-number':[3,...Array.from({length:sampleLevel-1},(_,i)=>i===0?2:1)].join('.'),'heading-title':sample,'heading-level':String(sampleLevel)});
       if(!canAddSlot&&namedSlotNames(value).length)throw Error('名前付きスロットはcomponent部品のみ対応しています。');
       const {component,namedSlots:rawSlots}=resolveNamedSlotPresence(compiled,namedSlotDefinitions(value).filter(n=>!n.optional||!omittedSlots.has(n.name)).map(({name})=>({name,text:(Object.hasOwn(slotSamples,name)?slotSamples[name]:'追加の原稿サンプルです。')})));
-      const namedSlots=rawSlots.map(s=>({...s,request:{...s.request,...previewSampleInline(s.request.text,isStudy&&sampleBcm,parsePreviewMath,true),...(typography.mathFontFamily?{mathFontFamily:typography.mathFontFamily}:{})}}));
-      const result=await createPlainTextPagePreview(document,{revision:String(job),fingerprint:'component-lab-'+job,width,height,resolveImage,blocks:[{origin:{documentId:'sample',revision:String(job),blockKey:'heading'},request:{...previewSampleInline(sample,isStudy&&sampleBcm,parsePreviewMath,true),...(typography.mathFontFamily?{mathFontFamily:typography.mathFontFamily}:{}),width,fontSize:compiled.fontSize,lineHeight:compiled.lineHeight,...compiled.textStyle,...(isStudy?multilineTextOptions(sample,compiled.paragraphGap):{})},splitPolicy:'strict',component,...(namedSlots.length?{namedSlots}:{})}]});
+      const namedSlots=rawSlots.map(s=>({...s,request:{...s.request,...previewSampleInline(s.request.text,isStudy&&sampleBcm,parsePreviewMath,true,parseDisplayMath),...(typography.mathFontFamily?{mathFontFamily:typography.mathFontFamily}:{})}}));
+      const result=await createPlainTextPagePreview(document,{revision:String(job),fingerprint:'component-lab-'+job,width,height,resolveImage,blocks:[{origin:{documentId:'sample',revision:String(job),blockKey:'heading'},request:{...previewSampleInline(sample,isStudy&&sampleBcm,parsePreviewMath,true,parseDisplayMath),...(typography.mathFontFamily?{mathFontFamily:typography.mathFontFamily}:{}),width,fontSize:compiled.fontSize,lineHeight:compiled.lineHeight,...compiled.textStyle,...(isStudy?multilineTextOptions(sample,compiled.paragraphGap):{})},splitPolicy:'strict',component,...(namedSlots.length?{namedSlots}:{})}]});
       if(job!==generation.current)return;
       target.current.append(result.element);
       const root=result.element.shadowRoot;
