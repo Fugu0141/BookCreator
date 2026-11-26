@@ -14,9 +14,9 @@ export function recoverySession(file,send,report,delay=750){
     const value=currentText;
     if(value===savedText){
       if(version!==null){await request('remove');version=null;}
-      report('idle');return;
+      report(currentText===value?'idle':'pending');return;
     }
-    const stored=await request('put',value);version=stored.version;report('recorded');
+    const stored=await request('put',value);version=stored.version;report(currentText===value?'recorded':'pending');
   }
   function schedule(){
     if(closed||paused||unresolved||timer!==null)return;
