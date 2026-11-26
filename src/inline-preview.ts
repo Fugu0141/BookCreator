@@ -3,7 +3,9 @@
 import type {PreviewFontFamily} from './preview-typography.js';
 export interface InlineStyle {fontWeight?:number;italic?:boolean;underline?:boolean;color?:string;fontFamily?:PreviewFontFamily;fontSize?:number;baseline?:'normal'|'super'|'sub'}
 export interface InlineRun extends InlineStyle {start:number;end:number}
-export interface InlineMathAtom {start:number;formula:string;display?:true}
+export interface InlineMathAtom {start:number;formula:string;display?:true;equationNumber?:string}
+/** Scanner-owned wrapper range in original UTF-16 coordinates. */
+export interface ComponentEquation {range:{start:number;end:number};formulaStart:number;formula:string;id?:string;numbered:boolean;equationNumber?:string}
 const fontIds:Readonly<Record<string,PreviewFontFamily>>=Object.freeze({'noto-sans-jp':'BCFont_NotoSansJP','system-serif':'serif','system-sans':'sans-serif','system-monospace':'monospace'});
 export function inlineFontFamily(id:string):PreviewFontFamily{
   if(Object.hasOwn(fontIds,id))return fontIds[id];
@@ -44,7 +46,7 @@ const whitespace=(c:string)=>!c||/\s/u.test(c);
 const punctuation=(c:string)=>/[\p{P}\p{S}]/u.test(c);
 const left=(a:string,b:string)=>!whitespace(b)&&(!punctuation(b)||whitespace(a)||punctuation(a));
 const right=(a:string,b:string)=>!whitespace(a)&&(!punctuation(a)||whitespace(b)||punctuation(b));
-export function parsePreviewInline(raw:string,offset=0,validateMath?:(formula:string)=>unknown,resolveReference?:(token:string,offset:number)=>string,allowDisplay=false,validateDisplayMath=validateMath){
+export function parsePreviewInline(raw:string,offset=0,validateMath?:(formula:string)=>unknown,resolveReference?:(token:string,offset:number)=>string,allowDisplay=false,validateDisplayMath=validateMath,componentEquations:readonly ComponentEquation[]=[]){
   if(typeof raw!=='string'||!raw.length||raw.length>10000||!Number.isSafeInteger(offset)||offset<0||!Number.isSafeInteger(offset+raw.length)||/\r(?!\n)/.test(raw)||(raw.match(/\n/g)?.length??0)>255)throw RangeError('Unsupported inline source');
   let text='',cursor=0;
   const inlineStyles:InlineRun[]=[],inlineMath:InlineMathAtom[]=[],segments:InlineSourceSegment[]=[];
@@ -57,6 +59,21 @@ export function parsePreviewInline(raw:string,offset=0,validateMath?:(formula:st
   // Parse within individual hard lines only. No nesting, escape, links, HTML or other syntax.
   for(const m of raw.matchAll(/[^\r\n]*(?:\r\n|\n|$)/g)){
     const row=m[0];if(!row||m.index!<cursor)continue;
+    const wrapped=allowDisplay?componentEquations.find(e=>e.range.start===offset+cursor):undefined;
+    if(wrapped){
+      const end=wrapped.range.end-offset;
+      if(!validateDisplayMath||end<=cursor||end>raw.length||raw.slice(wrapped.formulaStart-offset,wrapped.formulaStart-offset+wrapped.formula.length)!==wrapped.formula||wrapped.formulaStart<offset+cursor||wrapped.formulaStart+wrapped.formula.length>wrapped.range.end||!wrapped.formula.trim()||wrapped.formula.length>2048)throw RangeError('Invalid scanner-owned component equation');
+      validateDisplayMath(wrapped.formula);
+      const logical=text.length;text+='\uFFFC';
+      inlineMath.push({start:logical,formula:wrapped.formula,display:true,...(wrapped.equationNumber?{equationNumber:wrapped.equationNumber}:{})});
+      segments.push({start:logical,end:logical+1,rawStart:wrapped.formulaStart,outerStart:wrapped.range.start,outerEnd:wrapped.range.end});
+      cursor=end;
+      const ending=/^(?:\r\n|\n)/.exec(raw.slice(cursor))?.[0]??'';
+      if(cursor!==raw.length&&!ending)throw RangeError('Expected component equation hard-line boundary');
+      append(cursor,cursor+ending.length);cursor+=ending.length;
+      if(inlineMath.length>128)throw RangeError('Too many formulas');
+      continue;
+    }
     if(allowDisplay&&/^\$\$[ \t]*(?:\r\n|\n)$/.test(row)){
       const match=/^(\$\$[ \t]*(?:\r\n|\n))([\s\S]+?)(?:\r\n|\n)\$\$[ \t]*(?=\r\n|\n|$)/.exec(raw.slice(cursor));
       if(!match||!validateDisplayMath||!match[2].trim()||match[2].length>2048)throw RangeError('Invalid component display formula');
