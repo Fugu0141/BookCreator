@@ -425,6 +425,53 @@ function App(){
   const formatDisabled=routeBlocked||!file?.editable||!hasSelection;
   const unsaved=[dirty&&'原稿',themeDirty&&'テーマ',settingsDirty&&'書籍設定'].filter(Boolean);
   const saveLabel=!book?'書籍未選択':unsaved.length?'未保存：'+unsaved.join('・'):'保存済み';
+  const [closeRequest,setCloseRequest]=useState(null),[closeError,setCloseError]=useState(''),[closeSaving,setCloseSaving]=useState(false);
+  const closeDialog=useRef(null),closeAction=useRef(false),closeHandler=useRef(null);
+  const closeBlocked=routeBlocked||measuring||creating||working.current;
+  const closeSaveAllowed=(!dirty||file?.editable)&&(!themeDirty||theme?.editable)&&(!settingsDirty||(!!validPaper(page)&&order.every(s=>['page','continuous'].includes(s.startOn))));
+  closeHandler.current=token=>{
+    // Never move focus away from an active IME composition to show a dialog.
+    if(composing.current||mathComposing.current||structuredComposing||isComposing){
+      setStatus('文字入力を確定してから終了してください。');
+      void api.completeClose(token,'cancel').catch(e=>setStatus(String(e.message??e)));
+      return;
+    }
+    if(!closeBlocked&&!unsaved.length){
+      void api.completeClose(token,'exit').catch(e=>{setCloseError(String(e.message??e));setCloseRequest({token,blocked:false});});
+      return;
+    }
+    setCloseError('');setCloseRequest({token,blocked:closeBlocked});
+  };
+  useEffect(()=>api.onCloseRequested(token=>closeHandler.current?.(token)),[]);
+  useEffect(()=>{
+    const node=closeDialog.current;
+    if(closeRequest&&node&&!node.open)node.showModal();
+    else if(!closeRequest&&node?.open)node.close();
+  },[closeRequest]);
+  async function finishClose(decision){
+    if(!closeRequest||closeAction.current)return;
+    if(decision!=='cancel'&&(closeRequest.blocked||routeBlocked||working.current||composing.current||mathComposing.current||measuring||creating))return;
+    if(decision==='save'&&!closeSaveAllowed)return;
+    closeAction.current=true;setCloseSaving(true);setCloseError('');
+    let saving=false;const completed=[];
+    try{
+      if(decision==='save'){
+        saving=true;working.current=true;setBusy(true);
+        if(dirty){const saved=await unwrap(api.save(file.id,file.revision,text));setFile({...file,text,revision:saved.revision});completed.push('原稿');}
+        if(themeDirty){const saved=await unwrap(api.saveTypography(theme.revision,toRoles(typography)));setTheme(saved);completed.push('テーマ');}
+        if(settingsDirty){const saved=await unwrap(api.saveBookSettings(savedSettings.revision,{page,sections:order}));applySettings(saved);completed.push('書籍設定');}
+      }
+      await api.completeClose(closeRequest.token,decision==='cancel'?'cancel':'exit');
+      if(decision==='cancel')setCloseRequest(null);
+    }catch(e){
+      const message=(completed.length?completed.join('・')+'は保存済み。':'')+'終了できませんでした：'+String(e.message??e);
+      setCloseError(message);setStatus(message);
+    }finally{
+      if(saving){working.current=false;setBusy(false);}
+      closeAction.current=false;setCloseSaving(false);
+    }
+  }
+
   const layoutLabel=layoutState.phase==='ready'?(layoutState.scope==='book'?'全冊':'選択原稿')+' '+layoutState.pages+'ページ（試作）':({idle:'未組版',stale:'組版の更新が必要',running:'組版中…',failed:'組版できませんでした'})[layoutState.phase];
   function navigate(next){
     if(next===mode)return;
@@ -688,6 +735,15 @@ function App(){
     <PublicationPanel visible={mode==='publication'} saveLabel={saveLabel} dirty={dirty} themeDirty={themeDirty} settingsDirty={settingsDirty} layout={layoutState} diagnostics={layoutDiagnostics} canOpenDiagnostic={canOpenDiagnostic} onOpenDiagnostic={openDiagnostic} blocked={routeBlocked} canRender={!!book&&!!validPaper(page)} onNavigate={navigate} onRender={()=>{navigate('layout');void render(true);}}/>
   </main>
   <section id="workspace-diagnostics" className="workspace-diagnostics" hidden={!showDiagnostics||layoutState.phase!=='failed'} aria-label="組版診断"><div className="diagnostic-heading"><strong>組版診断 · {layoutDiagnostics.length}件</strong><button type="button" className="secondary-action" onClick={()=>setShowDiagnostics(false)}>閉じる</button></div><DiagnosticList id="workspace-diagnostic-list" diagnostics={layoutDiagnostics} blocked={routeBlocked} canOpen={canOpenDiagnostic} onOpen={openDiagnostic}/></section>
-   <div className="workspace-statusbar"><span id="workspace-layout-state" data-phase={layoutState.phase} data-scope={layoutState.scope??'none'}>{layoutLabel}</span><button id="toggle-diagnostics" type="button" hidden={layoutState.phase!=='failed'} className="secondary-action" aria-expanded={showDiagnostics} aria-controls="workspace-diagnostics" disabled={routeBlocked} onClick={()=>setShowDiagnostics(v=>!v)}>診断 {layoutDiagnostics.length}件</button><footer id="status" role="status">{status}</footer></div>{paragraphOpen&&page&&<ParagraphLab initialEntry={initialLibraryEntry} design={theme.paragraphDesign} library={theme.library} binding={theme.paragraphBinding} libraryEditable={theme.libraryEditable} libraryMessage={theme.libraryMessage??libraryNotice} onLibraryAction={changeLibrary} bodyFont={typography.body} mathFontFamily={typography.mathFontFamily} fontOptions={componentFonts} width={paperGeometry(page).content.width} height={paperGeometry(page).content.height} busy={busy} onCancel={()=>setParagraphOpen(false)} onApply={applyParagraph}/>}{studyOpen&&page&&<ComponentLab initialEntry={initialLibraryEntry} key={'study-'+studyTarget} usage="study" customOnly={studyTarget==='custom'} level={studyTarget} studyName={studyTarget==='custom'?'独自部品ライブラリ':studyNames[studyTarget]} design={studyTarget==='custom'?defaultStudyDesign('note'):theme.studyDesigns?.[studyTarget]??defaultStudyDesign(studyTarget)} hasOverride={!!theme.studyDesigns?.[studyTarget]} fontOptions={componentFonts} library={theme.library} bindings={theme.studyBindings??{}} libraryEditable={theme.libraryEditable} libraryMessage={theme.libraryMessage??libraryNotice} onLibraryAction={changeLibrary} imageOptions={images} resolveImage={resolveImage} typography={typography} width={paperGeometry(page).content.width} height={paperGeometry(page).content.height} busy={busy} onCancel={()=>setStudyOpen(false)} onApply={applyStudy}/>}{labOpen&&page&&<ComponentLab initialEntry={initialLibraryEntry} key={labLevel} level={labLevel} design={(labLevel==="default"?theme.headingDesign:theme.headingLevels?.[labLevel]??theme.headingDesign)} hasOverride={labLevel==="default"?!!theme.headingDesign:!!theme.headingLevels?.[labLevel]} fontOptions={componentFonts} library={theme.library} bindings={theme.bindings??{}} headingLevels={theme.headingLevels??{}} libraryEditable={theme.libraryEditable} libraryMessage={theme.libraryMessage??libraryNotice} onLibraryAction={changeLibrary} imageOptions={images} resolveImage={resolveImage} typography={typography} width={paperGeometry(page).content.width} height={paperGeometry(page).content.height} busy={busy} onCancel={()=>setLabOpen(false)} onApply={applyHeadingDesign}/>}</div>;
+   <div className="workspace-statusbar"><span id="workspace-layout-state" data-phase={layoutState.phase} data-scope={layoutState.scope??'none'}>{layoutLabel}</span><button id="toggle-diagnostics" type="button" hidden={layoutState.phase!=='failed'} className="secondary-action" aria-expanded={showDiagnostics} aria-controls="workspace-diagnostics" disabled={routeBlocked} onClick={()=>setShowDiagnostics(v=>!v)}>診断 {layoutDiagnostics.length}件</button><footer id="status" role="status">{status}</footer></div>{paragraphOpen&&page&&<ParagraphLab initialEntry={initialLibraryEntry} design={theme.paragraphDesign} library={theme.library} binding={theme.paragraphBinding} libraryEditable={theme.libraryEditable} libraryMessage={theme.libraryMessage??libraryNotice} onLibraryAction={changeLibrary} bodyFont={typography.body} mathFontFamily={typography.mathFontFamily} fontOptions={componentFonts} width={paperGeometry(page).content.width} height={paperGeometry(page).content.height} busy={busy} onCancel={()=>setParagraphOpen(false)} onApply={applyParagraph}/>}{studyOpen&&page&&<ComponentLab initialEntry={initialLibraryEntry} key={'study-'+studyTarget} usage="study" customOnly={studyTarget==='custom'} level={studyTarget} studyName={studyTarget==='custom'?'独自部品ライブラリ':studyNames[studyTarget]} design={studyTarget==='custom'?defaultStudyDesign('note'):theme.studyDesigns?.[studyTarget]??defaultStudyDesign(studyTarget)} hasOverride={!!theme.studyDesigns?.[studyTarget]} fontOptions={componentFonts} library={theme.library} bindings={theme.studyBindings??{}} libraryEditable={theme.libraryEditable} libraryMessage={theme.libraryMessage??libraryNotice} onLibraryAction={changeLibrary} imageOptions={images} resolveImage={resolveImage} typography={typography} width={paperGeometry(page).content.width} height={paperGeometry(page).content.height} busy={busy} onCancel={()=>setStudyOpen(false)} onApply={applyStudy}/>}{labOpen&&page&&<ComponentLab initialEntry={initialLibraryEntry} key={labLevel} level={labLevel} design={(labLevel==="default"?theme.headingDesign:theme.headingLevels?.[labLevel]??theme.headingDesign)} hasOverride={labLevel==="default"?!!theme.headingDesign:!!theme.headingLevels?.[labLevel]} fontOptions={componentFonts} library={theme.library} bindings={theme.bindings??{}} headingLevels={theme.headingLevels??{}} libraryEditable={theme.libraryEditable} libraryMessage={theme.libraryMessage??libraryNotice} onLibraryAction={changeLibrary} imageOptions={images} resolveImage={resolveImage} typography={typography} width={paperGeometry(page).content.width} height={paperGeometry(page).content.height} busy={busy} onCancel={()=>setLabOpen(false)} onApply={applyHeadingDesign}/>}<dialog id="close-dialog" ref={closeDialog} aria-labelledby="close-title" aria-describedby="close-description" onCancel={e=>{e.preventDefault();void finishClose('cancel');}}>
+    <h2 id="close-title">BookCreatorを終了</h2>
+    <p id="close-description">{closeRequest?.blocked?'現在の操作を完了または取り消してから、もう一度終了してください。':unsaved.length?'未保存の変更があります。保存対象を確認してください。':'保存済みです。終了しますか？'}</p>
+    {unsaved.length>0&&<ul id="close-unsaved">{unsaved.map(name=><li key={name}>{name}</li>)}</ul>}
+    {!closeRequest?.blocked&&!closeSaveAllowed&&<p>保存できない設定があります。編集へ戻って確認してください。</p>}
+    {closeError&&<p id="close-error" role="alert">{closeError}</p>}
+    <div className="close-actions"><button id="close-cancel" type="button" autoFocus disabled={closeSaving} onClick={()=>void finishClose('cancel')}>編集に戻る</button>
+    {!closeRequest?.blocked&&<><button id="close-discard" type="button" className="secondary-action" disabled={closeSaving||routeBlocked} onClick={()=>void finishClose('discard')}>{unsaved.length?'保存せず終了':'終了'}</button>{unsaved.length>0&&<button id="close-save" type="button" disabled={closeSaving||routeBlocked||!closeSaveAllowed} onClick={()=>void finishClose('save')}>{closeSaving?'保存中…':'保存して終了'}</button>}</>}</div>
+    {closeSaving&&<p role="status">処理中です。</p>}
+  </dialog></div>;
 }
 createRoot(document.getElementById('root')).render(<App/>);
