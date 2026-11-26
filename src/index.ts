@@ -45,3 +45,5 @@ export {equationReferenceTargets,planEquationReference} from './equation-referen
 export {planEquationNumbering,planNumberedComponentDisplayMath} from './equation-numbering-edit.js';
 export {previewStudySamples} from './study-sample.js';
 export * from './trial-print.js';
+
+export {createManuscriptScanSession,type ManuscriptScanSession} from './manuscript-scan-session.js';
