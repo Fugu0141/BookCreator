@@ -430,6 +430,31 @@ async function liveWritingSmoke(){
   await until('partial test source restored',scopeReady('manuscript')+"&&document.querySelector('#workspace-save-state').textContent==='保存済み'&&!document.querySelector('#preview > div').shadowRoot.textContent.includes('目次例')");
   if(await readFile(path,'utf8')!==saved)throw Error('Partial paper test changed saved manuscript');
   console.log('PASS partial paper identity, current navigation, full replacement parity and disk safety');
+  // Prime the sparse API with a complete paper, then edit the same fixture.
+  await setSource(longSource);
+  await until('sparse fixture ready',scopeReady('manuscript')+"&&document.querySelector('#preview > div').shadowRoot.textContent.includes('差分確認 32')");
+  await click('#performance-toggle');
+  if(await raw("document.querySelector('#performance-sparse-paper-pages').checked"))throw Error('Sparse paper must default off');
+  await click('#performance-sparse-paper-pages');
+  if(await raw("document.querySelector('#performance-reuse-paper-pages').checked||document.querySelector('#performance-page-cache-enabled').checked"))throw Error('Sparse mode must exclude both previous page modes');
+  await click('#performance-close');
+  await click('#preview-button');
+  await until('sparse base published',scopeReady('manuscript')+"&&document.querySelector('#preview > div').dataset.sparsePaper==='true'&&Number(document.querySelector('#preview > div').dataset.reusedPages)===0");
+  await raw("(()=>{const h=document.querySelector('#preview > div');window.__bcSparseProbe={host:h,pages:[...h.shadowRoot.querySelectorAll('[data-page]')]};document.querySelector('#source').focus();})()");
+  await setSource(editedLong);
+  await until('sparse edit published',scopeReady('manuscript')+"&&document.querySelector('#preview > div').shadowRoot.textContent.includes('目次例')");
+  if(!await raw("(()=>{const h=document.querySelector('#preview > div'),p=[...h.shadowRoot.querySelectorAll('[data-page]')],old=window.__bcSparseProbe,n=p.filter((v,i)=>v===old.pages[i]).length;return h===old.host&&p[0]!==old.pages[0]&&n>0&&n<p.length&&h.dataset.sparsePaper==='true'&&Number(h.dataset.reusedPages)===n&&Number(h.dataset.generatedPages)===p.length-n&&document.activeElement.id==='source';})()"))throw Error('Sparse paper did not omit unchanged page generation');
+  if(!await raw("(()=>{const h=document.querySelector('#preview > div'),p=[...h.shadowRoot.querySelectorAll('[data-page]')],old=window.__bcSparseProbe;const page=p.find((n,i)=>i>0&&n===old.pages[i]);const block=page?.querySelector('[data-block][tabindex]');if(!block)return false;block.click();const e=document.querySelector('#source');return document.activeElement===e&&e.selectionEnd>e.selectionStart;})()"))throw Error('Sparse retained page navigation failed');
+  await raw("window.__bcSparseProbe.expected=[...document.querySelector('#preview > div').shadowRoot.querySelectorAll('[data-page]')].map(p=>p.cloneNode(true))");
+  await click('#performance-toggle');await click('#performance-sparse-paper-pages');await click('#performance-close');
+  await click('#preview-button');
+  await until('sparse full replacement oracle',scopeReady('manuscript')+"&&document.querySelector('#preview > div')!==window.__bcSparseProbe.host");
+  if(!await raw("(()=>{const p=[...document.querySelector('#preview > div').shadowRoot.querySelectorAll('[data-page]')],expected=window.__bcSparseProbe.expected;return p.length===expected.length&&p.every((n,i)=>n.isEqualNode(expected[i]));})()"))throw Error('Sparse paper differs from complete preview');
+  await raw("delete window.__bcSparseProbe");
+  await setSource(saved);
+  await until('sparse source restored',scopeReady('manuscript')+"&&document.querySelector('#workspace-save-state').textContent==='保存済み'&&!document.querySelector('#preview > div').shadowRoot.textContent.includes('目次例')");
+  if(await readFile(path,'utf8')!==saved)throw Error('Sparse test changed saved manuscript');
+  console.log('PASS sparse generation, retained identity, navigation, full parity and disk safety');
   // Reopening through the normal discard path cleans any coalesced recovery draft.
   await click('#mode-home');await click('#open');
   await until('reopened book',"document.querySelector('.workspace-shell').dataset.workspaceMode==='writing'&&!document.querySelector('#open').disabled&&!document.querySelector('#source').value");
