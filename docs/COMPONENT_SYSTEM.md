@@ -378,3 +378,8 @@ $$
 ### M04 — 数学参考書の総合回帰fixture
 
 `tests/fixtures/math-textbook.mjs` は二次方程式・微分・章見出しのない行列付録の3原稿で構成する独自サンプル。通常式、複数行途中式、行列、場合分け、インライン式、書式、名前付きslot、章をまたぐ前方/後方参照を同時に含む。期待採番は二次方程式1.1〜1.3、微分2.1〜2.2、付録3.1（場合分けは採番なし）。node統合試験でLF/CRLF、原稿並替え、原稿範囲、フォントロール、編集後ID保持、重複/未解決参照を検証し、Chrome smokeで同じfixtureの複数ページ実測・MathML・全採番ラベル・参照表示を確認する。開発サーバーの明示許可リストにこの固定fixtureのみを追加し、任意ファイルは公開しない。PDF実ファイル・印刷品質は別検証。CI未確認。
+
+
+### M04 — 実験的な数式PDF preflight
+
+`npm run test:math-pdf` は3原稿fixtureを実Engineで組版し、固定の160×200mmページへChrome DevTools `Page.printToPDF` でPDF化する開発用テスト。既存の完全なSTIX Two Math同梱フォントをblobハッシュとMATHテーブル検証後にFontFaceとして登録する。DOM上で全数式/番号のページ内配置と採番を確認し、Poppler (`pdfinfo`/`pdftotext`/`pdffonts`/`pdftoppm`) で実PDFのページ数、物理寸法、6式番号、日本語の主要語句、置換文字、STIXを含むフォント埋込、全ページの100dpiグレースケール非空白/外縁4mmへのはみ出しを検証。Linux CIはfonts-noto-cjkとpoppler-utilsを追加する。PDF/画像は一時ディレクトリで検査後削除。出版用PDF出力UI、PDF/X、CMYK、塗り足し、全グリフの目視校正・印刷機での検証は未対応。CI未確認。
