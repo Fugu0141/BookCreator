@@ -43,6 +43,8 @@ export async function runBookBenchmark(win,app,root,fixture){
     samples.push(row);console.log('BENCH sample '+JSON.stringify(row));
   }
   const initialMemory=memory();
+  const paperSignature=()=>raw("JSON.stringify(Array.from(document.querySelector('#preview > div').shadowRoot.querySelectorAll('[data-page]')).map(p=>p.outerHTML))");
+  const cacheStats=()=>raw("(()=>{const e=document.querySelector('#performance-cache');return {hits:Number(e.dataset.hits),misses:Number(e.dataset.misses),entries:Number(e.dataset.entries)};})()");
   await click('#open');
   await until('open',"document.querySelector('.workspace-shell').dataset.workspaceMode==='writing'&&!document.querySelector('#open').disabled");
   for(const c of fixture.chapters){
@@ -68,6 +70,33 @@ export async function runBookBenchmark(win,app,root,fixture){
   if(await readFile(join(root,'book.yaml'),'utf8')!==fixture.manifest)throw Error('Benchmark changed manifest');
   await click('#performance-toggle');
   await until('metrics',"document.querySelector('#performance-summary tbody tr[data-stage=layout][data-category=book]')?.dataset.success>0&&document.querySelector('#performance-memory')?.dataset.phase==='ready'");
+  const cachedStats=await cacheStats();
+  if(cachedStats.hits<=0||cachedStats.entries<=0)throw Error('Benchmark expected reuse of unchanged uniform text');
+  const cachedPaper=await paperSignature();
+  await click('#performance-cache-enabled');
+  const disabledStats=await cacheStats();
+  if(disabledStats.entries!==0||disabledStats.hits!==0)throw Error('Disabling cache must release entries');
+  await click('#performance-close');
+  for(let i=1;i<=3;i++){
+    await raw("document.querySelector('#preview > div').dataset.paperProbe='old'");
+    await measure('whole-book-uncached-'+i,'book',()=>click('#preview-book'),"document.querySelector('#preview > div').dataset.paperProbe!=='old'");
+    if(await paperSignature()!==cachedPaper)throw Error('Uncached page DOM differs from cached page DOM');
+  }
+  await click('#performance-toggle');
+  await click('#performance-cache-enabled');
+  await click('#performance-close');
+  for(let i=1;i<=4;i++){
+    await raw("document.querySelector('#preview > div').dataset.paperProbe='old'");
+    await measure(i===1?'whole-book-cache-cold':'whole-book-cache-warm-'+(i-1),'book',()=>click('#preview-book'),"document.querySelector('#preview > div').dataset.paperProbe!=='old'");
+    if(await paperSignature()!==cachedPaper)throw Error('Rebuilt cached page DOM differs from original');
+  }
+  await click('#performance-toggle');
+  const finalCache=await cacheStats();
+  if(finalCache.hits<=0||finalCache.entries<=0)throw Error('Expected warm cache hits');
   const summary=await raw("Array.from(document.querySelectorAll('#performance-summary tbody tr')).map(tr=>({stage:tr.dataset.stage,category:tr.dataset.category,values:Array.from(tr.querySelectorAll('td')).map(td=>td.textContent)}))");
-  console.log('BENCH report '+JSON.stringify({version:2,chapters:fixture.chapters.map(c=>({id:c.id,characters:c.source.length,sections:c.sections,blocks:c.blocks})),initialMemory,finalMemory:memory(),samples,summary}));
+  await click('#performance-close');await click('#mode-home');await click('#open');
+  await until('cache session reopened',"document.querySelector('.workspace-shell').dataset.workspaceMode==='writing'&&!document.querySelector('#open').disabled&&!document.querySelector('#source').value");
+  await click('#performance-toggle');
+  if((await cacheStats()).entries!==0)throw Error('Cache entries survived book reopen');
+  console.log('BENCH report '+JSON.stringify({version:2,chapters:fixture.chapters.map(c=>({id:c.id,characters:c.source.length,sections:c.sections,blocks:c.blocks})),initialMemory,finalMemory:memory(),samples,summary,cachedStats,finalCache}));
 }
