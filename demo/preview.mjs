@@ -102,6 +102,9 @@ if(new URLSearchParams(location.search).has('smoke')){
     if(paper.plan.pages.length<3||paper.publicationReady!==false)throw Error('Textbook must use multi-page experimental output');
     if(root.querySelectorAll('math mtable').length<3||!root.querySelector('math mfrac')||!root.querySelector('[data-named-slot=hint] [data-equation-number]'))throw Error('Textbook math layout missing');
     if(!root.textContent.includes('次章の定義は 式 (2.1)')||!root.textContent.includes('式 (2.2)'))throw Error('Textbook reference label missing');
-    report.textContent='PASS '+JSON.stringify({pages,sourceMapping:true,staleGuard:true,textbookPages:paper.plan.pages.length,textbookEquations:labels.length});
+    source.value=mathSample;width.value='140';height.value='180';invalidate();await render();
+    const sampleRoot=latest?.element.shadowRoot;
+    if(!sampleRoot||sampleRoot.querySelectorAll('[data-equation-number]').length!==2||!sampleRoot.textContent.includes('式 (1.1)'))throw Error('Interactive math sample failed: '+status.textContent);
+    report.textContent='PASS '+JSON.stringify({pages,sourceMapping:true,staleGuard:true,textbookPages:paper.plan.pages.length,textbookEquations:labels.length,mathSample:true});
   }catch(e){report.textContent='FAIL '+String(e);}
 }else void render();
