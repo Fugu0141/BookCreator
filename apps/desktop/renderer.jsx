@@ -156,11 +156,11 @@ function App(){
     if(busy||working.current||!file?.editable||!node||composing.current||node.value!==text)return;
     const start=node.selectionStart,end=node.selectionEnd,job=generation.current;
     void io(async()=>{
-      const target=inspectDisplayMath(text,start,end,scanDocument);
+      const documents=await referenceDocuments(text);
+      if(generation.current!==job||node.value!==text||composing.current||node.selectionStart!==start||node.selectionEnd!==end)throw Error('原稿が変更されました。');
+      const target=inspectComponentDisplayMath(text,start,end,deps,{documents,documentId:file.id})??inspectDisplayMath(text,start,end,scanDocument);
       if(target.mode!=='edit')throw Error('既存の独立数式を選択してください。');
       const enabled=!target.numbered;
-      const documents=await referenceDocuments(text);
-      if(generation.current!==job||node.value!==text||composing.current)throw Error('原稿が変更されました。');
       const plan=planEquationNumbering(documents,file.id,start,end,enabled,enabled&&!target.equationId?'eq-'+crypto.randomUUID():undefined,deps);
       const next=applyPatches(text,[plan.patch]);
       setMathDraft(null);setReferenceDraft(null);edit(next);setStatus(enabled?'数式の採番を有効にしました（未保存）。':'数式の採番を解除しました（未保存）。');

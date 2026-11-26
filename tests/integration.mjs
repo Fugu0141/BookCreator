@@ -1054,3 +1054,32 @@ test('numbered component display editing preserves wrapper, ID and cross-documen
     assert.throws(()=>planComponentDisplayMath(source,at,end,'z^2',deps,{...context,documents:[doc,{...other,source:other.source.replace('eq-other','eq-duplicate')}]}),RangeError);
   }
 });
+
+
+test('GUI component numbering widens only necessary fences and refuses referenced removal',()=>{
+  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds,validateDisplayMath:engine.parseDisplayMath,validateInlineMath:engine.parsePreviewMath,parseReference:bcm.parseReferenceToken};
+  for(const nl of ['\n','\r\n']){
+    const bare=['$$','  x^2 ','$$'].join(nl);
+    for(const named of [false,true]){
+      const id='component-00000000-0000-4000-8000-000000000001';
+      const source=(named?['::::component{name="'+id+'"}',':::slot{name="content"}','本文。',':::','',':::slot{name="hint"}',bare,':::','::::','']:[':::callout{kind="note"}','前。','',bare,'','後。',':::','']).join(nl);
+      const doc={documentId:'a',revision:'1',source,startOn:'page'},at=source.indexOf(bare),end=at+bare.length;
+      const on=planEquationNumbering([doc],'a',at,end,true,'eq-nested-toggle',deps);
+      const next=bcm.applyPatches(source,[on.patch]);
+      assert.equal(next.slice(on.selection.start,on.selection.end),'  x^2 ');
+      assert.deepEqual(equationReferenceTargets([{...doc,source:next}],deps),[{id:'eq-nested-toggle',number:'1.1',documentId:'a',formula:'  x^2 '}]);
+      const wrap=[':::layout{#eq-nested-toggle numbered="true"}',bare,':::'].join(nl);
+      const expected=(named?[':::::component{name="'+id+'"}',':::slot{name="content"}','本文。',':::','','::::slot{name="hint"}',wrap,'::::',':::::','']:['::::callout{kind="note"}','前。','',wrap,'','後。','::::','']).join(nl);
+      assert.equal(next,expected);
+      const updated={...doc,source:next},ref={documentId:'b',revision:'1',source:':ref{target="eq-nested-toggle" format="number"} を参照。',startOn:'page'};
+      assert.throws(()=>planEquationNumbering([updated,ref],'a',on.selection.start,on.selection.end,false,undefined,deps),/Book validation failed/);
+      const off=planEquationNumbering([updated],'a',on.selection.start,on.selection.end,false,undefined,deps);
+      const unnumbered=bcm.applyPatches(next,[off.patch]);
+      assert.equal(unnumbered,next.replace('numbered="true"','numbered="false"'));
+      assert.deepEqual(equationReferenceTargets([{...doc,source:unnumbered}],deps),[]);
+      const again=planEquationNumbering([{...doc,source:unnumbered}],'a',off.selection.start,off.selection.end,true,undefined,deps);
+      assert.equal(bcm.applyPatches(unnumbered,[again.patch]),next);
+      assert.throws(()=>planEquationNumbering([{...doc,source:unnumbered}],'a',off.selection.start,off.selection.end,true,'different-id',deps),RangeError);
+    }
+  }
+});
