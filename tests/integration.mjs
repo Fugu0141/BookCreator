@@ -1150,3 +1150,39 @@ test('numbered component insertion is atomic and preserves unrelated manuscript 
     assert.throws(()=>planNumberedComponentDisplayMath([{...doc,source:next},other],'a',plan.selection.start,plan.selection.end,formula,'eq-second',deps),RangeError);
   }
 });
+
+
+test('whole-book inline math and style edits preserve cross-document references and numbered atoms',()=>{
+  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds,validateDisplayMath:engine.parseDisplayMath,validateInlineMath:engine.parsePreviewMath,parseReference:bcm.parseReferenceToken};
+  const id='component-00000000-0000-4000-8000-000000000001';
+  for(const nl of ['\n','\r\n']){
+    const token=':ref{target="eq-other" format="label-number"}';
+    const source=['# 第一章','','通常文 '+token+' を参照。','',':::::component{name="'+id+'"}','::::slot{name="content"}','本文 '+token+' と $x^2$。','',':::layout{#eq-local numbered="true"}','$$','a^2','$$',':::','::::','','::::slot{name="hint"}','補足 '+token+' を使う。','::::',':::::',''].join(nl);
+    const doc={documentId:'a',revision:'1',source,startOn:'page'},other={documentId:'b',revision:'1',source:[':::layout{#eq-other numbered="true"}','$$','y^2','$$',':::','',':ref{target="eq-local" format="number"} を参照。',''].join(nl),startOn:'page'};
+    const context={documents:[doc,other],documentId:'a'},styleContext={...context,deps};
+    const targets=equationReferenceTargets([doc,other],deps);
+    const at=source.indexOf('$x^2$');
+    assert.throws(()=>inspectInlineMath(source,at,at+5,deps),RangeError);
+    const math=planInlineMath(source,at,at+5,'z^2',deps,context);
+    assert.equal(bcm.applyPatches(source,[math.patch]),source.replace('$x^2$','$z^2$'));
+    for(const word of ['通常文','本文','補足']){
+      const p=source.indexOf(word),q=p+word.length;
+      const plan=planInlineMath(source,q,q,'x',deps,context);
+      const next=bcm.applyPatches(source,[plan.patch]);
+      assert.equal(next,source.slice(0,q)+'$x$'+source.slice(q));
+      assert.deepEqual(equationReferenceTargets([{...doc,source:next},other],deps),targets);
+      const style=planInlineFormat(source,p,q,'bold',bcm.scanDocument,styleContext);
+      const formatted=bcm.applyPatches(source,[style.patch]);
+      assert.equal(formatted,source.slice(0,p)+'**'+word+'**'+source.slice(q));
+      assert.deepEqual(equationReferenceTargets([{...doc,source:formatted},other],deps),targets);
+    }
+    const ref=source.indexOf(token);
+    for(const [s,e] of [[ref+1,ref+4],[ref,ref+token.length],[at,at+5],[source.indexOf('a^2'),source.indexOf('a^2')+3]]){
+      assert.throws(()=>planInlineFormat(source,s,e,'bold',bcm.scanDocument,styleContext),RangeError);
+    }
+    assert.throws(()=>planInlineMath(source,ref+3,ref+3,'x',deps,context),RangeError);
+    const invalid={...context,documents:[doc,{...other,source:other.source.replace('#eq-other','#eq-missing')}]};
+    assert.throws(()=>planInlineMath(source,at,at+5,'x',deps,invalid),RangeError);
+    assert.throws(()=>planInlineFormat(source,source.indexOf('本文'),source.indexOf('本文')+2,'bold',bcm.scanDocument,{...invalid,deps}),RangeError);
+  }
+});

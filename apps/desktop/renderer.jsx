@@ -113,14 +113,14 @@ function App(){
     const start=node.selectionStart,end=node.selectionEnd,job=generation.current;
     const open=context=>{
       if(generation.current!==job||node.value!==text||composing.current||node.selectionStart!==start||node.selectionEnd!==end)throw Error('原稿の編集状態が変わりました。');
-      const target=kind==='inline'?inspectInlineMath(text,start,end,deps):(inspectComponentDisplayMath(text,start,end,deps,context)??inspectDisplayMath(text,start,end,scanDocument));
+      const target=kind==='inline'?inspectInlineMath(text,start,end,deps,context):(inspectComponentDisplayMath(text,start,end,deps,context)??inspectDisplayMath(text,start,end,scanDocument));
       mathComposing.current=false;
       setMathDraft({kind,start,end,component:target.component===true,formula:target.formula,mode:target.mode,numbered:kind==='display'&&!!target.numbered,equationId:kind==='display'?target.equationId:undefined,source:text,fileId:file.id,revision:file.revision,job:generation.current});
     };
     try{
       if(node.value!==text)throw Error('原稿の編集状態が変わりました。');
       const nested=kind==='display'&&scanDocument(text).blocks.some(b=>b.kind==='directive'&&b.header.name!=='layout'&&start>=b.range.start&&start<b.range.end&&end<=b.range.end);
-      if(nested)void io(async()=>{try{open({documents:await referenceDocuments(text),documentId:file.id});}catch(e){setStatus('数式編集不可：'+String(e.message??e));}});
+      if(nested||kind==='inline')void io(async()=>{try{open({documents:await referenceDocuments(text),documentId:file.id});}catch(e){setStatus('数式編集不可：'+String(e.message??e));}});
       else open();
     }catch(e){setStatus('数式編集不可：'+String(e.message??e));}
   }
@@ -129,7 +129,7 @@ function App(){
     if(!mathDraft||busy||working.current||!file?.editable||!node||composing.current||mathComposing.current)return;
     const apply=context=>{
       if(mathStale||generation.current!==mathDraft.job||node.value!==mathDraft.source||composing.current||mathComposing.current)throw Error('原稿が変更されました。数式エディタを開き直してください。');
-      const plan=mathDraft.kind==='inline'?planInlineMath(text,mathDraft.start,mathDraft.end,mathDraft.formula,deps):mathDraft.component?(mathDraft.mode==='insert'&&mathDraft.numbered?planNumberedComponentDisplayMath(context.documents,context.documentId,mathDraft.start,mathDraft.end,mathDraft.formula,mathDraft.equationId,deps):planComponentDisplayMath(text,mathDraft.start,mathDraft.end,mathDraft.formula,deps,context)):planDisplayMath(text,mathDraft.start,mathDraft.end,mathDraft.formula,scanDocument,parseDisplayMath,mathDraft.mode==='insert'&&mathDraft.numbered?mathDraft.equationId:undefined);
+      const plan=mathDraft.kind==='inline'?planInlineMath(text,mathDraft.start,mathDraft.end,mathDraft.formula,deps,context):mathDraft.component?(mathDraft.mode==='insert'&&mathDraft.numbered?planNumberedComponentDisplayMath(context.documents,context.documentId,mathDraft.start,mathDraft.end,mathDraft.formula,mathDraft.equationId,deps):planComponentDisplayMath(text,mathDraft.start,mathDraft.end,mathDraft.formula,deps,context)):planDisplayMath(text,mathDraft.start,mathDraft.end,mathDraft.formula,scanDocument,parseDisplayMath,mathDraft.mode==='insert'&&mathDraft.numbered?mathDraft.equationId:undefined);
       const next=applyPatches(text,[plan.patch]);
       setMathDraft(null);edit(next);setStatus((mathDraft.kind==='inline'?'本文内数式':'独立数式')+'を'+(plan.action==='apply'?'挿入':'更新')+'しました（未保存）。');
       const job=generation.current;
@@ -137,7 +137,7 @@ function App(){
     };
     try{
       if(mathStale||node.value!==mathDraft.source)throw Error('原稿が変更されました。数式エディタを開き直してください。');
-      if(mathDraft.component)void io(async()=>{try{apply({documents:await referenceDocuments(text),documentId:file.id});}catch(e){setStatus('数式編集不可：'+String(e.message??e));}});
+      if(mathDraft.component||mathDraft.kind==='inline')void io(async()=>{try{apply({documents:await referenceDocuments(text),documentId:file.id});}catch(e){setStatus('数式編集不可：'+String(e.message??e));}});
       else apply();
     }catch(e){setStatus('数式編集不可：'+String(e.message??e));}
   }
@@ -199,14 +199,22 @@ function App(){
   const [inlineColor,setInlineColor]=useState('#c2410c'),[inlineFamily,setInlineFamily]=useState('monospace'),[inlineWeight,setInlineWeight]=useState(400),[inlineSize,setInlineSize]=useState('4.2');
   function formatSelection(format){
     const node=textarea.current;
-    if(busy||!file?.editable||!node||composing.current)return;
-    try{
-      if(node.value!==text)throw Error('原稿の編集状態が変わりました。再選択してください。');
-      const planned=planInlineFormat(text,node.selectionStart,node.selectionEnd,format,scanDocument);
+    if(busy||working.current||!file?.editable||!node||composing.current)return;
+    const start=node.selectionStart,end=node.selectionEnd,job=generation.current;
+    const apply=context=>{
+      if(generation.current!==job||node.value!==text||node.selectionStart!==start||node.selectionEnd!==end||composing.current)throw Error('原稿の編集状態が変わりました。再選択してください。');
+      const planned=planInlineFormat(text,start,end,format,scanDocument,context);
       const next=applyPatches(text,[planned.patch]);
       edit(next);setStatus((planned.action==='remove'?'書式を解除':planned.action==='replace'?'書式を変更':'書式を適用')+'しました（未保存）。');
       const currentGeneration=generation.current;
       requestAnimationFrame(()=>{if(textarea.current===node&&generation.current===currentGeneration&&node.value===next){node.focus();node.setSelectionRange(planned.selection.start,planned.selection.end);}});
+    };
+    try{
+      if(node.value!==text)throw Error('原稿の編集状態が変わりました。再選択してください。');
+      // Keep the legacy local formatting path for plain source; richer markup
+      // requires a validated book snapshot and semantic source ranges.
+      if(text.includes(':ref{')||text.includes('$'))void io(async()=>{try{apply({documents:await referenceDocuments(text),documentId:file.id,deps});}catch(e){setStatus('書式変更不可：'+String(e.message??e));}});
+      else apply();
     }catch(e){setStatus('書式変更不可：'+String(e.message??e));}
   }
   function formatList(kind){

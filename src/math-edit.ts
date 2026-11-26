@@ -1,4 +1,4 @@
-import {prepareManuscript,createEquationResolver,type Scan,type PreparationDependencies,type Manuscript} from './manuscript-poc.js';
+import {prepareManuscript,createEquationResolver,numberedEquationTargets,type Scan,type PreparationDependencies,type Manuscript} from './manuscript-poc.js';
 import {parsePreviewInline} from './inline-preview.js';
 import type {InlineEditPlan} from './inline-edit.js';
 
@@ -98,20 +98,20 @@ export function planDisplayMath(source:string,start:number,end:number,formula:st
 
 
 type InlineTarget={mode:'insert'|'edit';start:number;end:number;formula:string;logicalStart:number;paragraph:{start:number;end:number;text:string;ownerStart:number;ownerEnd:number;slot:string}};
-function inlineContext<S extends Scan>(source:string,start:number,end:number,deps:PreparationDependencies<S>){
+function inlineContext<S extends Scan>(source:string,start:number,end:number,deps:PreparationDependencies<S>,context?:ComponentMathBookContext){
   if(!Number.isSafeInteger(start)||!Number.isSafeInteger(end)||start<0||end<start||end>source.length||!deps.validateInlineMath)return fail('Invalid inline math selection or validator');
   const blocks=scanned(source,deps.scan);
-  const result=prepareManuscript([{documentId:'math-edit',revision:'1',source,startOn:'page'}],'1','math-edit',{width:100000,height:100000},deps);
+  const result=prepareManuscript(componentMathDocuments(source,context),'1','math-edit',{width:100000,height:100000},deps);
   if(!result.input)return fail('Resolve unsupported manuscript content before editing inline math');
 
-  const candidates=result.items.flatMap(item=>{
+  const candidates=result.items.filter(item=>item.origin.documentId===(context?.documentId??'math-edit')).flatMap(item=>{
     if(item.kind!=='paragraph'&&item.kind!=='study')return [];
     const primary={start:item.sourceTextStart??item.origin.range.start,text:item.text,slot:'content'};
     return [primary,...(item.namedSlots??[]).map(s=>({start:s.sourceTextStart!,text:s.text,slot:s.name}))].map(s=>({...s,end:s.start+s.text.length,ownerStart:item.origin.range.start,ownerEnd:item.origin.range.end,componentEquations:item.componentEquations}));
   });
   const p=candidates.find(s=>start>=s.start&&end<=s.end);
   if(!p)return fail('Place the caret in ordinary body text or a study text slot, or select one inline formula');
-  const parsed=parsePreviewInline(p.text,p.start,deps.validateInlineMath,createEquationResolver(result.items,deps,'math-edit'),true,deps.validateDisplayMath,p.componentEquations);
+  const parsed=parsePreviewInline(p.text,p.start,deps.validateInlineMath,createEquationResolver(result.items,deps,context?.documentId??'math-edit'),true,deps.validateDisplayMath,p.componentEquations);
   const rows:Scan['blocks'][number][]=[];
   function collect(children:Scan['blocks']){for(const b of children){if(b.kind==='raw')rows.push(b);else if(b.kind==='directive')collect(b.children);}}
   collect(blocks);
@@ -121,11 +121,11 @@ function inlineContext<S extends Scan>(source:string,start:number,end:number,dep
     const seg=parsed.sourceMap.segments.find(s=>s.start===atom.start&&s.end===atom.start+1)!;
     if(atom.display&&start<seg.outerEnd&&end>=seg.outerStart)return fail('Use the independent math editor for a display formula');
     if(start>=seg.outerStart&&end<=seg.outerEnd&&(start!==end||start>seg.outerStart&&start<seg.outerEnd)){
-      return {blocks,rows,parsed,target:{mode:'edit',start:seg.outerStart+1,end:seg.outerEnd-1,formula:atom.formula,logicalStart:atom.start,paragraph:p} as InlineTarget};
+      return {blocks,rows,parsed,targets:numberedEquationTargets(result.items),target:{mode:'edit',start:seg.outerStart+1,end:seg.outerEnd-1,formula:atom.formula,logicalStart:atom.start,paragraph:p} as InlineTarget};
     }
   }
   if(start!==end)return fail('Select only one existing formula, or use a caret to insert');
-  if(parsed.sourceMap.segments.some(s=>s.outerStart<start&&start<s.outerEnd&&(s.rawStart!==s.outerStart||s.outerEnd-s.outerStart!==s.end-s.start)))return fail('Cannot insert inside existing markup');
+  if(parsed.sourceMap.segments.some(s=>s.outerStart<start&&start<s.outerEnd&&(s.derived||s.rawStart!==s.outerStart||s.outerEnd-s.outerStart!==s.end-s.start)))return fail('Cannot insert inside existing markup');
   // Plain segments map linearly. Markup endpoints map to the logical boundary.
   const seg=parsed.sourceMap.segments.find(s=>s.outerStart<=start&&start<=s.outerEnd);
   if(!seg)return fail('No logical insertion boundary');
@@ -133,17 +133,17 @@ function inlineContext<S extends Scan>(source:string,start:number,end:number,dep
   if(logicalStart<0||logicalStart>parsed.text.length||parsed.inlineStyles.some(s=>s.start<logicalStart&&logicalStart<s.end))return fail('Cannot insert inside an inline style');
   const row=rows.find(b=>b.kind==='raw'&&start>=b.range.start&&start<=b.range.end&&start<=b.range.start+source.slice(b.range.start,b.range.end).replace(/(?:\r\n|\r|\n)$/,'').length);
   if(!row)return fail('Insert on a nonblank body line, not a separator');
-  return {blocks,rows,parsed,target:{mode:'insert',start,end,formula:'x^2',logicalStart,paragraph:p} as InlineTarget};
+  return {blocks,rows,parsed,targets:numberedEquationTargets(result.items),target:{mode:'insert',start,end,formula:'x^2',logicalStart,paragraph:p} as InlineTarget};
 }
 /** Reuse actual manuscript preparation to identify independent semantic text slots and exclude protected regions. */
-export function inspectInlineMath<S extends Scan>(source:string,start:number,end:number,deps:PreparationDependencies<S>){
-  return inlineContext(source,start,end,deps).target;
+export function inspectInlineMath<S extends Scan>(source:string,start:number,end:number,deps:PreparationDependencies<S>,context?:ComponentMathBookContext){
+  return inlineContext(source,start,end,deps,context).target;
 }
 /** Insert at a caret or replace only an existing formula body. Exact BCM patch. */
-export function planInlineMath<S extends Scan>(source:string,start:number,end:number,formula:string,deps:PreparationDependencies<S>):InlineEditPlan{
+export function planInlineMath<S extends Scan>(source:string,start:number,end:number,formula:string,deps:PreparationDependencies<S>,context?:ComponentMathBookContext):InlineEditPlan{
   if(typeof formula!=='string'||!formula.length||formula.length>2048||/[\r\n$]/.test(formula)||formula.trim()!==formula||!deps.validateInlineMath)return fail('Expected a supported single-line formula without edge whitespace');
   deps.validateInlineMath(formula);
-  const before=inlineContext(source,start,end,deps),t=before.target,logical=t.logicalStart;
+  const before=inlineContext(source,start,end,deps,context),t=before.target,logical=t.logicalStart;
   const replacement=t.mode==='insert'?'$'+formula+'$':formula;
   const next=source.slice(0,t.start)+replacement+source.slice(t.end),delta=replacement.length-(t.end-t.start);
   const after=scanned(next,deps.scan);
@@ -157,7 +157,8 @@ export function planInlineMath<S extends Scan>(source:string,start:number,end:nu
   });
   if(JSON.stringify(signature(before.blocks,true))!==JSON.stringify(signature(after,false)))return fail('Inline math edit would change scanner structure');
   const selectionStart=t.start+(t.mode==='insert'?1:0);
-  const checked=inlineContext(next,selectionStart,selectionStart+formula.length,deps);
+  const checked=inlineContext(next,selectionStart,selectionStart+formula.length,deps,context);
+  if(JSON.stringify(before.targets)!==JSON.stringify(checked.targets))return fail('Inline math edit would change numbered equation targets');
   if(checked.target.mode!=='edit'||checked.target.start!==selectionStart||checked.target.formula!==formula||checked.target.paragraph.start!==t.paragraph.start||checked.target.paragraph.end!==t.paragraph.end+delta||checked.target.paragraph.ownerStart!==t.paragraph.ownerStart||checked.target.paragraph.ownerEnd!==t.paragraph.ownerEnd+delta||checked.target.paragraph.slot!==t.paragraph.slot)return fail('Formula would change surrounding paragraph structure');
   const expectedText=t.mode==='insert'?before.parsed.text.slice(0,logical)+'\uFFFC'+before.parsed.text.slice(logical):before.parsed.text;
   const expectedStyles=before.parsed.inlineStyles.map(s=>({...s,start:s.start+(t.mode==='insert'&&s.start>=logical?1:0),end:s.end+(t.mode==='insert'&&s.end>logical?1:0)}));
