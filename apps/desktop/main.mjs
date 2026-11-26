@@ -12,6 +12,7 @@ import {recoveryKey,recoveryStore,recoveryStatus} from './manuscript-recovery.mj
 import {listUnifiedRecovery} from './recovery-hub.mjs';
 import {settingsRecovery} from './settings-recovery.mjs';
 import {componentRecovery} from './component-recovery.mjs';
+import {createPreviewReadLane} from './preview-read-lane.mjs';
 const PACKAGE_CRASH_PREPARE=process.argv.includes('--package-crash-prepare');
 const PACKAGE_CRASH_VERIFY=process.argv.includes('--package-crash-verify');
 const EXTRA_CRASH_MODE=['settings-prepare','settings-verify','components-prepare','components-verify'].find(mode=>process.argv.includes('--package-crash-'+mode));
@@ -33,6 +34,7 @@ protocol.registerSchemesAsPrivileged([{scheme:'bookcreator',privileges:{standard
 const PAGE='bookcreator://app/index.html';
 const ASSETS=new Map([['/index.html',['index.html','text/html; charset=utf-8']],['/renderer.js',['build/renderer.js','text/javascript; charset=utf-8']],['/style.css',['style.css','text/css; charset=utf-8']]]);
 let win,workspace,closing=false,busy=false,projectFontAssets=new Map();
+const previewReadLane=createPreviewReadLane();
 let smokeFontImports=0;
 async function loadProjectFonts(next){
   const faces=await next.fonts(true);const assets=new Map();
@@ -45,7 +47,7 @@ function sender(event){
 }
 function handle(name,fn){
   ipcMain.handle('bookcreator:'+name,async(event,...args)=>{
-    try{sender(event);if(busy)throw Error('Workspace operation in progress');busy=true;
+    try{sender(event);if(busy)throw Error('Workspace operation in progress');previewReadLane.invalidate();busy=true;
       try{return {ok:true,value:await fn(...args)};}finally{busy=false;}
     }catch(e){return {ok:false,error:{code:e.code??'ERROR',message:String(e.message??e)}};}
   });
@@ -180,6 +182,17 @@ async function run(){
   handle('saveHeadingDesign',async(...args)=>{checkArgs(args,3);return requireWorkspace().saveHeadingDesign(...args);});
   handle('saveTypography',async(...args)=>{checkArgs(args,2);return requireWorkspace().saveTypography(...args);});
   handle('readBook',async(...args)=>{checkArgs(args,0);return requireWorkspace().readBook();});
+  // Preview reads do not acquire busy. Foreground IPC may proceed, but any
+  // overlapping snapshot is rejected before it reaches the renderer.
+  ipcMain.handle('bookcreator:readPreviewBook',async(event,...args)=>{
+    try{
+      sender(event);checkArgs(args,1);
+      const [token]=args,current=requireWorkspace();
+      if(typeof token!=='string'||token!==settingsToken)throw Error('Invalid preview session');
+      const value=await previewReadLane.read(token,()=>!busy&&!closing&&workspace===current&&settingsToken===token,()=>current.readBook());
+      return {ok:true,value};
+    }catch(e){return {ok:false,error:{code:e.code??'ERROR',message:String(e.message??e)}};}
+  });
   handle('saveBookSettings',async(...args)=>{checkArgs(args,2);return requireWorkspace().saveBookSettings(...args);});
   ipcMain.handle('bookcreator:settings-recovery',async(event,request)=>{
     try{
