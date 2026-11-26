@@ -18,9 +18,14 @@ export function createPreviewReadLane(){
           return load();
         }).finally(()=>{if(active===entry)active=null;});
       }
-      const result=await active.promise;
-      if(epoch!==version||!validate())throw conflict();
-      return result;
+      try{
+        const result=await active.promise;
+        if(epoch!==version||!validate())throw conflict();
+        return result;
+      }catch(error){
+        if(epoch!==version||!validate())throw conflict();
+        throw error;
+      }
     }
   };
 }
