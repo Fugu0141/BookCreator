@@ -103,7 +103,7 @@ function App(){
   function resetMathCaches(){for(const cache of Object.values(mathCaches.current))cache.clear();mathCaches.current=makeMathCaches();}
   function changeMathCacheEnabled(enabled){resetMathCaches();setMathCacheEnabled(enabled);}
   function readMathCaches(){return Object.fromEntries(Object.entries(mathCaches.current).map(([key,cache])=>[key,cache.stats()]));}
-  const [paragraphCacheEnabled,setParagraphCacheEnabled]=useState(false);
+  const [paragraphCacheEnabled,setParagraphCacheEnabled]=useState(true);
   const paragraphCacheRef=useRef(null);
   if(!paragraphCacheRef.current)paragraphCacheRef.current=createParagraphMeasurementCache(document);
   function resetParagraphCache(){paragraphCacheRef.current.clear();paragraphCacheRef.current=createParagraphMeasurementCache(document);}
