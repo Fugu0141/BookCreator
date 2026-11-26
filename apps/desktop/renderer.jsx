@@ -1,3 +1,4 @@
+import {measurementLane} from './measurement-lane.mjs';
 import React,{useState,useRef,useEffect} from 'react';
 import {createRoot} from 'react-dom/client';
 import {parsePreviewInline,prepareBrowserPreview,prepareBookBrowserPreview,previewSourceRange,planInlineFormat,planListFormat,planListIndent,planListBatch,inspectDisplayMath,planDisplayMath,inspectInlineMath,planInlineMath,inspectComponentDisplayMath,planComponentDisplayMath,equationReferenceTargets,planEquationReference,planEquationNumbering,planNumberedComponentDisplayMath,hasDynamicLabels,hasStudyNumbering,studyTemplate,studyKinds,defaultStudyDesign,customStudyTemplate,isCustomComponentId,linkedStudyTemplate,slottedStudyTemplate,namedSlotDefinitions} from '../../dist/index.js';
@@ -553,8 +554,8 @@ function App(){
       const options=prepared.options;
       validateLayoutOptions(options,input.fonts);
       const geometry=input.geometry;
-      const result=await createPlainTextPagePreview(document,{...options,paper:geometry.paper,resolveImage});
-      if(!layoutScheduler.current.isCurrent(job))return;
+      const result=await measurementLane.run(()=>createPlainTextPagePreview(document,{...options,paper:geometry.paper,resolveImage}),{current:()=>layoutScheduler.current.isCurrent(job)});
+      if(!result||!layoutScheduler.current.isCurrent(job))return;
       const pages=describeMeasuredPaper(result,options,{previewSourceRange,paperThumbnail,onNavigate:(documentId,range)=>{
         if(!layoutScheduler.current.isCurrent(job))return;
         if(documentId!==file?.id){setStatus('この断片は '+documentId+' の原稿です。左の原稿一覧から開いてください。');return;}
