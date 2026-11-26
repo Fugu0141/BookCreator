@@ -886,6 +886,21 @@ async function smoke(){
   await until("!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-named-slot=extra] [data-slot-display-math] math mfrac')");
   await setInlineMathSource(beforeSlotMath);
   await until("document.querySelector('#source').value==="+JSON.stringify(beforeSlotMath)+" && !document.querySelector('#preview > div')");
+  // Numbered component equation: paper selection includes the wrapper; editing changes only TeX.
+  const nestedNumbered='::::callout{kind="note"}\n:::layout{#eq-gui-nested numbered="true"}\n$$\nx^2\n$$\n:::\n::::\n';
+  const numberedSource=beforeSlotMath+'\n\n'+nestedNumbered;
+  await setInlineMathSource(numberedSource);
+  await until("document.querySelector('#source').value==="+JSON.stringify(numberedSource));
+  await exec("document.querySelector('#preview-button').click()");
+  await until("!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-slot-display-math] [data-equation-number]')");
+  await exec("document.querySelector('#preview > div').shadowRoot.querySelector('[data-slot-display-math] [data-equation-number]').click()");
+  await exec("document.querySelector('#source-math').click()");
+  await until("document.querySelector('#math-formula')?.value==='x^2'&&document.querySelector('#math-equation-id')?.textContent.includes('eq-gui-nested')");
+  await setInlineDraft('z^2');
+  await exec("document.querySelector('#math-apply').click()");
+  await until("document.querySelector('#source').value==="+JSON.stringify(beforeSlotMath+'\n\n'+nestedNumbered.replace('x^2','z^2')));
+  await setInlineMathSource(beforeSlotMath);
+  await until("document.querySelector('#source').value==="+JSON.stringify(beforeSlotMath)+" && !document.querySelector('#preview > div')");
   // Apply/remove/replace formatting using the actual toolbar and textarea selection.
   const beforeFormat=await exec("document.querySelector('#source').value");
   await exec("(()=>{const e=document.querySelector('#source'),p=e.value.lastIndexOf('第一段落');e.focus();e.setSelectionRange(p,p+'第一段落'.length);document.querySelector('#source-bold').click();})()");
