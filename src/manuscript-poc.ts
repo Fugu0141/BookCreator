@@ -18,7 +18,7 @@ export interface PreparationDependencies<S extends Scan> {
   scan:(source:string)=>S;
   /** Host supplies the Engine's bounded formula parser; no duplicate TeX grammar here. */
   validateDisplayMath?:(formula:string)=>unknown;
-  /** Explicit opt-in for top-level ordinary paragraph inline math. */
+  /** Explicit opt-in for ordinary paragraphs and semantic study text slots. */
   validateInlineMath?:(formula:string)=>unknown;
   parseReference?:(token:string,documentId:string,offset:number)=>{reference?:{target:string;format:string};diagnostics:readonly unknown[]};
   validate:(parsed:S)=>{diagnostics:readonly {code:string;range:Range;message:string}[]};
@@ -157,7 +157,7 @@ export function prepareManuscript<S extends Scan>(documents:readonly Manuscript[
           const first=visible[0],last=visible.at(-1)!;
           if(first.range.start<headerEnd||last.range.end>parent.end)return;
           const text=stripEnd(doc.source.slice(first.range.start,last.range.end));
-          if(!plainBody(text))return;
+          try{parsePreviewInline(text,first.range.start,deps.validateInlineMath);}catch{return;}
           return {text,sourceTextStart:first.range.start};
         };
         if(!kind&&!componentId){unsupported(b.range,'Unsupported study container');continue;}
