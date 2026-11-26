@@ -319,7 +319,9 @@ async function packageSmoke(){
   }
   // UX-09d: compact writing preserves the entire width and switches surfaces
   // without mutating the unsaved source or wide-mode sidebar preferences.
-  await atUiZoom(2,"document.querySelector('.workspace-main').classList.contains('compact-writing')&&document.querySelector('#workspace-outline').hidden&&document.querySelector('.paper').hidden&&document.querySelector('.editor').clientWidth>=document.querySelector('.workspace-main').clientWidth-4");
+  // Compare the outer grid cell geometry, not clientWidth: Windows scrollbars
+  // consume part of clientWidth when the editor scrolls vertically.
+  await atUiZoom(2,"(()=>{const main=document.querySelector('.workspace-main'),editor=document.querySelector('.editor');const m=main.getBoundingClientRect(),e=editor.getBoundingClientRect();return main.classList.contains('compact-writing')&&document.querySelector('#workspace-outline').hidden&&document.querySelector('.paper').hidden&&!editor.hidden&&e.width>0&&Math.abs(e.left-m.left)<4&&Math.abs(e.right-m.right)<4;})()");
   win.webContents.setZoomFactor(originalZoom*2);
   try{
     await until("document.querySelector('.workspace-main').classList.contains('compact-writing')&&!document.querySelector('#compact-editor').hidden");
