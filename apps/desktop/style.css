@@ -410,3 +410,9 @@ body{font-family:BCFont_NotoSansJP,system-ui,sans-serif}.font-control,.typograph
 .structured-operation-toolbar button,.structured-block-operations button{padding:5px 8px;font-size:12px}
 .structured-block-operations{display:flex;gap:4px;flex-wrap:wrap;align-items:center;padding-top:6px;margin-top:6px;border-top:1px solid var(--bc-border)}
 .structured-delete-confirm{display:flex;gap:4px;align-items:center;flex-wrap:wrap;color:var(--bc-error);font-size:12px}
+
+/* UX-08f-3: guarded study identity and answer target panel. */
+.structured-link-editor{padding:10px 12px;margin-bottom:8px;border:1px solid var(--bc-border);border-radius:6px;background:#f6f9fb}
+.structured-link-editor label{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:8px 0;font-size:12px;color:var(--bc-muted)}
+.structured-link-editor input,.structured-link-editor select{min-width:0;max-width:100%;font-size:12px}
+.structured-link-editor p{font-size:12px;overflow-wrap:anywhere}
