@@ -838,9 +838,9 @@ test('GUI equation numbering toggles preserve identity and refuse referenced tar
 
 test('component inline math keeps independent source envelopes in primary and named text slots',()=>{
   const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds,validateDisplayMath:engine.parsePreviewMath,validateInlineMath:engine.parsePreviewMath};
-  const size={width:100000,height:70000},id='study-math';
+  const size={width:100000,height:70000},id='component-00000000-0000-4000-8000-000000000001';
   const design={...defaultHeadingDesign(),direction:'column',children:[{id:'content',type:'content'},{id:'hint',type:'slot',name:'hint',width:'fill',fontSize:3500,lineHeight:1.5,color:'#123456'}]};
-  const library={schemaVersion:1,entries:[{id,name:'数式部品',usage:'study',design}]};
+  const library={schemaVersion:3,entries:[{id,name:'数式部品',usage:'study',design}]};
   for(const nl of ['\n','\r\n']){
     const source=['::::component{name="'+id+'"}',':::slot{name="hint"}','ヒント $\\sqrt{x}$ です。',':::',':::slot{name="content"}','**係数** $\\frac{1}{2}$ です。',':::','::::',''].join(nl);
     const doc={documentId:'slots',revision:'1',source,startOn:'page'};
