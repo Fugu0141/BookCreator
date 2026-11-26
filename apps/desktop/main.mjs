@@ -193,6 +193,16 @@ function workspaceSmokeExec(){
         await raw("document.querySelector('#component-quick-select summary').click()");
         if(!await raw("document.querySelector('#component-quick-select').open"))throw Error('Cannot open direct component selector');
       }
+      if(selectors.some(s=>/^#lab-add(?:-image|-slot|-dynamic|-label)?$/.test(s))&&!await raw("document.querySelector('#lab-add-menu')?.getAttribute('aria-expanded')==='true'")){
+        await raw("document.querySelector('#lab-add-menu').click()");
+        if(!await raw("!document.querySelector('#lab-add-options').hidden"))throw Error('Cannot open element insertion menu');
+      }
+      // Inspector actions are routed through the corresponding visible category.
+      const property=await raw("(()=>{for(const selector of "+JSON.stringify(selectors)+"){const el=document.querySelector(selector),p=el?.closest('[data-property-tab]');if(p)return p.dataset.propertyTab;}return null;})()");
+      if(property&&!await raw("document.querySelector('[data-property-tab="+property+"]')?.hidden===false")){
+        await raw("document.querySelector('[data-property-choice="+property+"]').click()");
+        if(!await raw("document.querySelector('[data-property-tab="+property+"]')?.hidden===false"))throw Error('Cannot open property category '+property);
+      }
       const panel=selectors.map(panelFor).find(Boolean);
       if(panel&&!await raw("!!document.querySelector('#writing-tools-"+panel+"')?.getClientRects().length")){
         await raw("document.querySelector('#writing-panel-"+panel+"').click()");
@@ -458,6 +468,16 @@ async function smoke(){
   await exec("document.querySelector('#component-lab').click()");
   await until("!!document.querySelector('#lab-measure')");
   if(!await exec("(()=>{const q=s=>document.querySelector(s),a=q('.lab-layers').getBoundingClientRect(),b=q('.lab-canvas').getBoundingClientRect(),c=q('.lab-inspector').getBoundingClientRect();return a.width>0&&b.width>0&&c.width>0&&a.right<=b.left&&b.right<=c.left&&q('.lab-layers').contains(q('[data-lab-node]'))&&q('.lab-inspector').contains(q('#lab-padding'))&&q('.lab-canvas').contains(q('#lab-preview'));})()"))throw Error('Component editor pane order or controls incorrect');
+  await until("document.querySelector('#lab-add-options').hidden&&document.querySelector('#lab-property-appearance').hidden===false&&document.querySelector('#lab-property-layout').hidden&&document.querySelector('#lab-property-details').hidden");
+  await exec("document.querySelector('#lab-add-menu').click()");
+  await until("!document.querySelector('#lab-add-options').hidden&&!!document.querySelector('#lab-add-label').getClientRects().length");
+  await exec("document.querySelector('#lab-add-menu').click()");
+  await until("document.querySelector('#lab-add-options').hidden&&!document.querySelector('#lab-add-label').getClientRects().length");
+  for(const category of ['layout','details','appearance']){
+    await exec("document.querySelector('[data-property-choice="+category+"]').click()");
+    await until("!document.querySelector('[data-property-tab="+category+"]').hidden&&[...document.querySelectorAll('.lab-inspector [data-property-tab]')].filter(p=>!p.hidden).length===1");
+  }
+  if(!await exec("document.querySelector('#lab-padding').closest('[data-property-tab]').dataset.propertyTab==='layout'&&document.querySelector('#lab-font-size').closest('[data-property-tab]').dataset.propertyTab==='appearance'"))throw Error('Inspector categories incorrect');
   await exec("document.querySelector('#lab-measure').click()");
   await until("!document.querySelector('#lab-apply').disabled");
   await exec("document.querySelector('#lab-cancel').click()");
@@ -814,6 +834,7 @@ async function smoke(){
   await exec("document.querySelector('#paragraph-lab').click()");
   await until("!!document.querySelector('#paragraph-library-select')");
   if(!await exec("(()=>{const q=s=>document.querySelector(s),a=q('.lab-layers').getBoundingClientRect(),b=q('.lab-canvas').getBoundingClientRect(),c=q('.lab-inspector').getBoundingClientRect();return a.width>0&&b.width>0&&c.width>0&&a.right<=b.left&&b.right<=c.left&&q('.lab-layers').contains(q('#paragraph-library-select'))&&q('.lab-inspector').contains(q('#paragraph-padding'))&&q('.lab-canvas').contains(q('#paragraph-preview'));})()"))throw Error('Paragraph editor pane order or controls incorrect');
+  if(!await exec("document.querySelector('#paragraph-padding').closest('[data-property-tab]').dataset.propertyTab==='layout'&&document.querySelector('#paragraph-size').closest('[data-property-tab]').dataset.propertyTab==='appearance'"))throw Error('Paragraph inspector categories incorrect');
   if(!await exec("document.querySelector('#paragraph-library-select').options.length===1"))throw Error('Heading library entries exposed in paragraph lab');
   await exec("document.querySelector('#paragraph-measure').click()");
   await until("!document.querySelector('#paragraph-apply').disabled");
