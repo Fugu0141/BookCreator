@@ -24,3 +24,25 @@ export function installPaperNavigation(root,bindings,onNavigate){
     state.bindings=bindings;state.onNavigate=onNavigate;
   }
 }
+
+// Build a fresh map for the final root before mutating any displayed page.
+// Equal subtrees have corresponding child order, not necessarily equal ranges.
+export function preparePaperNavigationTransfer(previousRoot,nextRoot,plan){
+  const next=roots.get(nextRoot);
+  if(!next)return null;
+  const bindings=new WeakMap();
+  function transfer(source,target){
+    if(source.nodeType!==target.nodeType)return false;
+    const binding=next.bindings.get(source);
+    if(binding)bindings.set(target,binding);
+    if(source.childNodes.length!==target.childNodes.length)return false;
+    for(let i=0;i<source.childNodes.length;i++){
+      if(!transfer(source.childNodes[i],target.childNodes[i]))return false;
+    }
+    return true;
+  }
+  for(const page of plan.pages){
+    if(!transfer(page.next,page.reuse?page.previous:page.next))return null;
+  }
+  return ()=>installPaperNavigation(previousRoot,bindings,next.onNavigate);
+}
