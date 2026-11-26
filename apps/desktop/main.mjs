@@ -313,6 +313,26 @@ async function packageSmoke(){
   for(const factor of [1.25,1.5,2]){
     await atUiZoom(factor,visibleWithinWindow(['#save','#book-settings','#shortcut-help-toggle','#workspace-save-state','.workspace-main','.editor'])+"&&document.querySelector('.editor').clientHeight>40");
   }
+  // UX-09d: compact writing preserves the entire width and switches surfaces
+  // without mutating the unsaved source or wide-mode sidebar preferences.
+  await atUiZoom(2,"document.querySelector('.workspace-main').classList.contains('compact-writing')&&document.querySelector('#workspace-outline').hidden&&document.querySelector('.paper').hidden&&document.querySelector('.editor').clientWidth>=document.querySelector('.workspace-main').clientWidth-4");
+  win.webContents.setZoomFactor(originalZoom*2);
+  try{
+    await until("document.querySelector('.workspace-main').classList.contains('compact-writing')&&!document.querySelector('#compact-editor').hidden");
+    await exec("document.querySelector('#toggle-outline').click()");
+    await until("!document.querySelector('#workspace-outline').hidden&&document.querySelector('.editor').hidden&&document.querySelector('.paper').hidden");
+    await exec("document.querySelector('[data-section=chapter]').click()");
+    await until("!document.querySelector('.editor').hidden&&document.querySelector('#workspace-outline').hidden");
+    await exec("document.querySelector('#toggle-paper').click()");
+    await until("!document.querySelector('.paper').hidden&&document.querySelector('.editor').hidden&&document.querySelector('#workspace-outline').hidden");
+    await exec("document.querySelector('#compact-editor').click()");
+    await until("!document.querySelector('.editor').hidden&&document.querySelector('.paper').hidden&&document.querySelector('#source').value==="+JSON.stringify(sample));
+  }finally{
+    win.webContents.setZoomFactor(originalZoom);
+    await until("!document.querySelector('.workspace-main').classList.contains('compact-writing')&&!document.querySelector('#workspace-outline').hidden&&!document.querySelector('.editor').hidden");
+  }
+  // Return to the existing wide writing configuration.
+  await exec("(()=>{const b=document.querySelector('#toggle-paper');if(b.getAttribute('aria-pressed')==='true')b.click();})()");
   if(!await exec("document.querySelector('#source').value==="+JSON.stringify(sample)))throw Error('UI zoom altered manuscript');
   // Round-trip structured edits, explicit cancel and opaque BCM preservation.
   const structuredFixture='# 見出し\n\n本文を編集します。\n\n$$\nx^2\n$$\n\n'+sample.slice(sample.indexOf(':::layout'));
