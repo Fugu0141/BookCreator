@@ -315,7 +315,7 @@ async function packageSmoke(){
   }
   if(!await exec("document.querySelector('#source').value==="+JSON.stringify(sample)))throw Error('UI zoom altered manuscript');
   // Round-trip structured edits, explicit cancel and opaque BCM preservation.
-  const structuredFixture='# 見出し\n\n本文を編集します。\n\n$\nx^2\n$\n\n'+sample.slice(sample.indexOf(':::layout'));
+  const structuredFixture='# 見出し\n\n本文を編集します。\n\n$$\nx^2\n$$\n\n'+sample.slice(sample.indexOf(':::layout'));
   const setStructuredSource=value=>exec("(()=>{const e=document.querySelector('#source');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(e,"+JSON.stringify(value)+");e.dispatchEvent(new Event('input',{bubbles:true}));})()");
   const setStructuredValue=value=>exec("(()=>{const e=document.querySelector('#structured-value');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(e,"+JSON.stringify(value)+");e.dispatchEvent(new Event('input',{bubbles:true}));})()");
   await setStructuredSource(structuredFixture);
