@@ -194,7 +194,7 @@ export function prepareManuscript<S extends Scan>(documents:readonly Manuscript[
           if(invalid)primary=undefined;
         }
         if(!primary){unsupported(b.range,'Expected plain paragraphs or explicit content and named slots containing plain paragraphs');continue;}
-        emit({kind:'study',...(kind?{studyKind:kind}:{componentId}),origin:origin(b.range,h.id),...primary,...(primary.componentEquations.length||nestedEquations.length?{componentEquations:[...primary.componentEquations,...nestedEquations].sort((a,b)=>a.range.start-b.range.start)}:{componentEquations:undefined}),...(namedSlots.length?{namedSlots}:{}),attributes:attrs},content.width);
+        emit({kind:'study',...(kind?{studyKind:kind}:{componentId}),origin:origin(b.range,h.id),text:primary.text,sourceTextStart:primary.sourceTextStart,...(primary.componentEquations.length||nestedEquations.length?{componentEquations:[...primary.componentEquations,...nestedEquations].sort((a,b)=>a.range.start-b.range.start)}:{}),...(namedSlots.length?{namedSlots}:{}),attributes:attrs},content.width);
       }else if(b.kind==='directive'&&b.closed&&b.header.kind==='leaf'){
         const h=b.header, attrs=Object.fromEntries(h.attributes.map(a=>[a.key,a.value]));
         if(h.name==='pagebreak'&&!h.id&&Object.keys(attrs).every(k=>k==='side')&&(attrs.side===undefined||attrs.side==='any')){
