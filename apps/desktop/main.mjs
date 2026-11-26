@@ -1573,11 +1573,11 @@ async function settingsRecoveryJourneySmoke(){
   if((await store.list()).records.length!==2||await readFile(manifest,'utf8')!==savedManifest||await readFile(theme,'utf8')!==savedTheme)throw Error('Settings checkpoint changed ordinary files');
   await win.loadURL(PAGE);
   await until('home catalog',"[...document.querySelectorAll('.hub-project-open')].some(e=>e.querySelector('strong')?.textContent==='執筆フロー検証書籍'&&!e.disabled)");
-  await raw("(()=>{const e=[...document.querySelectorAll('.hub-project-open')].find(e=>e.querySelector('strong')?.textContent==='執筆フロー検証書籍');e.click();})()");
+  await click('#hub-recovery');
+  await until('settings listed',"document.querySelector('#hub-recovery-summary')?.textContent==='2 件の復旧候補'&&['typography','book-settings'].every(k=>!!document.querySelector('[data-recovery-setting='+k+'] .hub-recovery-open'))");
+  await click('[data-recovery-setting=typography] .hub-recovery-open');
   await until('both candidates',"['typography','book-settings'].every(k=>!!document.querySelector('#settings-recovery-review-'+k))");
-  await click('#mode-design');await click('#design-tab-styles');
   await until('locked typography',"document.querySelector('#body-font').disabled");
-  await click('#settings-recovery-review-typography');
   await until('comparison',"document.querySelector('#settings-recovery-dialog').open&&!!document.querySelector('#settings-recovery-restore')");
   await click('#settings-recovery-later');
   await until('deferred',"!document.querySelector('#settings-recovery-dialog').open&&document.querySelector('#body-font').disabled");
@@ -1621,8 +1621,10 @@ async function componentRecoveryJourneySmoke(){
   async function reopen(){
     await win.loadURL(PAGE);
     await until('home catalog',"[...document.querySelectorAll('.hub-project-open')].some(e=>e.querySelector('strong')?.textContent==='執筆フロー検証書籍'&&!e.disabled)");
-    await raw("(()=>{const e=[...document.querySelectorAll('.hub-project-open')].find(e=>e.querySelector('strong')?.textContent==='執筆フロー検証書籍');e.click();})()");
-    await openLab();
+    await click('#hub-recovery');
+    await until('registered component listed',"document.querySelector('#hub-recovery-summary')?.textContent==='1 件の復旧候補'&&!!document.querySelector("+JSON.stringify('[data-recovery-entry='+oracle.customId+'] .hub-recovery-open')+")");
+    await click('[data-recovery-entry='+oracle.customId+'] .hub-recovery-open');
+    await click('[data-property-choice=layout]');
     await until('candidate',"!!document.querySelector('#component-recovery-restore')&&document.querySelector('#lab-padding').disabled");
   }
   await reopen();await click('#component-recovery-later');
@@ -1638,6 +1640,13 @@ async function componentRecoveryJourneySmoke(){
   await click('#mode-writing');await click('[data-section=chapter-01]');
   await until('manuscript returned',"document.querySelector('#workspace-save-state').textContent==='保存済み'&&!document.querySelector('#source').disabled");
   console.log('PASS UX-10g-4 registered component draft checkpoint, defer, restore, remeasure and cancel without overwriting');
+  await click('#mode-home');await click('#hub-recovery');
+  await until('unified list cleared',"document.querySelector('#hub-recovery-summary')?.textContent==='0 件の復旧候補'&&!document.querySelector('#hub-recovery-warning')");
+  await click('#hub-projects');await click('#hub-recovery');
+  await until('refreshed list cleared',"document.querySelector('#hub-recovery-summary')?.textContent==='0 件の復旧候補'");
+  await raw("document.querySelector('.hub-sidebar button:last-of-type').click()");
+  await until('returned to writing',"document.querySelector('.workspace-shell').dataset.workspaceMode==='writing'");
+  console.log('PASS UX-10g-5 home recovery routes for settings and registered component, list cleanup');
 }
 async function nativeCloseSmoke(decision){
   const raw=js=>win.webContents.executeJavaScript(js);
