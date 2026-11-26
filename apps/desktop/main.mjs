@@ -11,6 +11,7 @@ import {createHash,randomUUID} from 'node:crypto';
 import {recoveryKey,recoveryStore,recoveryStatus} from './manuscript-recovery.mjs';
 import {listRecoveryCandidates} from './recovery-hub.mjs';
 import {settingsRecovery} from './settings-recovery.mjs';
+import {componentRecovery} from './component-recovery.mjs';
 const PACKAGE_CRASH_PREPARE=process.argv.includes('--package-crash-prepare');
 const PACKAGE_CRASH_VERIFY=process.argv.includes('--package-crash-verify');
 const PACKAGE_RESTART_SMOKE=PACKAGE_CRASH_PREPARE||PACKAGE_CRASH_VERIFY||process.argv.includes('--package-restart-smoke');
@@ -56,6 +57,7 @@ async function run(){
   const recovery=recoveryStore(app.getPath('userData'));
   const recoverySessions=new Map();
   const settingsDrafts=settingsRecovery(app.getPath('userData'));
+  const componentDrafts=componentRecovery(app.getPath('userData'));
   let settingsToken=null;
   let settingsTail=Promise.resolve();
   function settingsSerial(fn){const result=settingsTail.then(fn);settingsTail=result.catch(()=>{});return result;}
@@ -182,6 +184,21 @@ async function run(){
         if(request.action==='put')return settingsDrafts.put(current,request.kind,request.baseRevision,request.value,request.version);
         if(request.action==='remove')return settingsDrafts.remove(current,request.kind,request.version);
         throw Error('Invalid settings recovery action');
+      });
+      return {ok:true,value};
+    }catch(e){return {ok:false,error:{code:e.code??'ERROR',message:String(e.message??e)}};}
+  });
+  ipcMain.handle('bookcreator:component-recovery',async(event,request)=>{
+    try{
+      sender(event);
+      if(!request||typeof request!=='object'||typeof request.token!=='string'||request.token!==settingsToken)throw Error('Invalid component recovery session');
+      const current=requireWorkspace(),token=settingsToken;
+      const value=await settingsSerial(async()=>{
+        if(workspace!==current||settingsToken!==token)throw Error('Stale component recovery session');
+        if(request.action==='inspect')return componentDrafts.inspect(current,request.target);
+        if(request.action==='put')return componentDrafts.put(current,request.target,request.baseRevision,request.value,request.version);
+        if(request.action==='remove')return componentDrafts.remove(current,request.target,request.version);
+        throw Error('Invalid component recovery action');
       });
       return {ok:true,value};
     }catch(e){return {ok:false,error:{code:e.code??'ERROR',message:String(e.message??e)}};}
