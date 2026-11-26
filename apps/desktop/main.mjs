@@ -1387,13 +1387,13 @@ async function writingJourneySmoke(){
   await click('#design-tab-components');
   await click('#catalog-custom-new');
   await until('custom editor',"!!document.querySelector('#lab-library-name')&&!document.querySelector('#lab-library-bind')");
-  await until('initial custom live preview',"document.querySelector('#lab-preview').dataset.previewPhase==='ready'&&!!document.querySelector('#lab-preview > div')?.shadowRoot?.querySelector('[data-content-slot]')&&document.querySelector('#lab-preview').dataset.previewConfirmed==='false'");
+  await until('initial custom live preview',"document.querySelector('#lab-preview').dataset.previewPhase==='ready'&&!!document.querySelector('#lab-preview > div')?.shadowRoot?.querySelector('[data-content-slot]')&&document.querySelector('#lab-preview').dataset.previewConfirmed==='true'");
   await input('#lab-library-name',customName);
   await click('[data-property-choice=layout]');
   const padding=await raw("Number(document.querySelector('#lab-padding').value)===5?6:5");
   await input('#lab-padding',String(padding));
   await until('changed padding',"Number(document.querySelector('#lab-padding').value)==="+padding);
-  await until('edited live preview',"document.querySelector('#lab-preview').dataset.previewPhase==='ready'&&document.querySelector('#lab-preview').dataset.previewConfirmed==='false'&&document.querySelector('#lab-library-add').disabled&&[...document.querySelector('#lab-preview > div')?.shadowRoot?.querySelectorAll('[data-fixed-label]')??[]].some(e=>e.textContent==="+JSON.stringify(customName+'：サンプル')+")");
+  await until('edited live preview',"document.querySelector('#lab-preview').dataset.previewPhase==='ready'&&document.querySelector('#lab-preview').dataset.previewConfirmed==='true'&&!document.querySelector('#lab-library-add').disabled&&[...document.querySelector('#lab-preview > div')?.shadowRoot?.querySelectorAll('[data-fixed-label]')??[]].some(e=>e.textContent==="+JSON.stringify(customName+'：サンプル')+")");
   console.log('PASS UX-10h-1 initial and edited custom component preview without pressing measure');
   // UX-10c: one required named slot and one independently optional slot.
   await click('#lab-add-menu');
@@ -1411,11 +1411,9 @@ async function writingJourneySmoke(){
   await click('#lab-sample-toggle');
   await input('[data-lab-slot-sample=strategy]','必須欄の見本。');
   await input('[data-lab-slot-sample=extension]','任意欄の見本。');
-  await click('#lab-measure');
   await until('both sample slots',"(()=>{const r=document.querySelector('#lab-preview > div')?.shadowRoot;return r?.querySelector('[data-named-slot=strategy]')?.textContent==='必須欄の見本。'&&r?.querySelector('[data-named-slot=extension]')?.textContent==='任意欄の見本。'&&!document.querySelector('#lab-library-add').disabled;})()");
   const fullHeight=await raw("parseFloat(document.querySelector('#lab-preview > div').shadowRoot.querySelector('[data-block]').style.height)");
   await click('[data-lab-slot-omit=extension]');
-  await click('#lab-measure');
   await until('optional group consumes no height',"(()=>{const r=document.querySelector('#lab-preview > div')?.shadowRoot;return !!r?.querySelector('[data-named-slot=strategy]')&&!r.querySelector('[data-named-slot=extension]')&&!r.querySelector('[data-component-group]')&&parseFloat(r.querySelector('[data-block]').style.height)<"+fullHeight+";})()");
   await until('custom measured',"!document.querySelector('#lab-library-add').disabled&&[...document.querySelector('#lab-preview > div')?.shadowRoot?.querySelectorAll('[data-fixed-label]')??[]].some(e=>e.textContent==="+JSON.stringify(customName+'：サンプル')+")");
   if(await readFile(themePath,'utf8')!==themeBefore||await readFile(manuscript,'utf8')!==expected)throw Error('Writing journey: unregistered component changed disk');
@@ -2441,9 +2439,8 @@ async function smoke(){
   // Paragraph styling must preserve line fragmentation and not change heading components.
   await exec("document.querySelector('#paragraph-lab').click()");
   await until("!!document.querySelector('#paragraph-measure')");
-  await until("document.querySelector('#paragraph-preview')?.dataset.previewPhase==='ready'&&!!document.querySelector('#paragraph-preview > div')?.shadowRoot?.querySelector('[data-fragmentable-frame]')&&document.querySelector('#paragraph-apply').disabled");
+  await until("document.querySelector('#paragraph-preview')?.dataset.previewPhase==='ready'&&!!document.querySelector('#paragraph-preview > div')?.shadowRoot?.querySelector('[data-fragmentable-frame]')&&!document.querySelector('#paragraph-apply').disabled");
   await exec("(()=>{const e=document.querySelector('#paragraph-sample');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(e,('本文の分割を検証する文章です。'.repeat(55)+'\\n\\n').repeat(3)+'本文の分割を検証する文章です。'.repeat(55));e.dispatchEvent(new Event('input',{bubbles:true}));})()");
-  await exec("document.querySelector('#paragraph-measure').click()");
   await until("!document.querySelector('#paragraph-apply').disabled && document.querySelector('#paragraph-preview > div').shadowRoot.querySelectorAll('[data-page]').length>1");
   if(!await exec("(()=>{const root=document.querySelector('#paragraph-preview > div').shadowRoot;return Array.from(root.querySelectorAll('[data-fragmentable-frame]')).map(e=>e.querySelector('[data-content-slot]').textContent).join('')===document.querySelector('#paragraph-sample').value;})()"))throw Error('Paragraph frame lost source text');
   // Opt in to BCM math in a disposable paragraph sample; retain the literal mode by default.
@@ -2462,11 +2459,9 @@ async function smoke(){
   await exec("document.querySelector('#paragraph-measure').click()");
   await until("!!document.querySelector('#paragraph-preview > div')?.shadowRoot?.querySelector('[data-inline-math] math mfrac')");
   await setLabSample('#paragraph-sample','式 $x');
-  await exec("document.querySelector('#paragraph-measure').click()");
   await until("document.querySelector('#paragraph-apply').disabled && document.querySelector('#paragraph-preview').dataset.previewPhase==='error' && document.querySelector('#paragraph-status').textContent.includes('Invalid inline math')");
   await exec("document.querySelector('#paragraph-sample-bcm').click()");
   await setLabSample('#paragraph-sample',plainParagraphSample);
-  await exec("document.querySelector('#paragraph-measure').click()");
   await until("!document.querySelector('#paragraph-apply').disabled && document.querySelector('#paragraph-preview > div').shadowRoot.querySelectorAll('[data-page]').length>1");
   await exec("document.querySelector('#paragraph-apply').click()");
   await until("!document.querySelector('#paragraph-measure') && !document.querySelector('#open').disabled");
@@ -2677,7 +2672,6 @@ async function smoke(){
   await exec("document.querySelector('#lab-measure').click()");
   await until("!!document.querySelector('#lab-preview > div')?.shadowRoot?.querySelector('[data-content-slot] [data-inline-math] math msup') && !!document.querySelector('#lab-preview > div')?.shadowRoot?.querySelector('[data-named-slot=hint] [data-inline-math] math msqrt')");
   await setLabSample('[data-lab-slot-sample=hint]','ヒント $x');
-  await exec("document.querySelector('#lab-measure').click()");
   await until("document.querySelector('#lab-library-add').disabled && document.querySelector('#lab-preview').dataset.previewPhase==='error' && document.querySelector('#lab-status').textContent.includes('Invalid inline math')");
   // Numbered sample wrappers share a disposable chapter, including cross-slot references.
   await exec("document.querySelector('#lab-multiline-sample').click()");
@@ -2687,13 +2681,11 @@ async function smoke(){
   await until("(()=>{const root=document.querySelector('#lab-preview > div')?.shadowRoot;const a=root?.querySelector('[data-content-slot] [data-equation-number]'),b=root?.querySelector('[data-named-slot=hint] [data-equation-number]');return !!a&&!!b&&a.textContent.includes('1.1')&&b.textContent.includes('1.2')&&root.textContent.includes('式 (1.1)');})()");
   await until("!document.querySelector('#lab-library-add').disabled");
   await setLabSample('[data-lab-slot-sample=hint]','参照 :ref{target="missing" format="number"}。');
-  await exec("document.querySelector('#lab-measure').click()");
   await until("document.querySelector('#lab-library-add').disabled&&document.querySelector('#lab-preview').dataset.previewPhase==='error'&&document.querySelector('#lab-status').textContent.includes('Invalid numbered study sample')");
   await exec("document.querySelector('#lab-multiline-sample').click()");
   await exec("document.querySelector('#lab-sample-bcm').click()");
   await setLabSample('#lab-sample',plainStudySample);
   await setLabSample('[data-lab-slot-sample=hint]','ヒントのサンプル。');
-  await exec("document.querySelector('#lab-measure').click()");
   await until("!document.querySelector('#lab-library-add').disabled");
   if(!await exec("document.querySelector('#lab-duplicate').disabled"))throw Error('Duplicate semantic slot allowed');
   await exec("document.querySelector('#lab-library-add').click()");
