@@ -171,8 +171,9 @@ body{font-family:BCFont_NotoSansJP,system-ui,sans-serif}.font-control,.typograph
 .component-catalog-toolbar input,.component-catalog-toolbar select{padding:7px 9px;max-width:100%}
 .catalog-card{align-items:stretch;overflow-wrap:anywhere}
 .catalog-card button{align-self:flex-end}
-.catalog-specimen{min-height:82px;padding:12px;border-radius:4px;border:1px solid #c9d2da;display:flex;flex-direction:column;justify-content:center;gap:5px;overflow-wrap:anywhere}
-.catalog-specimen span{font-size:14px;line-height:1.5}
+.catalog-measured{position:relative;min-width:0;border-radius:4px;border:1px solid #c9d2da;background:#e8edf1;overflow:hidden}
+.catalog-measured-paper{height:116px;min-width:0;width:100%;overflow:hidden;pointer-events:none;background:#fff}
+.catalog-measured-state{position:absolute;inset:0;display:grid;place-items:center;padding:8px;color:#526478;background:#f7f9fb;text-align:center}
 #component-quick-select{margin-top:16px}
 #component-quick-select[open]>.design-component-grid{margin-top:10px}
 
