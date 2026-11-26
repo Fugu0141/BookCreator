@@ -558,3 +558,14 @@ body{font-family:BCFont_NotoSansJP,system-ui,sans-serif}.font-control,.typograph
 
 /* UX-10h-3e: distinguish the retained, non-interactive previous edition. */
 #preview > [data-paper-freshness=previous]{opacity:.58;pointer-events:none}
+
+/* UX-10h-6a: the real measured paper shares the settings workspace. */
+.workspace-main.mode-design.with-paper,.workspace-main.mode-settings.with-paper{grid-template-columns:minmax(320px,.9fr) minmax(0,1.1fr);grid-template-rows:minmax(0,1fr)}
+.workspace-main.mode-design.with-paper>.workspace-design,.workspace-main.mode-settings.with-paper>.workspace-settings{grid-column:1;grid-row:1}
+.workspace-main.mode-design.with-paper>.paper,.workspace-main.mode-settings.with-paper>.paper{grid-column:2;grid-row:1}
+.settings-live-toggle{display:flex;gap:8px;align-items:center;margin:8px 0}
+.settings-paper-actions{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;flex-wrap:wrap}
+@media(max-width:900px){
+ .workspace-main.mode-design.with-paper,.workspace-main.mode-settings.with-paper{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(150px,.9fr) minmax(100px,1.1fr)}
+ .workspace-main.mode-design.with-paper>.paper,.workspace-main.mode-settings.with-paper>.paper{grid-column:1;grid-row:2}
+}
