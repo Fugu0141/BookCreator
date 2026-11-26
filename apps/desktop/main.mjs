@@ -285,6 +285,16 @@ function workspaceSmokeExec(){
     if(/\.(?:click|dispatchEvent|setSelectionRange|focus)\(/.test(js)){
       const selectors=[...js.matchAll(/document\.querySelector\((['"])(.*?)\1\)|document\.getElementById\((['"])(.*?)\3\)/g)].map(m=>m[2]??'#'+m[4]);
       const selector=selectors[0];
+      // Recovery initialization and explicit commit/cancel are asynchronous.
+      // Do not drive old smoke actions through disabled lab controls.
+      if(await raw("!!document.querySelector('.lab-overlay')")){
+        let settled=false;
+        for(let i=0;i<100;i++){
+          if(await raw("!document.querySelector('.lab-overlay')||(!document.querySelector('#component-recovery-state[data-phase=loading]')&&!document.querySelector('.lab-overlay[data-recovery-working=true]'))")){settled=true;break;}
+          await new Promise(r=>setTimeout(r,50));
+        }
+        if(!settled)throw Error('Component recovery operation did not settle');
+      }
       const mode=selector&&/^#preview-(?:book|button)$/.test(selector)&&await raw("document.querySelector('.workspace-shell').dataset.workspaceMode==='layout'")?'layout':selector&&routeFor(selector);
       if(mode&&!await raw("document.querySelector('.workspace-shell').dataset.workspaceMode==="+JSON.stringify(mode))){
         await raw("document.querySelector('#mode-"+mode+"').click()");
@@ -1185,6 +1195,7 @@ async function packageSmoke(){
   await writingJourneySmoke();
   await recoveryJourneySmoke();
   await settingsRecoveryJourneySmoke();
+  await componentRecoveryJourneySmoke();
   await nativeCloseSmoke('discard');
   const report='PASS portable Windows package: isolated renderer, workspace, math, bundled fonts, numbering, save, new-book writing journey and renderer reload';
   if(process.env.BC_PACKAGE_SMOKE_REPORT)await writeFile(process.env.BC_PACKAGE_SMOKE_REPORT,report+'\n',{flag:'wx'});
@@ -1573,6 +1584,51 @@ async function settingsRecoveryJourneySmoke(){
   await click('#mode-writing');await click('[data-section=chapter-01]');
   await until('manuscript returned',"document.querySelector('#workspace-save-state').textContent==='保存済み'&&!document.querySelector('#source').disabled");
   console.log('PASS UX-10g-2 packaged settings checkpoint, locked review, restore and discard without changing originals');
+}
+// Test the editor against the actual component store and theme. The saved
+// restart fixture must remain byte-identical throughout this journey.
+async function componentRecoveryJourneySmoke(){
+  const raw=js=>win.webContents.executeJavaScript(js);
+  const until=async(label,js)=>{for(let i=0;i<150;i++){if(await raw(js))return;await new Promise(r=>setTimeout(r,100));}throw Error('Component recovery journey: '+label+'; '+await raw("document.querySelector('#status')?.textContent"));};
+  const click=async selector=>{
+    await until('reachable '+selector,"(()=>{const e=document.querySelector("+JSON.stringify(selector)+");return !!e?.getClientRects().length&&!e.disabled;})()");
+    await raw("document.querySelector("+JSON.stringify(selector)+").click()");
+  };
+  const input=async(selector,value)=>{
+    await until('editable '+selector,"(()=>{const e=document.querySelector("+JSON.stringify(selector)+");return !!e?.getClientRects().length&&!e.disabled;})()");
+    await raw("(()=>{const e=document.querySelector("+JSON.stringify(selector)+");Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,"+JSON.stringify(String(value))+");e.dispatchEvent(new Event('input',{bubbles:true}));})()");
+  };
+  const root=join(smokeRoot,'writing-journey'),themePath=join(root,'themes','default','theme.yaml'),savedTheme=await readFile(themePath,'utf8');
+  const store=recoveryStore(smokeRoot,'components');
+  const oracle=JSON.parse(await readFile(join(smokeRoot,'ux10-restart.json'),'utf8'));
+  const selector='[data-catalog-edit=registered-'+oracle.customId+']';
+  async function openLab(){await click('#mode-design');await click('#design-tab-components');await click(selector);await click('[data-property-choice=layout]');}
+  await openLab();
+  const padding=oracle.padding===7?8:7;
+  await input('#lab-padding',padding);
+  await until('component checkpoint',"document.querySelector('#component-recovery-state')?.dataset.phase==='recorded'");
+  const snapshot=(await store.list()).records;
+  if(snapshot.length!==1||await readFile(themePath,'utf8')!==savedTheme)throw Error('Component checkpoint modified theme or missed draft');
+  async function reopen(){
+    await win.loadURL(PAGE);
+    await until('home catalog',"[...document.querySelectorAll('.hub-project-open')].some(e=>e.querySelector('strong')?.textContent==='執筆フロー検証書籍'&&!e.disabled)");
+    await raw("(()=>{const e=[...document.querySelectorAll('.hub-project-open')].find(e=>e.querySelector('strong')?.textContent==='執筆フロー検証書籍');e.click();})()");
+    await openLab();
+    await until('candidate',"!!document.querySelector('#component-recovery-restore')&&document.querySelector('#lab-padding').disabled");
+  }
+  await reopen();await click('#component-recovery-later');
+  await until('deferred close',"!document.querySelector('#lab-measure')");
+  if((await store.list()).records[0]?.version!==snapshot[0].version)throw Error('Deferred recovery was modified');
+  await openLab();await click('#component-recovery-restore');
+  await until('restored design requires measurement',"Number(document.querySelector('#lab-padding').value)==="+padding+"&&!document.querySelector('#lab-measure').disabled&&document.querySelector('#lab-library-replace').disabled");
+  await click('#lab-measure');
+  await until('restored design measured',"!document.querySelector('#lab-library-replace').disabled");
+  if(await readFile(themePath,'utf8')!==savedTheme)throw Error('Recovery implicitly changed registered component');
+  await click('#lab-cancel');await until('discarded close',"!document.querySelector('#lab-measure')");
+  if((await store.list()).records.length||await readFile(themePath,'utf8')!==savedTheme)throw Error('Component cancel did not clean up working draft');
+  await click('#mode-writing');await click('[data-section=chapter-01]');
+  await until('manuscript returned',"document.querySelector('#workspace-save-state').textContent==='保存済み'&&!document.querySelector('#source').disabled");
+  console.log('PASS UX-10g-4 registered component draft checkpoint, defer, restore, remeasure and cancel without overwriting');
 }
 async function nativeCloseSmoke(decision){
   const raw=js=>win.webContents.executeJavaScript(js);
