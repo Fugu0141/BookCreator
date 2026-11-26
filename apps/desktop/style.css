@@ -145,3 +145,6 @@ body{font-family:BCFont_NotoSansJP,system-ui,sans-serif}.font-control,.typograph
 .insertion-details summary:focus-visible{outline:2px solid #456f90;outline-offset:2px}
 .insertion-details[open]>.controls{margin:6px 0 0;gap:8px}
 .insertion-details small{overflow-wrap:anywhere;display:block;margin:4px 0}
+
+/* Closed details must exclude their fields from layout and interaction, including Chromium's content-visibility implementation. */
+.insertion-details:not([open])>:not(summary){display:none!important}
