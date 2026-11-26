@@ -153,17 +153,24 @@ export function prepareManuscript<S extends Scan>(documents:readonly Manuscript[
         }
         const readBody=(blocks:readonly ScanBlock[],parent:Range,headerEnd:number)=>{
           const visible=blocks.filter(c=>c.kind!=='blank');
-          if(!visible.length||visible.some(c=>c.kind!=='raw'))return;
+          if(!visible.length||visible.some(c=>c.kind!=='raw'&&c.kind!=='math'))return;
           const first=visible[0],last=visible.at(-1)!;
           if(first.range.start<headerEnd||last.range.end>parent.end)return;
           const text=stripEnd(doc.source.slice(first.range.start,last.range.end));
-          try{parsePreviewInline(text,first.range.start,deps.validateInlineMath);}catch{return;}
+          try{
+            const parsed=parsePreviewInline(text,first.range.start,deps.validateInlineMath,undefined,true);
+            const math=visible.filter(c=>c.kind==='math'),atoms=parsed.inlineMath.filter(a=>a.display);
+            if(math.length!==atoms.length||atoms.some((a,i)=>{
+              const seg=parsed.sourceMap.segments.find(s=>s.start===a.start)!;
+              return seg.outerStart!==math[i].range.start||seg.outerEnd!==math[i].range.start+stripEnd(doc.source.slice(math[i].range.start,math[i].range.end)).length;
+            }))return;
+          }catch{return;}
           return {text,sourceTextStart:first.range.start};
         };
         if(!kind&&!componentId){unsupported(b.range,'Unsupported study container');continue;}
         let primary:{text:string;sourceTextStart:number}|undefined;
         const namedSlots:NamedSlotSource[]=[];
-        if(children.length&&children.every(c=>c.kind==='raw'))primary=readBody(b.children,b.range,h.range.end);
+        if(children.length&&children.every(c=>c.kind==='raw'||c.kind==='math'))primary=readBody(b.children,b.range,h.range.end);
         else if(h.name==='component'&&children.length>=1&&children.length<=9){
           const names=new Set<string>();let invalid=false;
           for(const slot of children){
