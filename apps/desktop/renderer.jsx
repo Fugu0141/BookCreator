@@ -95,8 +95,8 @@ function App(){
   const [outlineOpen,setOutlineOpen]=useState(true),[pageListOpen,setPageListOpen]=useState(true),[pageInfoOpen,setPageInfoOpen]=useState(true),[shortcutHelp,setShortcutHelp]=useState(false);
   const [writingPanel,setWritingPanel]=useState(null);
   const [showPerformance,setShowPerformance]=useState(false);
-  const [cacheEnabled,setCacheEnabled]=useState(true);
-  const [mathCacheEnabled,setMathCacheEnabled]=useState(true);
+  const [cacheEnabled,setCacheEnabled]=useState(false);
+  const [mathCacheEnabled,setMathCacheEnabled]=useState(false);
   const mathCaches=useRef(null);
   const makeMathCaches=()=>({mathCache:createMathCompilationCache(),displayMathCache:createDisplayMathGeometryCache(document),inlineMathCache:createInlineMathGeometryCache(document)});
   if(!mathCaches.current)mathCaches.current=makeMathCaches();
