@@ -31,7 +31,7 @@ BCMの正本は[言語仕様](https://github.com/Fugu0141/BookCreator_Markdown/b
 
 ## Development
 
-TypeScript / React / Electronを中心にWindows、Linux、macOSを目標とし、ブラウザへの移植性を初期から検証する。まずBCMとEngineの最小PoCを進め、共通fixtureでアプリ側の変換を確認する。現時点ではプラットフォーム非依存のコア検証のみ。React/Electronアプリの起動は未実装。
+TypeScript / React / Electronを中心にWindows、Linux、macOSを目標とし、ブラウザへの移植性を初期から検証する。まずBCMとEngineの最小PoCを進め、共通fixtureでアプリ側の変換を確認する。実測プレビューおよびReact/Electronの開発版を起動できる。正式リリース・出版確定は未対応。
 
 
 ## Local development / ローカル開発
