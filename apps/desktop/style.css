@@ -85,3 +85,37 @@ body{font-family:BCFont_NotoSansJP,system-ui,sans-serif}.font-control,.typograph
 .publication-checks>section p{margin:8px 0;color:#475569}
 .publication-checks>section button{margin:4px 8px 0 0}
 @media(max-width:720px){.workspace-statusbar{gap:8px;padding:4px 8px;flex-wrap:wrap}.workspace-statusbar>footer{flex-basis:100%}}
+
+
+/* UX-02c: project manager is a dedicated surface, not an editor pane. */
+.project-hub{display:grid;grid-template-columns:210px minmax(0,1fr);padding:0;overflow:hidden;min-height:0}
+.hub-sidebar{display:flex;flex-direction:column;gap:8px;padding:20px 12px;background:#e8edf2;border-right:1px solid #d6dfe8;overflow:auto}
+.hub-sidebar strong{padding:8px 10px;font-size:16px}
+.hub-sidebar button{background:transparent;color:#334155;text-align:left;border-radius:6px}
+.hub-sidebar button[aria-current=page]{background:#d2e3f0;color:#195475}
+.hub-sidebar button:hover:not(:disabled){background:#dce6ef}
+.hub-sidebar small{margin-top:auto;color:#526474;padding:10px}
+.hub-content{padding:28px 32px;overflow:auto;min-width:0}
+.hub-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:20px}
+.hub-heading h1{font-size:25px;margin:0}
+.hub-heading p{margin:6px 0 0}
+.hub-toolbar{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:0 0 14px}
+.hub-toolbar label{display:flex;align-items:center;gap:6px;font-size:13px;color:#475569}
+.hub-toolbar input[type=search]{min-width:180px;padding:8px;border:1px solid #b8c7d3;border-radius:5px;font:inherit}
+.hub-list{border:1px solid #d7e0e7;border-radius:8px;overflow:hidden;background:white}
+.hub-list-header,.hub-project-row{display:grid;grid-template-columns:minmax(0,1fr) 180px 128px;align-items:center;gap:12px;padding:8px 14px}
+.hub-list-header{background:#e6edf3;color:#475569;font-weight:600;font-size:12px}
+.hub-project-row+.hub-project-row{border-top:1px solid #e1e7ed}
+.hub-project-open{display:block;text-align:left;background:transparent;color:#25394b;min-width:0;padding:8px 4px}
+.hub-project-open:hover:not(:disabled){background:#eef5fa}
+.hub-project-open strong,.hub-project-open small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hub-project-open small{color:#64748b;font-size:12px;font-weight:400;margin-top:4px}
+.hub-project-row time{font-size:12px;color:#475569}
+.hub-row-actions{display:flex;gap:6px;justify-content:flex-end}
+.secondary-action{background:#e7edf3;color:#29465f;border:1px solid #d1dbe4}
+.hub-row-actions button{padding:6px 9px;font-size:12px}
+.hub-empty{padding:42px 24px;color:#526474;text-align:center}
+.hub-content>.new-book{max-width:560px;padding:24px;border-radius:8px}
+.hub-content>.new-book button+button{margin-left:8px}
+@media(max-width:1000px){.project-hub{grid-template-columns:165px minmax(0,1fr)}.hub-content{padding:20px}.hub-list-header,.hub-project-row{grid-template-columns:minmax(0,1fr) 125px 120px}}
+@media(max-width:720px){.project-hub{grid-template-columns:125px minmax(0,1fr)}.hub-content{padding:12px}.hub-list-header,.hub-project-row{grid-template-columns:minmax(0,1fr) 120px}.hub-list-header>span:nth-child(2),.hub-project-row time{display:none}.hub-heading{flex-wrap:wrap}}
