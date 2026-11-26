@@ -3,7 +3,7 @@
 import type {PreviewFontFamily} from './preview-typography.js';
 export interface InlineStyle {fontWeight?:number;italic?:boolean;underline?:boolean;color?:string;fontFamily?:PreviewFontFamily;fontSize?:number;baseline?:'normal'|'super'|'sub'}
 export interface InlineRun extends InlineStyle {start:number;end:number}
-export interface InlineMathAtom {start:number;formula:string}
+export interface InlineMathAtom {start:number;formula:string;display?:true}
 const fontIds:Readonly<Record<string,PreviewFontFamily>>=Object.freeze({'noto-sans-jp':'BCFont_NotoSansJP','system-serif':'serif','system-sans':'sans-serif','system-monospace':'monospace'});
 export function inlineFontFamily(id:string):PreviewFontFamily{
   if(Object.hasOwn(fontIds,id))return fontIds[id];
@@ -44,7 +44,7 @@ const whitespace=(c:string)=>!c||/\s/u.test(c);
 const punctuation=(c:string)=>/[\p{P}\p{S}]/u.test(c);
 const left=(a:string,b:string)=>!whitespace(b)&&(!punctuation(b)||whitespace(a)||punctuation(a));
 const right=(a:string,b:string)=>!whitespace(a)&&(!punctuation(a)||whitespace(b)||punctuation(b));
-export function parsePreviewInline(raw:string,offset=0,validateMath?:(formula:string)=>unknown,resolveReference?:(token:string,offset:number)=>string){
+export function parsePreviewInline(raw:string,offset=0,validateMath?:(formula:string)=>unknown,resolveReference?:(token:string,offset:number)=>string,allowDisplay=false){
   if(typeof raw!=='string'||!raw.length||raw.length>10000||!Number.isSafeInteger(offset)||offset<0||!Number.isSafeInteger(offset+raw.length)||/\r(?!\n)/.test(raw)||(raw.match(/\n/g)?.length??0)>255)throw RangeError('Unsupported inline source');
   let text='',cursor=0;
   const inlineStyles:InlineRun[]=[],inlineMath:InlineMathAtom[]=[],segments:InlineSourceSegment[]=[];
@@ -56,7 +56,20 @@ export function parsePreviewInline(raw:string,offset=0,validateMath?:(formula:st
   }
   // Parse within individual hard lines only. No nesting, escape, links, HTML or other syntax.
   for(const m of raw.matchAll(/[^\r\n]*(?:\r\n|\n|$)/g)){
-    const row=m[0];if(!row)continue;
+    const row=m[0];if(!row||m.index!<cursor)continue;
+    if(allowDisplay&&/^\$\$[ \t]*(?:\r\n|\n)$/.test(row)){
+      const match=/^(\$\$[ \t]*(?:\r\n|\n))([^\r\n]+)(?:\r\n|\n)\$\$[ \t]*(?=\r\n|\n|$)/.exec(raw.slice(cursor));
+      if(!match||!validateMath||!match[2].trim())throw RangeError('Invalid component display formula');
+      validateMath(match[2]);
+      const logical=text.length;text+='\uFFFC';
+      inlineMath.push({start:logical,formula:match[2],display:true});
+      segments.push({start:logical,end:logical+1,rawStart:offset+cursor+match[1].length,outerStart:offset+cursor,outerEnd:offset+cursor+match[0].length});
+      cursor+=match[0].length;
+      const ending=/^(?:\r\n|\n)/.exec(raw.slice(cursor))?.[0]??'';
+      append(cursor,cursor+ending.length);cursor+=ending.length;
+      if(inlineMath.length>128)throw RangeError('Too many formulas');
+      continue;
+    }
     const line=row.replace(/(?:\r\n|\n)$/,'');
     if(line&&(/^\s|^\d+\.\s/.test(line)||/ {2}$/.test(line)))throw RangeError('Unsupported line context');
     let i=0;
@@ -152,8 +165,8 @@ export function inlineSourceRange(map:InlineSourceMap,start:number,end:number){
 }
 
 /** Lab sample text is disposable and has no raw source mapping. Explicit opt-in preserves literal samples. */
-export function previewSampleInline(text:string,bcm:boolean,validateMath:(formula:string)=>unknown){
+export function previewSampleInline(text:string,bcm:boolean,validateMath:(formula:string)=>unknown,allowDisplay=false){
   if(!bcm)return {text};
-  const parsed=parsePreviewInline(text,0,validateMath);
+  const parsed=parsePreviewInline(text,0,validateMath,undefined,allowDisplay);
   return {text:parsed.text,...(parsed.inlineStyles.length?{inlineStyles:parsed.inlineStyles}:{}),...(parsed.inlineMath.length?{inlineMath:parsed.inlineMath}:{})};
 }
