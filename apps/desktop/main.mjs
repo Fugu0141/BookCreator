@@ -950,6 +950,19 @@ async function smoke(){
   await until("document.querySelector('#source').value==="+JSON.stringify(nestedRefSource.replace('参照先。',()=> '参照先'+nestedRefToken+'。')));
   await exec("document.querySelector('#preview-book').click()");
   await until("(()=>{const root=document.querySelector('#preview > div')?.shadowRoot,n=root?.querySelector('[data-slot-display-math] [data-equation-number]');return !!n&&root.textContent.includes('参照先式 '+n.textContent);})()");
+  // Inline math and plain-text styling may coexist with a resolved reference.
+  const refBeforeInline=await exec("document.querySelector('#source').value");
+  await exec("(()=>{const e=document.querySelector('#source'),p=e.value.lastIndexOf('参照先')+3;e.focus();e.setSelectionRange(p,p);document.querySelector('#source-inline-math').click();})()");
+  await until("document.querySelector('#math-formula')?.value==='x^2'");
+  await exec("document.querySelector('#math-apply').click()");
+  const refWithInline=refBeforeInline.replace('参照先'+nestedRefToken,()=> '参照先$x^2$'+nestedRefToken);
+  await until("document.querySelector('#source').value==="+JSON.stringify(refWithInline));
+  await exec("(()=>{const e=document.querySelector('#source'),p=e.value.lastIndexOf('参照先');e.focus();e.setSelectionRange(p,p+3);document.querySelector('#source-bold').click();})()");
+  const refWithStyle=refWithInline.replace('参照先$x^2$',()=> '**参照先**$x^2$');
+  await until("document.querySelector('#source').value==="+JSON.stringify(refWithStyle));
+  await exec("document.querySelector('#preview-book').click()");
+  await until("(()=>{const root=document.querySelector('#preview > div')?.shadowRoot,n=root?.querySelector('[data-slot-display-math] [data-equation-number]');return !!n&&root.textContent.includes('式 '+n.textContent)&&Array.from(root.querySelectorAll('[data-inline-style]')).some(e=>e.textContent==='参照先'&&e.style.fontWeight==='700');})()");
+
 
 
   await setInlineMathSource(beforeSlotMath);
