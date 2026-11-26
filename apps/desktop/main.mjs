@@ -185,6 +185,21 @@ async function run(){
   handle('readBook',async(...args)=>{checkArgs(args,0);return requireWorkspace().readBook();});
   // Preview reads do not acquire busy. Foreground IPC may proceed, but any
   // overlapping snapshot is rejected before it reaches the renderer.
+  // Read-only, numeric process working-set snapshot. Never acquires workspace lock.
+  ipcMain.handle('bookcreator:performanceMemory',async(event,...args)=>{
+    try{
+      sender(event);checkArgs(args,0);
+      const value={browserKiB:0,rendererKiB:0,otherKiB:0,processes:0};
+      for(const metric of app.getAppMetrics()){
+        const size=metric.memory?.workingSetSize;
+        if(!Number.isFinite(size)||size<0)continue;
+        value.processes++;
+        const key=metric.type==='Browser'?'browserKiB':metric.type==='Tab'?'rendererKiB':'otherKiB';
+        value[key]+=size;
+      }
+      return {ok:true,value};
+    }catch(e){return {ok:false,error:{code:'ERROR',message:'Memory metrics unavailable'}};}
+  });
   ipcMain.handle('bookcreator:readPreviewBook',async(event,...args)=>{
     try{
       sender(event);checkArgs(args,1);
