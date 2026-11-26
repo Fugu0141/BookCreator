@@ -868,7 +868,7 @@ async function smoke(){
   await setInlineMathSource(beforeSlotMath);
   await until("document.querySelector('#source').value==="+JSON.stringify(beforeSlotMath));
   await exec("(()=>{const e=document.querySelector('#source');e.focus();e.setSelectionRange("+displayAt+","+displayAt+");document.querySelector('#source-math').click();})()");
-  await until("document.querySelector('#math-formula')?.value==='x^2' && !document.querySelector('#math-numbered')");
+  await until("document.querySelector('#math-formula')?.value==='x^2' && document.querySelector('#math-numbered')?.checked===false");
   await exec("document.querySelector('#math-apply').click()");
   const insertedDisplay=beforeSlotMath.slice(0,displayAt)+'\n$$\nx^2\n$$\n'+beforeSlotMath.slice(displayAt);
   await until("document.querySelector('#source').value==="+JSON.stringify(insertedDisplay));
@@ -884,6 +884,26 @@ async function smoke(){
   await until("document.querySelector('#source').value==="+JSON.stringify(insertedDisplay.replace('$$\nx^2\n$$',()=> '$$\n\\frac{a}{b}\n$$')));
   await exec("document.querySelector('#preview-button').click()");
   await until("!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-named-slot=extra] [data-slot-display-math] math mfrac')");
+  await setInlineMathSource(beforeSlotMath);
+  await until("document.querySelector('#source').value==="+JSON.stringify(beforeSlotMath)+" && !document.querySelector('#preview > div')");
+  // A numbered formula can be inserted in the named slot in a single operation.
+  await exec("(()=>{const e=document.querySelector('#source');e.focus();e.setSelectionRange("+displayAt+","+displayAt+");document.querySelector('#source-math').click();})()");
+  await until("document.querySelector('#math-numbered')?.checked===false");
+  await exec("document.querySelector('#math-numbered').click()");
+  await until("document.querySelector('#math-numbered')?.checked===true&&!!document.querySelector('#math-equation-id')");
+  await exec("document.querySelector('#math-cancel').click()");
+  if(await exec("document.querySelector('#source').value")!==beforeSlotMath)throw Error('Cancel numbered component insertion changed source');
+  await exec("document.querySelector('#source-math').click()");
+  await until("document.querySelector('#math-numbered')?.checked===false");
+  await exec("document.querySelector('#math-numbered').click()");
+  await until("document.querySelector('#math-numbered')?.checked===true&&!!document.querySelector('#math-equation-id')");
+  const insertedSlotEqId=(await exec("document.querySelector('#math-equation-id').textContent")).match(/eq-[a-f0-9-]+/)?.[0];
+  if(!insertedSlotEqId)throw Error('Missing new component equation ID');
+  await exec("document.querySelector('#math-apply').click()");
+  await until("document.querySelector('#source').value.includes("+JSON.stringify('#'+insertedSlotEqId+' numbered="true"')+")&&!document.querySelector('#math-formula')");
+  await until("(()=>{const e=document.querySelector('#source');return e.value.slice(e.selectionStart,e.selectionEnd)==='x^2';})()");
+  await exec("document.querySelector('#preview-button').click()");
+  await until("!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-named-slot=extra] [data-slot-display-math] [data-equation-number]')");
   await setInlineMathSource(beforeSlotMath);
   await until("document.querySelector('#source').value==="+JSON.stringify(beforeSlotMath)+" && !document.querySelector('#preview > div')");
   // Numbered component equation: paper selection includes the wrapper; editing changes only TeX.
