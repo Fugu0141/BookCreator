@@ -63,3 +63,14 @@ Component Lab supports converting a nested group to fixed-height Canvas, numeric
 ## M04 — Canvas direct manipulation and draft history
 
 Measured preview pointer drag, bounds and 0.1 mm snap, single-gesture commit, automatic remeasurement, selection outline, bounded 64-entry undo/redo for draft design changes. Explicit Apply/Discard preserved. Actual Electron mouse-event smoke and pure history/coordinate tests added. CI pending; no resize handles, global history, or full-page Canvas.
+
+
+## M04 — 数式関連サブマイルストーン完了 (2026-11-26)
+
+PR #54〜#64（および Engine #23〜#28）で数式構文、フォントロール、STIX Two Math、複数行、部品本文/名前付きslot、章別採番、永続ID参照、GUI編集、Lab、3原稿総合試験を拡充。#64 の最終head c2d2c0976256e3588b7d889143da929c3ebabf24 は Core checks 45763742917、Cross-library smoke test 45763742862、Desktop workspace PoC 45763742900 が全て成功、main merge a3db29bc32d6809bfe43a7d97b634d7b7405f57f。実PDF preflight は3ページ、10数式、6採番ラベル、160×200mm、STIX埋込、3ページのラスタ検査成功。参照ログ: https://github.com/Fugu0141/BookCreator/actions/runs/45763742862 。これは数式関連のPoC完了であり、M04全体やQ15開発版公開、出版可能性の認定ではない。
+
+未対応: 完全なTeX/BCM構文、全グリフ校正・全OSの字体差、図表/脚注/目次の全機能、正式PDF、保存済みsnapshot確定、ライセンス/公開ゲート。歴史的な上記各節の未確認記述はその時点の記録であり、現状の根拠はこの節と各PR/CIを参照。
+
+## M05（作業上の仮称）— 試しPDF出力の共通基盤
+
+revision/fingerprint、全計画、エラーなし、紙面寸法/順序を検証する trial print projection を追加。新しく生成した未接続の組版DOMだけを対象とし、ガイドとプレビュー枠を除去して固定ページを印刷する。M04の実PDF fixtureで共通処理を使う回帰試験に変更。CI未確認。Desktop保存UI/安全なファイル置換/正式出力は未実装。
