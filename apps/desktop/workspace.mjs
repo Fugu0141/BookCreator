@@ -144,6 +144,16 @@ function sourceInfo(bytes){
   const mixed=rest.includes('\r')||(crlf>0&&rest.includes('\n'));
   return {text:text.replace(/\r\n|\r/g,'\n'),bom,eol:crlf?'\r\n':'\n',editable:!mixed};
 }
+// Read only the registered manifest for the recovery hub; do not load
+// every manuscript or activate a workspace while listing candidates.
+export async function recoveryManifest(manifestPath){
+  if(basename(manifestPath)!=='book.yaml'||(await lstat(manifestPath)).isSymbolicLink())fail('MANIFEST','Select a regular book.yaml file');
+  const root=await realpath(dirname(resolve(manifestPath)));
+  const manifest=await inside(root,'book.yaml');
+  const m=await readRegular(manifest,MAX_MANIFEST);
+  const summary=parseManifest(decode(m.bytes));
+  return {manifestPath:manifest,sections:summary.sections.filter(s=>s.editable)};
+}
 export async function openWorkspace(manifestPath){
   if(basename(manifestPath)!=='book.yaml'||(await lstat(manifestPath)).isSymbolicLink())fail('MANIFEST','Select a regular book.yaml file');
   const root=await realpath(dirname(resolve(manifestPath)));
