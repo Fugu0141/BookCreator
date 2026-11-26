@@ -21,6 +21,7 @@ const parseStructuredInline=value=>parsePreviewInline(value,0,parsePreviewMath);
 const deps={scan:scanDocument,validate:validateScannedBlocks,index:indexBlockIds,validateDisplayMath:parseDisplayMath,validateInlineMath:parsePreviewMath,parseReference:parseReferenceToken};
 import {recoverySession} from './recovery-session.mjs';
 import {settingsDraftSession} from './settings-draft-session.mjs';
+import {createLayoutRequestGate} from './layout-request-gate.mjs';
 const api=window.bookcreator;
 const studyNames={note:'補足',tip:'ポイント',warning:'注意',important:'重要',example:'例題',exercise:'練習問題',explanation:'解説'};
 const noto='BCFont_NotoSansJP',stix='BCFont_STIXTwoMath';
@@ -191,6 +192,8 @@ function App(){
   function saveTheme(){if(typographyLocked||!theme?.editable||!themeDirty)return;void io(async()=>{await persistSettings('typography');setStatus('テーマを保存しました。');});}
   function setRole(role,key,value){if(typographyLocked)return;setTypography(t=>({...t,[role]:{...t[role],[key]:value,...(key==='fontFamily'&&fonts.some(f=>f.alias===value)?{fontWeight:weightsFor(value)[0]}:key==='fontFamily'&&![400,500,600,700].includes(t[role].fontWeight)?{fontWeight:400}:{})}}));invalidate();setStatus('書籍プレビューのフォント設定を変更しました（未保存）。');}
   const textarea=useRef(null),preview=useRef(null),generation=useRef(0),working=useRef(false);
+  const layoutGate=useRef(null);
+  if(!layoutGate.current)layoutGate.current=createLayoutRequestGate();
   const paperView=usePaperViewport(preview,mode==='layout',activePage,layoutState.phase==='ready');
   const [hasSelection,setHasSelection]=useState(false);
   const pendingDiagnostic=useRef(null),pendingSource=useRef(null);
@@ -325,7 +328,8 @@ function App(){
       return saved;
     }finally{controller?.resume(text);}
   }
-  const invalidate=()=>{generation.current++;pendingDiagnostic.current=null;pendingSource.current=null;preview.current?.replaceChildren();setLayoutDiagnostics([]);setShowDiagnostics(false);setLayoutPages([]);setActivePage(1);setPageJump('1');setMeasuring(false);setLayoutState(previous=>previous.phase==='idle'?previous:{...previous,phase:'stale',pages:0});};
+  const resetLayout=()=>{preview.current?.replaceChildren();setLayoutDiagnostics([]);setShowDiagnostics(false);setLayoutPages([]);setActivePage(1);setPageJump('1');setMeasuring(false);};
+  const invalidate=()=>{generation.current++;layoutGate.current.invalidate();pendingDiagnostic.current=null;pendingSource.current=null;resetLayout();setLayoutState(previous=>previous.phase==='idle'?previous:{...previous,phase:'stale',pages:0});};
   const confirmDiscard=()=>!dirty||window.confirm('未保存の変更を破棄しますか？');
   const confirmProjectDiscard=()=>!(dirty||themeDirty||settingsDirty)||window.confirm('未保存の原稿・テーマ・書籍設定を破棄しますか？');
   async function io(fn){if(working.current)return;working.current=true;setBusy(true);try{await fn();}catch(e){setStatus(String(e.message??e));}finally{working.current=false;setBusy(false);}}
@@ -517,7 +521,7 @@ function App(){
     }catch(e){setStatus(String(e.message??e));}
   }
   async function render(whole=false){
-    if(!book||(!whole&&!file)||busy)return;if(mode==='writing'&&compactWriting)setCompactPane('paper');else setShowPaper(true);invalidate();const job=generation.current,scope=whole?'book':'manuscript';setMeasuring(true);setLayoutState({phase:'running',scope,pages:0});setStatus('実測組版中…');
+    if(!book||(!whole&&!file)||busy)return;if(mode==='writing'&&compactWriting)setCompactPane('paper');else setShowPaper(true);const job=layoutGate.current.begin(),scope=whole?'book':'manuscript';resetLayout();setMeasuring(true);setLayoutState({phase:'running',scope,pages:0});setStatus('実測組版中…');
     const raw=text;let diagnostics=[],documents=[];
     try{
       if(theme?.componentMessage||theme?.paragraphMessage||theme?.studyMessage)throw Error('部品定義が未対応です: '+(theme.componentMessage??theme.paragraphMessage??theme.studyMessage));
@@ -529,7 +533,7 @@ function App(){
       const needsContext=raw.includes(':ref{')||/:::layout\{/.test(raw)||raw.includes('answer-to')||hasDynamicLabels(theme?.headingDesign)||Object.values(theme?.headingLevels??{}).some(hasDynamicLabels)||Object.values(theme?.studyDesigns??{}).some(hasStudyNumbering)||(theme?.library?.entries??[]).some(e=>e.usage==='study'&&hasStudyNumbering(e.design));
       if(whole||needsContext){
         const snapshot=await unwrap(api.readBook());
-        if(job!==generation.current)return;
+        if(!layoutGate.current.isCurrent(job))return;
         const byId=new Map(snapshot.map(d=>[d.documentId,d]));
         documents=order.map(s=>{
           const d=byId.get(s.id);if(!d)throw Error('原稿構成が変わりました。');
@@ -554,7 +558,7 @@ function App(){
         }
       }
       const result=await createPlainTextPagePreview(document,{...options,paper:geometry.paper,resolveImage});
-      if(job!==generation.current)return;
+      if(!layoutGate.current.isCurrent(job))return;
       preview.current.append(result.element);
       const pageNodes=[...result.element.shadowRoot.querySelectorAll('[data-page]')];
       const sourceIds=new Map(pageNodes.map(node=>[node,new Set()]));
@@ -563,7 +567,7 @@ function App(){
         const slice=result.slices[i];if(!slice)return;
         sourceIds.get(el.closest('[data-page]'))?.add(slice.origin.documentId);
         const bind=(node,range)=>{if(!range)return;node.tabIndex=0;node.style.cursor='pointer';
-          const focus=()=>{if(job!==generation.current)return;if(slice.origin.documentId!==file?.id){setStatus('この断片は '+slice.origin.documentId+' の原稿です。左の原稿一覧から開いてください。');return;}const reveal=()=>{if(job!==generation.current)return;textarea.current.focus();textarea.current.setSelectionRange(range.start,range.end);};if(!textarea.current.getClientRects().length){if(routeBlockRef.current||composing.current){setStatus('編集中の操作を完了してから原稿に戻ってください。');return;}setMode('writing');setEditorView('source');setShowSettings(false);setShowPaper(true);setCompactPane('editor');requestAnimationFrame(reveal);}else reveal();};
+          const focus=()=>{if(!layoutGate.current.isCurrent(job))return;if(slice.origin.documentId!==file?.id){setStatus('この断片は '+slice.origin.documentId+' の原稿です。左の原稿一覧から開いてください。');return;}const reveal=()=>{if(!layoutGate.current.isCurrent(job))return;textarea.current.focus();textarea.current.setSelectionRange(range.start,range.end);};if(!textarea.current.getClientRects().length){if(routeBlockRef.current||composing.current){setStatus('編集中の操作を完了してから原稿に戻ってください。');return;}setMode('writing');setEditorView('source');setShowSettings(false);setShowPaper(true);setCompactPane('editor');requestAnimationFrame(reveal);}else reveal();};
           node.addEventListener('click',e=>{e.stopPropagation();focus();});node.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();e.stopPropagation();focus();}});
         };
         const block=sourceBlocks.get(JSON.stringify([slice.origin.documentId,slice.origin.blockKey]));
@@ -583,8 +587,8 @@ function App(){
       setActivePage(1);setPageJump('1');preview.current.scrollTop=0;preview.current.scrollLeft=0;
       setLayoutState({phase:'ready',scope,pages:result.plan.pages.length});
       setStatus(result.plan.pages.length+' ページ · '+(whole?'書籍全体':'選択原稿')+' · 実測プレビュー（出版不可）');
-    }catch(e){if(job===generation.current){setLayoutState({phase:'failed',scope,pages:0});setLayoutDiagnostics(diagnosticRecords(diagnostics,documents,e));setStatus(String(e.message??e));}}
-    finally{if(job===generation.current)setMeasuring(false);}
+    }catch(e){if(layoutGate.current.isCurrent(job)){setLayoutState({phase:'failed',scope,pages:0});setLayoutDiagnostics(diagnosticRecords(diagnostics,documents,e));setStatus(String(e.message??e));}}
+    finally{if(layoutGate.current.isCurrent(job))setMeasuring(false);}
   }
   function navigatePage(number){
     if(layoutState.phase!=='ready'||!Number.isInteger(number)||number<1||number>layoutPages.length)return;
