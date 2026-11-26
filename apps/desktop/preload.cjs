@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld('bookcreator',Object.freeze({
   },
   completeClose:(token,decision)=>ipcRenderer.invoke('bookcreator:complete-close',token,decision),
   open:()=>ipcRenderer.invoke('bookcreator:open'),
+  listRecoveryCandidates:()=>ipcRenderer.invoke('bookcreator:listRecoveryCandidates'),
   listProjects:()=>ipcRenderer.invoke('bookcreator:listProjects'),
   openRegisteredProject:id=>ipcRenderer.invoke('bookcreator:openRegisteredProject',id),
   favoriteProject:(id,value)=>ipcRenderer.invoke('bookcreator:favoriteProject',id,value),
