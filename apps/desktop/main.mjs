@@ -166,6 +166,7 @@ async function packageSmoke(){
   const sample='# 二次方程式\n\n本文 $x^2$ です。\n\n:::layout{#eq-test numbered="true"}\n$$\n\\frac{1}{2}\n$$\n:::\n';
   await exec("(()=>{const el=document.querySelector('#source');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(el,"+JSON.stringify(sample)+");el.dispatchEvent(new Event('input',{bubbles:true}));})()");
   await until("document.querySelector('#source').value==="+JSON.stringify(sample));
+  if(!await exec("document.querySelector('#workspace-save-state').textContent==='未保存：原稿・テーマ'&&document.querySelector('#workspace-layout-state').dataset.phase==='idle'"))throw Error('Independent unsaved targets missing');
   if(!await exec("document.querySelector('.workspace-shell').dataset.workspaceMode==='writing'&&!document.querySelector('#body-font').getClientRects().length&&!document.querySelector('#preview').getClientRects().length"))throw Error('Writing does not isolate design and paper controls');
   await exec("document.querySelector('#mode-design').click()");
   await until("document.querySelector('.workspace-shell').dataset.workspaceMode==='design'&&!!document.querySelector('#body-font').getClientRects().length&&!document.querySelector('#source').getClientRects().length");
@@ -173,6 +174,7 @@ async function packageSmoke(){
   await until("document.querySelector('.workspace-shell').dataset.workspaceMode==='layout'&&!!document.querySelector('#preview').getClientRects().length&&!document.querySelector('#source').getClientRects().length");
   await exec("document.querySelector('#mode-publication').click()");
   await until("document.querySelector('.workspace-shell').dataset.workspaceMode==='publication'&&!document.querySelector('#preview').getClientRects().length");
+  if(!await exec("document.querySelector('.publication-checks').textContent.includes('未保存：原稿・テーマ')&&document.querySelector('.publication-checks').textContent.includes('全冊の最新組版が必要')"))throw Error('Publication preparation state incorrect');
   await exec("document.querySelector('#mode-writing').click()");
   await until("document.querySelector('.workspace-shell').dataset.workspaceMode==='writing'&&!!document.querySelector('#source').getClientRects().length&&document.querySelector('#source').value==="+JSON.stringify(sample));
   await exec("document.querySelector('#preview-button').click()");
@@ -182,6 +184,21 @@ async function packageSmoke(){
   await exec("document.querySelector('#save').click()");
   await until("document.querySelector('#status').textContent.includes('保存しました')");
   if(await readFile(join(smokeRoot,'manuscript','chapter.md'),'utf8')!==sample)throw Error('Packaged app source save mismatch');
+  await until("document.querySelector('#workspace-save-state').textContent==='未保存：テーマ'&&document.querySelector('#workspace-layout-state').dataset.phase==='ready'&&document.querySelector('#workspace-layout-state').dataset.scope==='manuscript'");
+  // A saved manuscript does not imply a saved theme or a current whole-book plan.
+  await exec("document.querySelector('#mode-design').click()");
+  await until("document.querySelector('.workspace-shell').dataset.workspaceMode==='design'");
+  await exec("document.querySelector('#save-theme').click()");
+  await until("document.querySelector('#workspace-save-state').textContent==='保存済み'");
+  await exec("document.querySelector('#mode-writing').click()");
+  await until("document.querySelector('.workspace-shell').dataset.workspaceMode==='writing'");
+  await exec("(()=>{const e=document.querySelector('#source');e.dispatchEvent(new CompositionEvent('compositionstart',{bubbles:true,data:'あ'}));})()");
+  await until("document.querySelector('#mode-design').disabled");
+  await exec("(()=>{const e=document.querySelector('#source');e.dispatchEvent(new CompositionEvent('compositionend',{bubbles:true,data:'あ'}));})()");
+  await until("!document.querySelector('#mode-design').disabled");
+  await exec("(()=>{const e=document.querySelector('#source');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(e,"+JSON.stringify(sample+'\n追記。\n')+");e.dispatchEvent(new Event('input',{bubbles:true}));})()");
+  await until("document.querySelector('#workspace-save-state').textContent==='未保存：原稿'&&document.querySelector('#workspace-layout-state').dataset.phase==='stale'&&!document.querySelector('#preview > div')");
+  if(await readFile(join(smokeRoot,'manuscript','chapter.md'),'utf8')!==sample)throw Error('Unsaved edit changed disk');
   const report='PASS portable Windows package: isolated renderer, workspace, math, bundled fonts, numbering, save';
   if(process.env.BC_PACKAGE_SMOKE_REPORT)await writeFile(process.env.BC_PACKAGE_SMOKE_REPORT,report+'\n',{flag:'wx'});
   console.log(report);
