@@ -346,7 +346,7 @@ async function liveWritingSmoke(){
   if(await readFile(themePath,'utf8')!==savedTheme)throw Error('Live style wrote the theme');
   await click('#discard-theme-roles');
   await until('discarded style',scopeReady('manuscript')+"&&document.querySelector('#workspace-save-state').textContent==='保存済み'");
-  await click('#mode-settings');
+  await click('#book-settings');
   await until('settings paper visible',scopeReady('book')+"&&"+visiblePaper+"&&document.querySelector('#book-settings-live-preview').checked");
   await change('#page-size','A5');
   await until('unsaved A5 geometry',scopeReady('book')+"&&Math.abs(parseFloat(document.querySelector('#preview > div').shadowRoot.querySelector('[data-page]').style.width)-148*96/25.4)<.1&&document.querySelector('#workspace-save-state').textContent.includes('書籍設定')");
