@@ -513,6 +513,28 @@ async function packageSmoke(){
   await until("!document.querySelector('#structured-list-apply')&&document.querySelector('#source').value==="+JSON.stringify(orderedFixture.replace('次の文章。','変更した項目。')));
   await exec("document.querySelector('#structured-undo').click()");
   await until("document.querySelector('#source').value==="+JSON.stringify(orderedFixture));
+  // UX-08f-4c: draft-only list insertion/removal, renumbering, cancellation and undo.
+  await exec("document.querySelector('[data-list-edit]').click()");
+  await exec("document.querySelector('[data-list-add=\"0\"]').click()");
+  await until("document.querySelectorAll('[data-list-value]').length===3&&document.querySelector('#structured-list-apply').disabled&&document.querySelector('#source').value==="+JSON.stringify(orderedFixture));
+  await exec("(()=>{const e=document.querySelector('[data-list-value=\"1\"]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,'追加した項目。');e.dispatchEvent(new Event('input',{bubbles:true}));})()");
+  await until("!document.querySelector('#structured-list-apply').disabled");
+  await exec("document.querySelector('#structured-list-apply').click()");
+  const addedList=orderedFixture.replace('2. 次の文章。','2. 追加した項目。\n3. 次の文章。');
+  await until("!document.querySelector('#structured-list-apply')&&document.querySelector('#source').value==="+JSON.stringify(addedList));
+  await exec("document.querySelector('[data-list-edit]').click()");
+  await exec("document.querySelector('[data-list-remove=\"1\"]').click()");
+  await until("document.querySelectorAll('[data-list-value]').length===2&&document.querySelector('#source').value==="+JSON.stringify(addedList));
+  await exec("document.querySelector('#structured-list-cancel').click()");
+  await until("document.querySelector('#source').value==="+JSON.stringify(addedList)+"&&!document.querySelector('#structured-list-apply')");
+  await exec("document.querySelector('[data-list-edit]').click()");
+  await exec("document.querySelector('[data-list-remove=\"1\"]').click()");
+  await exec("document.querySelector('#structured-list-apply').click()");
+  await until("document.querySelector('#source').value==="+JSON.stringify(orderedFixture));
+  await exec("document.querySelector('#structured-undo').click()");
+  await until("document.querySelector('#source').value==="+JSON.stringify(addedList));
+  await exec("document.querySelector('#structured-undo').click()");
+  await until("document.querySelector('#source').value==="+JSON.stringify(orderedFixture));
   await exec("(()=>{const e=document.querySelector('[data-structured-kind=list] details.structured-block-menu');if(!e.open)e.querySelector('summary').click();})()");
   await exec("document.querySelector('[data-list-convert=bullet]').click()");
   await until("document.querySelector('#source').value==="+JSON.stringify('# 章\n\n- 最初の文章。\n- 次の文章。\n'));
