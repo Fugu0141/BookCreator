@@ -362,6 +362,34 @@ async function packageSmoke(){
   await until("document.querySelector('#structured-apply').disabled");
   await exec("document.querySelector('#structured-cancel').click()");
   await until("!document.querySelector('#structured-value')&&document.querySelector('#source').value==="+JSON.stringify(formattedStructured));
+  // UX-08c: engine-generated MathML, template preview, invalid input and inline atom edit.
+  await until("!!document.querySelector('[data-structured-kind=math] [data-structured-math=display] math')");
+  await exec("document.querySelector('[data-structured-kind=math] [data-structured-edit]').click()");
+  await setStructuredValue('\\notacommand{x}');
+  await until("document.querySelector('#structured-apply').disabled&&document.querySelector('[data-structured-kind=math] [data-structured-math]').dataset.state==='invalid'");
+  await exec("document.querySelector('[data-structured-kind=math] [data-structured-template]').click()");
+  await until("!document.querySelector('#structured-apply').disabled&&!!document.querySelector('[data-structured-kind=math] [data-structured-math] mfrac')");
+  await exec("document.querySelector('#structured-apply').click()");
+  const fractionStructured=formattedStructured.replace('x^3','\\frac{a}{b}');
+  await until("!document.querySelector('#structured-value')&&document.querySelector('#source').value==="+JSON.stringify(fractionStructured));
+  await exec("document.querySelector('[data-structured-kind=paragraph] [data-structured-edit]').click()");
+  await setStructuredValue('**新しい**本文です。\n次の行です。\n式 $x^2$ と $y^2$ です。');
+  await exec("document.querySelector('#structured-apply').click()");
+  const inlineStructured=fractionStructured.replace('次の行です。','次の行です。\n式 $x^2$ と $y^2$ です。');
+  await until("!document.querySelector('#structured-value')&&document.querySelector('#source').value==="+JSON.stringify(inlineStructured)+"&&document.querySelectorAll('[data-structured-kind=paragraph] [data-structured-math=inline] math').length===2");
+  await exec("document.querySelector('[data-structured-kind=paragraph] [data-structured-edit]').click()");
+  await exec("document.querySelectorAll('[data-structured-inline-edit]')[1].click()");
+  await until("document.querySelector('#structured-inline-formula').value==='y^2'&&document.querySelector('#structured-apply').disabled");
+  const setInlineFormula=value=>exec("(()=>{const e=document.querySelector('#structured-inline-formula');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,"+JSON.stringify(value)+");e.dispatchEvent(new Event('input',{bubbles:true}));})()");
+  await setInlineFormula('\\notacommand{x}');
+  await until("document.querySelector('#structured-inline-update').disabled");
+  await setInlineFormula('y^3');
+  await exec("document.querySelector('#structured-inline-update').click()");
+  await until("!document.querySelector('#structured-inline-formula')&&document.querySelector('#structured-value').value.includes('$y^3$')&&!document.querySelector('#structured-apply').disabled");
+  if(!await exec("document.querySelector('#source').value==="+JSON.stringify(inlineStructured)))throw Error('Inline draft prematurely changed source');
+  await exec("document.querySelector('#structured-apply').click()");
+  await until("!document.querySelector('#structured-value')&&document.querySelector('#source').value==="+JSON.stringify(inlineStructured.replace('$y^2$','$y^3$')));
+
 
   await exec("document.querySelector('[data-structured-kind=directive] [data-structured-source]').click()");
   await until("!document.querySelector('#source').hidden&&document.querySelector('#source').value.slice(document.querySelector('#source').selectionStart,document.querySelector('#source').selectionEnd).includes('eq-test')");
