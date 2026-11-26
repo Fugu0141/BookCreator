@@ -842,7 +842,7 @@ test('component inline math keeps independent source envelopes in primary and na
   const design={...defaultHeadingDesign(),direction:'column',children:[{id:'content',type:'content'},{id:'hint',type:'slot',name:'hint',width:'fill',fontSize:3500,lineHeight:1.5,color:'#123456'}]};
   const library={schemaVersion:3,entries:[{id,name:'数式部品',usage:'study',design}]};
   for(const nl of ['\n','\r\n']){
-    const source=['::::component{name="'+id+'"}',':::slot{name="hint"}','ヒント $\\sqrt{x}$ です。',':::',':::slot{name="content"}','**係数** $\\frac{1}{2}$ です。',':::','::::',''].join(nl);
+    const source=['::::component{name="'+id+'"}',':::slot{name="hint"}','ヒント $\\sqrt{x}$ です。',':::','',':::slot{name="content"}','**係数** $\\frac{1}{2}$ です。',':::','::::',''].join(nl);
     const doc={documentId:'slots',revision:'1',source,startOn:'page'};
     for(const p of [prepareBrowserPreview(doc,'1','slots',size,deps,undefined,library),prepareBookBrowserPreview([doc],'1','slots',size,deps,undefined,undefined,undefined,defaultParagraphDesign(),undefined,library)]){
       assert.deepEqual(p.diagnostics,[]);
