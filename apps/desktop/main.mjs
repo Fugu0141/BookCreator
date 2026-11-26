@@ -1745,7 +1745,7 @@ async function componentRecoveryJourneySmoke(){
   await until('unified list cleared',"document.querySelector('#hub-recovery-summary')?.textContent==='0 件の復旧候補'&&!document.querySelector('#hub-recovery-warning')");
   await click('#hub-projects');await click('#hub-recovery');
   await until('refreshed list cleared',"document.querySelector('#hub-recovery-summary')?.textContent==='0 件の復旧候補'");
-  await raw("document.querySelector('.hub-sidebar button:last-of-type').click()");
+  await click('#hub-return-writing');
   await until('returned to writing',"document.querySelector('.workspace-shell').dataset.workspaceMode==='writing'");
   console.log('PASS UX-10g-5 home recovery routes for settings and registered component, list cleanup');
 }
