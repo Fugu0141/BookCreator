@@ -75,10 +75,38 @@ export function planMixedEdit(source,draft,{scan,parseInline,applyPatches,projec
   if(before.diagnostics.length||!row?.mixed||!Array.isArray(draft.values))throw Error('本文の構造が変更されました。');
   const parts=mixedDraftParts(row.mixed,draft).parts;
   const {value}=composeMixed(parts,draft.values);
+  return replaceMixedParagraph(source,before,at,row,value,{scan,parseInline,applyPatches,project});
+}
+function replaceMixedParagraph(source,before,at,row,value,{scan,parseInline,applyPatches,project},allowReference=false){
   const body=row.raw.replace(/(?:\r\n|\n)$/,''),suffix=row.raw.slice(body.length);
   const crlf=row.raw.includes('\r\n')||(!row.raw.includes('\n')&&source.includes('\r\n'));
   const replacement=(crlf?value.replace(/\n/g,'\r\n'):value)+suffix;
   const next=applyPatches(source,[{range:row.range,expected:row.raw,replacement}]),after=project(next,scan,parseInline);
-  if(after.diagnostics.length||after.rows.length!==before.rows.length||after.rows.some((r,i)=>i!==at&&(r.raw!==before.rows[i].raw||r.kind!==before.rows[i].kind))||!after.rows[at]?.mixed||after.rows[at].raw!==replacement||after.rows[at].kind!==row.kind)throw Error('周囲の原稿構造が変化しました。');
+  if(after.diagnostics.length||after.rows.length!==before.rows.length||after.rows.some((r,i)=>i!==at&&(r.raw!==before.rows[i].raw||r.kind!==before.rows[i].kind))||!after.rows[at]?.mixed||after.rows[at].raw!==replacement||(!allowReference&&after.rows[at].kind!==row.kind))throw Error('周囲の原稿構造が変化しました。');
   return next;
+}
+
+// Return a candidate for the book-wide reference transaction. No reference changes
+// are permitted through the normal mixed-draft apply path.
+export function planMixedReference(source,draft,request,options){
+  const currentSource=planMixedEdit(source,draft,options);
+  const {scan,parseInline,project}=options,before=project(currentSource,scan,parseInline);
+  const at=before.rows.findIndex(r=>r.range.start===draft.row.range.start),row=before.rows[at];
+  if(!row?.mixed||before.diagnostics.length)throw Error('本文の構造が変化しました。');
+  const parts=row.mixed.parts.slice(),part=parts[request.part];
+  const {targetId,format}=request;
+  if(!part||!Number.isSafeInteger(request.part)||!['number','label-number'].includes(format)||typeof targetId!=='string'||!/^[A-Za-z][A-Za-z0-9_.-]{0,127}$/.test(targetId))throw Error('参照先が不正です。');
+  const atom={kind:'reference',raw:':ref{target="'+targetId+'" format="'+format+'"}',target:targetId,format};
+  if(request.mode==='edit'){
+    if(part.kind!=='reference'||part.raw!==request.original)throw Error('元の参照が変化しました。');
+    parts[request.part]=atom;
+  }else if(request.mode==='insert'){
+    const pos=request.start;
+    if(part.kind!=='text'||part.value!==request.original||!Number.isSafeInteger(pos)||pos!==request.end||pos<0||pos>part.value.length)throw Error('文章のカーソル位置を指定してください。');
+    const boundaries=new Set([part.value.length,...Array.from(new Intl.Segmenter(undefined,{granularity:'grapheme'}).segment(part.value),g=>g.index)]);
+    if(!boundaries.has(pos))throw Error('文字の途中には挿入できません。');
+    parts.splice(request.part,1,{kind:'text',value:part.value.slice(0,pos)},atom,{kind:'text',value:part.value.slice(pos)});
+  }else throw Error('未対応の参照操作');
+  const {value}=composeMixed(parts,parts.filter(p=>p.kind==='text').map(p=>p.value));
+  return replaceMixedParagraph(currentSource,before,at,row,value,options,true);
 }
