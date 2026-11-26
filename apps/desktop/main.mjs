@@ -1167,6 +1167,7 @@ async function packageSmoke(){
   await until("document.querySelector('#source').value==="+JSON.stringify(sample+'\n追記。\n'));
   await writingJourneySmoke();
   await recoveryJourneySmoke();
+  await settingsRecoveryJourneySmoke();
   await nativeCloseSmoke('discard');
   const report='PASS portable Windows package: isolated renderer, workspace, math, bundled fonts, numbering, save, new-book writing journey and renderer reload';
   if(process.env.BC_PACKAGE_SMOKE_REPORT)await writeFile(process.env.BC_PACKAGE_SMOKE_REPORT,report+'\n',{flag:'wx'});
@@ -1512,6 +1513,49 @@ async function recoveryJourneySmoke(){
   await until('explicit discard',"!document.querySelector('#recovery-dialog').open&&!document.querySelector('#source').readOnly&&document.querySelector('#workspace-save-state').textContent==='保存済み'");
   if(await store.get(key)||await readFile(path,'utf8')!==saved)throw Error('Discard changed original or kept recovery');
   console.log('PASS UX-10f-2 packaged checkpoint, deferred review, restore without overwriting and explicit discard');
+}
+// Exercise the packaged typed settings recovery UI without modifying the
+// writing-journey restart oracle's saved manifest or theme.
+async function settingsRecoveryJourneySmoke(){
+  const raw=js=>win.webContents.executeJavaScript(js);
+  const until=async(label,js)=>{for(let i=0;i<150;i++){if(await raw(js))return;await new Promise(r=>setTimeout(r,100));}throw Error('Settings recovery journey: '+label+'; '+await raw("document.querySelector('#status')?.textContent"));};
+  const click=async selector=>{
+    await until('reachable '+selector,"(()=>{const e=document.querySelector("+JSON.stringify(selector)+");return !!e?.getClientRects().length&&!e.disabled;})()");
+    await raw("document.querySelector("+JSON.stringify(selector)+").click()");
+  };
+  const change=async(selector,value)=>raw("(()=>{const e=document.querySelector("+JSON.stringify(selector)+");if(!e?.getClientRects().length||e.disabled)throw Error('Select unavailable');e.value="+JSON.stringify(value)+";e.dispatchEvent(new Event('change',{bubbles:true}));})()");
+  const root=join(smokeRoot,'writing-journey'),manifest=join(root,'book.yaml'),theme=join(root,'themes','default','theme.yaml');
+  const savedManifest=await readFile(manifest,'utf8'),savedTheme=await readFile(theme,'utf8'),store=recoveryStore(smokeRoot,'settings');
+  await click('#mode-design');await click('#design-tab-styles');
+  const font=await raw("document.querySelector('#body-font').value==='serif'?'sans-serif':'serif'");
+  await change('#body-font',font);
+  await click('#book-settings');
+  const size=await raw("document.querySelector('#page-size').value==='A4'?'A5':'A4'");
+  await change('#page-size',size);
+  await until('both recorded',"['typography','book-settings'].every(k=>document.querySelector('#settings-recovery-state-'+k)?.dataset.phase==='recorded')");
+  if((await store.list()).records.length!==2||await readFile(manifest,'utf8')!==savedManifest||await readFile(theme,'utf8')!==savedTheme)throw Error('Settings checkpoint changed ordinary files');
+  await win.loadURL(PAGE);
+  await until('home catalog',"[...document.querySelectorAll('.hub-project-open')].some(e=>e.querySelector('strong')?.textContent==='執筆フロー検証書籍'&&!e.disabled)");
+  await raw("(()=>{const e=[...document.querySelectorAll('.hub-project-open')].find(e=>e.querySelector('strong')?.textContent==='執筆フロー検証書籍');e.click();})()");
+  await until('both candidates',"['typography','book-settings'].every(k=>!!document.querySelector('#settings-recovery-review-'+k))");
+  await click('#mode-design');await click('#design-tab-styles');
+  await until('locked typography',"document.querySelector('#body-font').disabled");
+  await click('#settings-recovery-review-typography');
+  await until('comparison',"document.querySelector('#settings-recovery-dialog').open&&!!document.querySelector('#settings-recovery-restore')");
+  await click('#settings-recovery-later');
+  await until('deferred',"!document.querySelector('#settings-recovery-dialog').open&&document.querySelector('#body-font').disabled");
+  await click('#settings-recovery-review-typography');await click('#settings-recovery-restore');
+  await until('font restored',"!document.querySelector('#settings-recovery-dialog').open&&document.querySelector('#body-font').value==="+JSON.stringify(font)+"&&document.querySelector('#workspace-save-state').textContent.includes('テーマ')");
+  await click('#settings-recovery-review-book-settings');await click('#settings-recovery-restore');
+  await until('size restored',"!document.querySelector('#settings-recovery-dialog').open&&document.querySelector('#page-size').value==="+JSON.stringify(size)+"&&document.querySelector('#workspace-save-state').textContent==='未保存：テーマ・書籍設定'");
+  if(await readFile(manifest,'utf8')!==savedManifest||await readFile(theme,'utf8')!==savedTheme)throw Error('Settings recovery overwrote original');
+  await click('#discard-book-settings');await click('#mode-design');await click('#design-tab-styles');await click('#discard-theme-roles');
+  await until('clean settings',"document.querySelector('#workspace-save-state').textContent==='保存済み'");
+  for(let i=0;i<100;i++){if(!(await store.list()).records.length)break;await new Promise(r=>setTimeout(r,100));}
+  if((await store.list()).records.length||await readFile(manifest,'utf8')!==savedManifest||await readFile(theme,'utf8')!==savedTheme)throw Error('Settings discard failed');
+  await click('#mode-writing');await click('[data-section=chapter-01]');
+  await until('manuscript returned',"document.querySelector('#workspace-save-state').textContent==='保存済み'&&!document.querySelector('#source').disabled");
+  console.log('PASS UX-10g-2 packaged settings checkpoint, locked review, restore and discard without changing originals');
 }
 async function nativeCloseSmoke(decision){
   const raw=js=>win.webContents.executeJavaScript(js);
