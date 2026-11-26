@@ -230,5 +230,47 @@ export async function runBookBenchmark(win,app,root,fixture){
   await click('#performance-toggle');
   if(!paragraphEmpty(await paragraphStats()))throw Error('Paragraph cache survived book reopen');
   await click('#performance-close');await setParagraphComparison(false);
-  console.log('BENCH report '+JSON.stringify({version:7,fixtureVersion:2,cacheComparison,phaseComparisons,mathComparison,mathComparisons,paragraphComparison,paragraphComparisons,chapters:fixture.chapters.map(c=>({id:c.id,characters:c.source.length,sections:c.sections,blocks:c.blocks})),initialMemory,finalMemory:memory(),samples,summary,baselineCache,baselineMath,baselineParagraph,finalCache}));
+  // The previous session-release check leaves us in writing mode with no file
+  // selected and all experimental caches off. Measure actual source input, not
+  // another explicit refresh. Change exactly one existing paragraph, not a
+  // new block, and restore the synthetic manuscript after every arm.
+  const edited=large.source.replace('実測組版を確認します。','増分組版を確認します。');
+  if(edited===large.source||edited.length!==large.source.length||edited.split('増分組版を確認します。').length!==2)throw Error('Invalid single-paragraph edit fixture');
+  await measure('paragraph-edit-open','manuscript',()=>click('[data-section='+large.id+']'),"document.querySelector('#source').value==="+JSON.stringify(large.source));
+  if(!await raw("document.querySelector('#live-preview').checked"))throw Error('Live edit benchmark needs automatic preview');
+  const originalPaper=await paperSignature();
+  const paragraphEditComparisons=[];
+  for(const {pair,order} of cacheComparisonPlan()){
+    let editedPaper;
+    for(const arm of order){
+      const enabled=arm==='warm';
+      await setParagraphComparison(enabled);
+      await raw("document.querySelector('#preview > div').dataset.paperProbe='old'");
+      const primeLabel='paragraph-edit-prime-'+pair+'-'+arm;
+      await measure(primeLabel,'manuscript',()=>click('#preview-button'),"document.querySelector('#preview > div').dataset.paperProbe!=='old'");
+      if(await paperSignature()!==originalPaper)throw Error('Live edit prime differs from original paper');
+      const prime=await readParagraphComparison('manuscript',enabled);
+      if(enabled&&prime.stats.entries<=0)throw Error('Live edit prime must retain paragraph plans');
+      await raw("document.querySelector('#source').focus()");
+      const label='paragraph-edit-pair-'+pair+'-'+arm;
+      await measure(label,'manuscript',()=>setSource(edited),paperText('増分組版を確認します。')+"&&document.activeElement.id==='source'");
+      const signature=await paperSignature();
+      if(signature===originalPaper)throw Error('Live edit did not change paper');
+      if(editedPaper===undefined)editedPaper=signature;
+      else if(editedPaper!==signature)throw Error('Live edit paper differs between modes');
+      const after=await readParagraphComparison('manuscript',enabled);
+      if(after.phase.count!==prime.phase.count+1)throw Error('Expected one successful live edit phase sample');
+      if(enabled){
+        if(after.stats.misses-prime.stats.misses!==1||after.stats.hits<=prime.stats.hits)throw Error('Expected only the edited paragraph to be remeasured');
+      }else if(!paragraphEmpty(prime.stats)||!paragraphEmpty(after.stats))throw Error('Disabled paragraph cache accumulated data during edit');
+      paragraphEditComparisons.push({pair,arm,elapsedMs:samples.find(s=>s.label===label).elapsedMs,
+        primeElapsedMs:samples.find(s=>s.label===primeLabel).elapsedMs,primeTimings:prime.phase.timings,timings:after.phase.timings,prime:prime.stats,after:after.stats});
+      await raw("document.querySelector('#source').focus()");
+      await measure('paragraph-edit-restore-'+pair+'-'+arm,'manuscript',()=>setSource(large.source),"!"+paperText('増分組版を確認します。')+"&&document.querySelector('#workspace-save-state').textContent==='保存済み'");
+      if(await paperSignature()!==originalPaper||await readFile(join(root,'manuscript',large.id+'.md'),'utf8')!==large.source)throw Error('Live edit fixture not restored');
+    }
+  }
+  await setParagraphComparison(false);
+  const paragraphEditComparison=summarizeCacheComparison(paragraphEditComparisons.map(s=>({label:'cache-pair-'+s.pair+'-'+s.arm,scope:'manuscript',elapsedMs:s.elapsedMs})),'manuscript');
+  console.log('BENCH report '+JSON.stringify({version:8,fixtureVersion:2,paragraphEditComparison,paragraphEditComparisons,cacheComparison,phaseComparisons,mathComparison,mathComparisons,paragraphComparison,paragraphComparisons,chapters:fixture.chapters.map(c=>({id:c.id,characters:c.source.length,sections:c.sections,blocks:c.blocks})),initialMemory,finalMemory:memory(),samples,summary,baselineCache,baselineMath,baselineParagraph,finalCache}));
 }
