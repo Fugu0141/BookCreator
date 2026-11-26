@@ -6,7 +6,7 @@ import {join,dirname} from 'node:path';
 import {createProject} from '../workspace.mjs';
 import {componentRecovery} from '../component-recovery.mjs';
 import {recoveryStore} from '../manuscript-recovery.mjs';
-import {defaultHeadingDesign,defaultParagraphDesign,defaultStudyDesign} from '../../../dist/preview-component.js';
+import {defaultHeadingDesign,defaultParagraphDesign,defaultStudyDesign} from '../../../dist/index.js';
 async function fixture(t){
   const root=await mkdtemp(join(tmpdir(),'bc-component-draft-'));
   t.after(()=>rm(root,{recursive:true,force:true}));
