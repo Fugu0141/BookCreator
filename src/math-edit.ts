@@ -170,8 +170,10 @@ export function inspectComponentDisplayMath<S extends Scan>(source:string,start:
   const item=result.items.find(i=>i.kind==='study'&&i.origin.range.start===owner.range.start&&i.origin.range.end===owner.range.end);
   if(!item)return fail('Expected a semantic study component');
   const slots=[{name:'content',text:item.text,sourceTextStart:item.sourceTextStart!},...(item.namedSlots??[])];
-  const slot=slots.find(s=>start>=s.sourceTextStart&&end<=s.sourceTextStart+s.text.length);
-  if(!slot)return fail('Place the caret within a component text slot');
+  const slot=slots.find(s=>s.sourceTextStart!==undefined&&start>=s.sourceTextStart&&end<=s.sourceTextStart+s.text.length);
+  if(!slot||slot.sourceTextStart===undefined)return fail('Place the caret within a component text slot');
+  const slotStart=slot.sourceTextStart;
+  if(source.slice(slotStart,slotStart+slot.text.length)!==slot.text)return fail('Cannot establish exact component slot source');
   const parsed=parsePreviewInline(slot.text,slot.sourceTextStart,deps.validateInlineMath,undefined,true);
   const base={component:true as const,slot:slot.name,ownerStart:owner.range.start,ownerEnd:owner.range.end};
   for(const atom of parsed.inlineMath.filter(a=>a.display)){
@@ -182,7 +184,7 @@ export function inspectComponentDisplayMath<S extends Scan>(source:string,start:
   const blank:Scan['blocks'][number][]=[];
   function collect(children:Scan['blocks']){for(const b of children){if(b.kind==='blank')blank.push(b);else if(b.kind==='directive')collect(b.children);}}
   if(owner.kind==='directive')collect(owner.children);
-  const line=blank.find(b=>start>=b.range.start&&start<b.range.end&&b.range.start>slot.sourceTextStart&&b.range.end<slot.sourceTextStart+slot.text.length);
+  const line=blank.find(b=>start>=b.range.start&&start<b.range.end&&b.range.start>slotStart&&b.range.end<slotStart+slot.text.length);
   if(!line)return fail('Place the caret on an internal blank line in the text slot');
   return {...base,mode:'insert',start:line.range.start,end:line.range.start,formula:'x^2'};
 }
