@@ -46,6 +46,12 @@ async function render(){
   finally{if(job===revision)button.disabled=false;}
 }
 button.addEventListener('click',()=>void render());
+const mathSample=['# 二次方程式','','**例題** 次の式を解く。','',':::layout{#eq-demo numbered="true"}','$$','x^2-5x+6=0','$$',':::','','::::callout{kind="note"}','式 :ref{target="eq-demo"} を因数分解する。','',':::layout{#eq-factor numbered="true"}','$$','(x-2)(x-3)=0','$$',':::','','解は $x=2$ または $x=3$。','::::',''].join('\n');
+const initialSource=source.value;
+document.querySelector('#sample-math').addEventListener('click',()=>{
+  if(source.value!==initialSource&&source.value!==mathSample&&!window.confirm('現在の入力をサンプルに置き換えますか？'))return;
+  source.value=mathSample;width.value='140';height.value='180';invalidate();void render();
+});
 if(new URLSearchParams(location.search).has('smoke')){
   const report=document.querySelector('#smoke');
   try{
