@@ -620,23 +620,25 @@ function App(){
       const target=paperTarget(scope),display=paperDisplay.current;
       const sparse=(sparsePaperPages||retainedMode)&&!pageCache&&!reusePaperPages;
       const lease=sparse?display.getSparseBase(preview.current,target):null;
-      let result,retainedError=false,priorityPages=[],firstVisitedPage=null,provisionalCount=0;
+      let result,retainedError=false,priorityPages=[],firstVisitedPage=null,provisionalCount=0,checkpoint=null;
       try{
         result=await measurementLane.run(()=>{
           if(!retainedMode)return sparse?createIncrementalTextPagePreview(document,previewOptions,lease?.snapshot):createPlainTextPagePreview(document,previewOptions);
           // Read at lane entry, after any waiting, from the exact retained host.
           if(lease&&display.getSparseBase(preview.current,target)===lease)priorityPages=visiblePaperPageIndices(preview.current,lease.host);
           if(automatic&&mode==='writing'&&scope==='manuscript'&&priorityPages.length)provisional=display.beginProvisional(preview.current,target,lease,current);
-          const checkpoint=createPreviewCheckpoint({current});
+          checkpoint=createPreviewCheckpoint({current});
           return createRetainedTextPagePreview(document,previewOptions,lease?.snapshot,(stage,index)=>{
             if(stage==='render-page'&&firstVisitedPage===null&&Number.isSafeInteger(index))firstVisitedPage=index;
-            return checkpoint();
+            return checkpoint(stage);
           },priorityPages,provisional?async page=>{
             if(!current())throw Error('Preview superseded');
             if(provisional.show(page)){
               provisionalCount++;
               // Give the browser a task boundary for painting and input.
+              checkpoint.beforeExternalTask();
               await new Promise(resolve=>setTimeout(resolve,0));
+              checkpoint.resumeAfterTask();
               if(!current())throw Error('Preview superseded');
             }
           }:undefined);
@@ -668,7 +670,7 @@ function App(){
       if(host){
         delete host.dataset.retainedWork;
         if(retainedMode&&!sparseFallback&&result.paginationWork&&result.measurementWork){
-          host.dataset.retainedWork=JSON.stringify({pagination:result.paginationWork,measurement:result.measurementWork,scan:{hits:scanAfter.hits-scanBefore.hits,misses:scanAfter.misses-scanBefore.misses},priorityPages,firstVisitedPage,provisionalCount});
+          host.dataset.retainedWork=JSON.stringify({pagination:result.paginationWork,measurement:result.measurementWork,scan:{hits:scanAfter.hits-scanBefore.hits,misses:scanAfter.misses-scanBefore.misses},priorityPages,firstVisitedPage,provisionalCount,checkpoint:checkpoint?.snapshot()});
         }
       }
       const {pages,retained}=publication;
