@@ -1,3 +1,4 @@
+import {createProvisionalPaper} from './provisional-paper.mjs';
 import {prepareSparsePaperAssembly} from './sparse-paper-assembly.mjs';
 import {planPaperPageReuse} from './paper-page-reuse.mjs';
 import {preparePaperNavigationTransfer} from './paper-navigation.mjs';
@@ -30,14 +31,16 @@ function patchPaper(host,next){
 // The paper display owns the last successful host, not the editor or its data.
 export function createPaperDisplay(){
   let target=null,host=null,sparseBase=null;
-  function forgetSparseBase(){sparseBase=null;}
+  const provisional=createProvisionalPaper();
+  function forgetSparseBase(){provisional.clear();sparseBase=null;}
   function getSparseBase(viewport,key){
     return sparseBase&&host===sparseBase.host&&target===key&&host.parentNode===viewport&&host.inert===true?sparseBase:null;
   }
   function clear(viewport){
-    viewport?.replaceChildren();target=null;host=null;forgetSparseBase();
+    provisional.clear();viewport?.replaceChildren();target=null;host=null;forgetSparseBase();
   }
   function retain(viewport,key){
+    provisional.clear();
     if(!host||target!==key||host.parentNode!==viewport){clear(viewport);return false;}
     host.inert=true;
     host.dataset.paperFreshness='previous';
@@ -61,6 +64,7 @@ export function createPaperDisplay(){
   // attach a partial host. The caller supplies a synchronous metadata adapter
   // which binds the latest source ranges to the final ordered nodes.
   function publishSparse(viewport,key,result,lease,describe){
+    provisional.clear();
     const omitted=result.pageDelta?.reusedPageIndices?.length;
     const base=getSparseBase(viewport,key);
     if(omitted&&(!base||base!==lease))return null;
@@ -99,5 +103,9 @@ export function createPaperDisplay(){
       clear(viewport);return null;
     }
   }
-  return {clear,retain,publish,getSparseBase,forgetSparseBase,publishSparse};
+  function beginProvisional(viewport,key,lease,current){
+    if(!lease||getSparseBase(viewport,key)!==lease)return null;
+    return provisional.begin({viewport,host:lease.host,current,owns:()=>getSparseBase(viewport,key)===lease});
+  }
+  return {clear,retain,publish,getSparseBase,forgetSparseBase,publishSparse,beginProvisional};
 }
