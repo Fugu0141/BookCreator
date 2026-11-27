@@ -2147,7 +2147,7 @@ async function smoke(){
   await exec("document.querySelector('#math-apply').click()");
   const editedInlineSource=mixedInlineMath.replace(inlineMathSource,'$'+editedInline+'$');
   await until("document.querySelector('#source').value==="+JSON.stringify(editedInlineSource));
-  await until("(()=>{const e=document.querySelector('#source');return e.value.slice(e.selectionStart,e.selectionEnd)==="+JSON.stringify(editedInline)+";})()");
+  await until("(()=>{const e=document.querySelector('#source');return !e.disabled&&document.activeElement===e&&e.value.slice(e.selectionStart,e.selectionEnd)==="+JSON.stringify(editedInline)+";})()");
   await exec("(()=>{const e=document.querySelector('#source'),p=e.value.lastIndexOf('を使います。');e.focus();e.setSelectionRange(p,p);document.querySelector('#source-inline-math').click();})()");
   await until("document.querySelector('#math-formula')?.value==='x^2'");
   await exec("document.querySelector('#math-apply').click()");
