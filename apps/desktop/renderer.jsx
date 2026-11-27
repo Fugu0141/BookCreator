@@ -622,6 +622,7 @@ function App(){
       const current=()=>layoutScheduler.current.isCurrent(job);
       const snapshot=whole||input.needsContext?await retryPreviewRead(()=>unwrap(api.readPreviewBook(book.settingRecovery.token)),{current,category:'source'}):undefined;
       if(!layoutScheduler.current.isCurrent(job))return;
+      const preparationStarted=performance.now();
       documents=collectLayoutDocuments(input,snapshot);
       const scanBefore=scanSession?.stats();
       const prepared=prepareLayoutOptions(input,documents,prepareBookBrowserPreview,scanSession?{...deps,scanSession}:deps);
@@ -630,6 +631,7 @@ function App(){
       if(!prepared.options)throw Error(diagnostics.map(d=>d.code+' '+d.message).join('\n'));
       const options=prepared.options;
       validateLayoutOptions(options,input.fonts);
+      const preparationMs=performance.now()-preparationStarted;
       const geometry=input.geometry;
       const previewOptions={...options,paper:geometry.paper,measurementCache,paragraphCache,pageCache,...mathOptions,collectTimings:true,resolveImage:id=>resolveImage(id,current)};
       const target=paperTarget(scope),display=paperDisplay.current;
@@ -685,7 +687,7 @@ function App(){
       if(host){
         delete host.dataset.retainedWork;
         if(retainedMode&&!sparseFallback&&result.paginationWork&&result.measurementWork){
-          host.dataset.retainedWork=JSON.stringify({pagination:result.paginationWork,measurement:result.measurementWork,scan:{hits:scanAfter.hits-scanBefore.hits,misses:scanAfter.misses-scanBefore.misses},priorityPages,firstVisitedPage,provisionalCount,checkpoint:checkpoint?.snapshot()});
+          host.dataset.retainedWork=JSON.stringify({pagination:result.paginationWork,measurement:result.measurementWork,scan:{hits:scanAfter.hits-scanBefore.hits,misses:scanAfter.misses-scanBefore.misses},priorityPages,firstVisitedPage,provisionalCount,checkpoint:checkpoint?.snapshot(),hostTiming:{preparationMs,publicationMs:performance.now()-presentationStarted}});
         }
       }
       const {pages,retained}=publication;
