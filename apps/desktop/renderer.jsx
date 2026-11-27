@@ -5,7 +5,7 @@ import {createEditPreviewTracker} from './edit-preview-metrics.mjs';
 import {PerformancePanel} from './performance-panel.jsx';
 import {retryPreviewRead,unwrapIpc} from './preview-read-retry.mjs';
 import {CatalogSpecimen} from './catalog-specimen.jsx';
-import React,{useState,useRef,useEffect} from 'react';
+import React,{useState,useRef,useEffect,useLayoutEffect} from 'react';
 import {createRoot} from 'react-dom/client';
 import {createManuscriptScanSession,parsePreviewInline,prepareBrowserPreview,prepareBookBrowserPreview,previewSourceRange,planInlineFormat,planListFormat,planListIndent,planListBatch,inspectDisplayMath,planDisplayMath,inspectInlineMath,planInlineMath,inspectComponentDisplayMath,planComponentDisplayMath,equationReferenceTargets,planEquationReference,planEquationNumbering,planNumberedComponentDisplayMath,hasDynamicLabels,hasStudyNumbering,studyTemplate,studyKinds,defaultStudyDesign,customStudyTemplate,isCustomComponentId,linkedStudyTemplate,slottedStudyTemplate,namedSlotDefinitions} from '../../dist/index.js';
 import {scanDocument,scanDocumentIncremental,validateScannedBlocks,indexBlockIds,applyPatches,parseReferenceToken} from '../../../BookCreator_Markdown/dist/index.js';
@@ -412,6 +412,20 @@ function App(){
   },[file?.id,file?.revision,file?.editable,text,isComposing,structuredComposing,recoveryCandidate]);
 
   const [mathDraft,setMathDraft]=useState(null),mathPreview=useRef(null),mathComposing=useRef(false);
+  const pendingMathSelection=useRef(null);
+  // Restore selection only after React commits the edited value and unlocks
+  // the source field. A frame callback can run while async IPC is still busy.
+  useLayoutEffect(()=>{
+    const p=pendingMathSelection.current;
+    if(!p)return;
+    if(generation.current!==p.job||textarea.current!==p.node||file?.id!==p.fileId||mode!=='writing'||editorView!=='source'){
+      pendingMathSelection.current=null;return;
+    }
+    if(busy||mathDraft||p.node.disabled)return;
+    pendingMathSelection.current=null;
+    if(p.node.value!==p.value||!p.node.isConnected||composing.current)return;
+    p.node.focus();p.node.setSelectionRange(p.start,p.end);syncSelection();
+  },[text,busy,mathDraft,file?.id,mode,editorView]);
   const MathField=mathDraft?.kind==='display'?'textarea':'input';
   const mathStale=!!mathDraft&&(mathDraft.fileId!==file?.id||mathDraft.revision!==file?.revision||mathDraft.job!==generation.current||mathDraft.source!==text);
   let mathError='';
@@ -447,8 +461,7 @@ function App(){
       const plan=mathDraft.kind==='inline'?planInlineMath(text,mathDraft.start,mathDraft.end,mathDraft.formula,deps,context):mathDraft.component?(mathDraft.mode==='insert'&&mathDraft.numbered?planNumberedComponentDisplayMath(context.documents,context.documentId,mathDraft.start,mathDraft.end,mathDraft.formula,mathDraft.equationId,deps):planComponentDisplayMath(text,mathDraft.start,mathDraft.end,mathDraft.formula,deps,context)):planDisplayMath(text,mathDraft.start,mathDraft.end,mathDraft.formula,scanDocument,parseDisplayMath,mathDraft.mode==='insert'&&mathDraft.numbered?mathDraft.equationId:undefined);
       const next=applyPatches(text,[plan.patch]);
       setMathDraft(null);edit(next);setStatus((mathDraft.kind==='inline'?'本文内数式':'独立数式')+'を'+(plan.action==='apply'?'挿入':'更新')+'しました（未保存）。');
-      const job=generation.current;
-      requestAnimationFrame(()=>{if(textarea.current===node&&generation.current===job&&node.value===next){node.focus();node.setSelectionRange(plan.selection.start,plan.selection.end);}});
+      pendingMathSelection.current={node,fileId:file.id,job:generation.current,value:next,start:plan.selection.start,end:plan.selection.end};
     };
     try{
       if(mathStale||node.value!==mathDraft.source)throw Error('原稿が変更されました。数式エディタを開き直してください。');
@@ -620,23 +633,25 @@ function App(){
       const target=paperTarget(scope),display=paperDisplay.current;
       const sparse=(sparsePaperPages||retainedMode)&&!pageCache&&!reusePaperPages;
       const lease=sparse?display.getSparseBase(preview.current,target):null;
-      let result,retainedError=false,priorityPages=[],firstVisitedPage=null,provisionalCount=0;
+      let result,retainedError=false,priorityPages=[],firstVisitedPage=null,provisionalCount=0,checkpoint=null;
       try{
         result=await measurementLane.run(()=>{
           if(!retainedMode)return sparse?createIncrementalTextPagePreview(document,previewOptions,lease?.snapshot):createPlainTextPagePreview(document,previewOptions);
           // Read at lane entry, after any waiting, from the exact retained host.
           if(lease&&display.getSparseBase(preview.current,target)===lease)priorityPages=visiblePaperPageIndices(preview.current,lease.host);
           if(automatic&&mode==='writing'&&scope==='manuscript'&&priorityPages.length)provisional=display.beginProvisional(preview.current,target,lease,current);
-          const checkpoint=createPreviewCheckpoint({current});
+          checkpoint=createPreviewCheckpoint({current});
           return createRetainedTextPagePreview(document,previewOptions,lease?.snapshot,(stage,index)=>{
             if(stage==='render-page'&&firstVisitedPage===null&&Number.isSafeInteger(index))firstVisitedPage=index;
-            return checkpoint();
+            return checkpoint(stage);
           },priorityPages,provisional?async page=>{
             if(!current())throw Error('Preview superseded');
             if(provisional.show(page)){
               provisionalCount++;
               // Give the browser a task boundary for painting and input.
+              checkpoint.beforeExternalTask();
               await new Promise(resolve=>setTimeout(resolve,0));
+              checkpoint.resumeAfterTask();
               if(!current())throw Error('Preview superseded');
             }
           }:undefined);
@@ -668,7 +683,7 @@ function App(){
       if(host){
         delete host.dataset.retainedWork;
         if(retainedMode&&!sparseFallback&&result.paginationWork&&result.measurementWork){
-          host.dataset.retainedWork=JSON.stringify({pagination:result.paginationWork,measurement:result.measurementWork,scan:{hits:scanAfter.hits-scanBefore.hits,misses:scanAfter.misses-scanBefore.misses},priorityPages,firstVisitedPage,provisionalCount});
+          host.dataset.retainedWork=JSON.stringify({pagination:result.paginationWork,measurement:result.measurementWork,scan:{hits:scanAfter.hits-scanBefore.hits,misses:scanAfter.misses-scanBefore.misses},priorityPages,firstVisitedPage,provisionalCount,checkpoint:checkpoint?.snapshot()});
         }
       }
       const {pages,retained}=publication;

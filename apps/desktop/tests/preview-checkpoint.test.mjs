@@ -33,3 +33,32 @@ test('task errors are not hidden and invalid budgets are rejected',async()=>{
   time=8;await assert.rejects(checkpoint(),e=>e===failure);
   assert.throws(()=>createPreviewCheckpoint({current:()=>true,budgetMs:0}),TypeError);
 });
+
+test('stage gaps and provisional task budget reset exclude explicit task wait',async()=>{
+  let time=0,yields=0;
+  const checkpoint=createPreviewCheckpoint({current:()=>true,now:()=>time,yieldTask:async()=>{yields++;time+=50;}});
+  time=3;checkpoint('validated');
+  time=7;checkpoint('render-page');
+  time=9;checkpoint.beforeExternalTask();
+  time=109;checkpoint.resumeAfterTask();
+  time=112;assert.equal(checkpoint('render-page'),undefined);
+  time=118;await checkpoint('complete');
+  const stats=checkpoint.snapshot();
+  assert.equal(yields,1);assert.equal(stats.yields,1);
+  assert.equal(stats.maxSliceMs,9);
+  assert.deepEqual(stats.byStage['render-page'],{count:2,maxGapMs:4});
+  assert.deepEqual(stats.byStage.provisional,{count:1,maxGapMs:2});
+  assert.deepEqual(stats.byStage.complete,{count:1,maxGapMs:6});
+  stats.byStage.complete.count=999;
+  assert.equal(checkpoint.snapshot().byStage.complete.count,1);
+});
+test('diagnostics count superseded checkpoints without storing arbitrary stage names',()=>{
+  let current=true,time=0;
+  const checkpoint=createPreviewCheckpoint({current:()=>current,now:()=>time});
+  time=2;checkpoint('unrecognized');
+  current=false;time=3;assert.throws(()=>checkpoint('measure-block'),/superseded/);
+  const stats=checkpoint.snapshot();
+  assert.equal(stats.cancelled,1);assert.equal(stats.byStage.other.count,1);
+  assert.equal(stats.byStage['measure-block'].count,1);
+  assert.equal(Object.hasOwn(stats.byStage,'unrecognized'),false);
+});
