@@ -349,6 +349,7 @@ async function liveWritingSmoke(){
   await click('#mode-writing');await click('[data-section=chapter]');
   await until('initial paper',scopeReady('manuscript')+"&&!!document.querySelector('#preview').getClientRects().length&&!!document.querySelector('#preview > div').dataset.retainedWork");
   if(await raw("!!document.querySelector('#layout-pages')"))throw Error('Hidden page list mounted during writing');
+  if(await raw("!!document.querySelector('.workspace-publication #publication-save')"))throw Error('Hidden publication controls mounted during writing');
   await click('#performance-toggle');
   if(!await raw("document.querySelector('#performance-retained-preview').checked"))throw Error('Retained preview must start enabled');
   await click('#performance-close');
@@ -697,6 +698,7 @@ async function packageSmoke(){
   await until("document.querySelector('.workspace-shell').dataset.workspaceMode==='writing'&&!!document.querySelector('#source').getClientRects().length&&document.querySelector('#source').value==="+JSON.stringify(sample));
   const workspaceKey=(key,ctrl=false)=>exec("(()=>{const e=document.querySelector('#source');e.dispatchEvent(new KeyboardEvent('keydown',{key:"+JSON.stringify(key)+",ctrlKey:"+JSON.stringify(ctrl)+",bubbles:true,cancelable:true}));})()");
   await until("!document.querySelector('.workspace-main').classList.contains('compact-writing')&&!document.querySelector('#workspace-outline').hidden&&!document.querySelector('.editor').hidden&&!document.querySelector('#toggle-outline').disabled");
+  if(!await exec("!!document.querySelector('#workspace-outline button.selected[data-section=chapter]')&&!document.querySelector('#workspace-outline button.selected').disabled"))throw Error('Outline lost selected section after editing and navigation');
   const editorWidth=await exec("document.querySelector('.editor').getBoundingClientRect().width");
   await exec("document.querySelector('#toggle-outline').click()");
   await until("document.querySelector('#workspace-outline').hidden&&document.querySelector('#toggle-outline').getAttribute('aria-expanded')==='false'");
