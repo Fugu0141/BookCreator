@@ -37,3 +37,20 @@ test('default coalescing delay is 100ms and custom timing remains injectable',()
   assert.deepEqual(cancelled,[1,3]);
   assert.deepEqual(calls,['latest']);
 });
+
+test('per-request timing replaces pending work without changing the default',()=>{
+  const scheduled=[],cancelled=[],calls=[];
+  const delay=createLivePreviewDelay({schedule:(fn,ms)=>{scheduled.push({fn,ms});return scheduled.length;},unschedule:id=>cancelled.push(id)});
+  delay.request(()=>calls.push('cold'));
+  delay.request(()=>calls.push('warm'),16);
+  delay.request(()=>calls.push('latest'),16);
+  assert.deepEqual(scheduled.map(x=>x.ms),[100,16,16]);
+  assert.deepEqual(cancelled,[1,2]);
+  scheduled.forEach(x=>x.fn());scheduled[2].fn();
+  assert.deepEqual(calls,['latest']);
+  delay.request(()=>calls.push('default'));
+  assert.equal(scheduled[3].ms,100);
+  assert.throws(()=>delay.request(()=>{},-1),RangeError);
+  assert.throws(()=>delay.request(()=>{},NaN),RangeError);
+  scheduled[3].fn();assert.deepEqual(calls,['latest','default']);
+});

@@ -472,6 +472,15 @@ async function liveWritingSmoke(){
   if(!work||work.measurement.reusedBlocks<1||work.pagination.reusedBlocks<1||work.scan.misses!==1)throw Error('Retained edit did not reuse block work: '+JSON.stringify(work));
   if(!await raw("(()=>{const h=document.querySelector('#preview > div'),p=[...h.shadowRoot.querySelectorAll('[data-page]')],old=window.__bcRetainedProbe;return h===old.host&&p[0]!==old.pages[0]&&p.slice(1).some((n,i)=>n===old.pages[i+1])&&document.activeElement.id==='source';})()"))throw Error('Retained preview lost paper identity or focus');
   if(!await raw("(()=>{const h=document.querySelector('#preview > div'),p=[...h.shadowRoot.querySelectorAll('[data-page]')],old=window.__bcRetainedProbe;const block=p.find((n,i)=>i>0&&n===old.pages[i])?.querySelector('[data-block][tabindex]');if(!block)return false;block.click();const e=document.querySelector('#source');return document.activeElement===e&&e.selectionEnd>e.selectionStart;})()"))throw Error('Retained preview navigation failed');
+  // Burst intervals exceed the short wait, so in-flight work may be superseded.
+  // Do not assert wall-clock timing on shared CI runners.
+  for(const label of ['連続確認甲','連続確認乙']){
+    await setSource(longSource.replace('見出し',label));
+    await new Promise(r=>setTimeout(r,35));
+  }
+  await setSource(editedLong);
+  await until('retained latest burst published',scopeReady('manuscript')+"&&document.querySelector('#preview > div').shadowRoot.textContent.includes('目次例')&&!document.querySelector('#preview > div').shadowRoot.textContent.includes('連続確認甲')&&!document.querySelector('#preview > div').shadowRoot.textContent.includes('連続確認乙')&&document.activeElement.id==='source'");
+  if(await readFile(path,'utf8')!==saved)throw Error('Retained burst changed saved manuscript');
   await raw("window.__bcRetainedProbe.expected=[...document.querySelector('#preview > div').shadowRoot.querySelectorAll('[data-page]')].map(p=>p.cloneNode(true))");
   await click('#performance-toggle');await click('#performance-retained-preview');await click('#performance-close');
   await click('#preview-button');

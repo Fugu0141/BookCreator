@@ -12,3 +12,9 @@ export function desiredLivePreviewScope({enabled,mode,paperVisible,hasBook,hasFi
   if(phase==='running'||(phase==='ready'||phase==='failed')&&scope===desired)return null;
   return desired;
 }
+
+// Only shorten the coalescing window when a matching retained paper lease
+// exists. Cold starts and expensive book/settings requests stay conservative.
+export function livePreviewWaitMs({mode,scope,retained,warmRetained}){
+  return mode==='writing'&&scope==='manuscript'&&retained===true&&warmRetained===true?16:100;
+}
