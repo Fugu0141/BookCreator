@@ -1,18 +1,19 @@
 import React,{useMemo,useRef,useState,useLayoutEffect} from 'react';
 import {projectBlocks,planStructuredEdit} from './structured-blocks.mjs';
+import {projectStructuredEditor} from './structured-projection.mjs';
 import {FormulaPreview,FormulaTemplates,InlineMathTools} from './structured-math.jsx';
-import {projectStudy,planStudyEdit} from './structured-study.mjs';
+import {planStudyEdit} from './structured-study.mjs';
 import {StudyEditor} from './structured-study-editor.jsx';
 import {RichTextEditor} from './structured-rich-editor.jsx';
 import {MixedParagraph} from './structured-mixed-editor.jsx';
 import {planMixedEdit,mixedOrigin,planMixedRemoval,planMixedRange} from './structured-mixed.mjs';
 import {richProjection} from './structured-rich-text.mjs';
 import {planListDraft,listDraftRow,planListAction,splitListInput,canResizeList} from './structured-list.mjs';
-import {projectEquation,planStructuredEquation} from './structured-equation.mjs';
+import {planStructuredEquation} from './structured-equation.mjs';
 import {canBlockOperation,insertionChoices,structuredInsertionOptions,studyInsertionSlots} from './structured-operations.mjs';
 
 export function StructuredEditor({source,editable,blocked,draft,setDraft,onApply,onSource,scan,applyPatches,validateMath,parseInline,planFormat,mathFamily,onComposition,fontFamily,library,theme,history,onHistory,onOperation,onNumbering,onReference,onMixedReference,onRichReference,onMixedRemove,onMixedRange,referencePending,onStudyLinks,onListAction,onSplit}){
-  const projection=useMemo(()=>{const result=projectBlocks(source,scan,parseInline);if(!result.diagnostics.length){const blocks=scan(source).blocks;for(const row of result.rows)if(row.kind==='directive'){row.study=projectStudy(source,blocks[row.index]);row.equation=projectEquation(source,row,scan);}}return result;},[source,scan,parseInline]);
+  const projection=useMemo(()=>projectStructuredEditor(source,scan,parseInline),[source,scan,parseInline]);
   const field=useRef(null),[formatError,setFormatError]=useState(''),[insertKind,setInsertKind]=useState('paragraph'),[deleteRequest,setDeleteRequest]=useState(null),[includeOptional,setIncludeOptional]=useState(false),[insertOpen,setInsertOpen]=useState(false),[insertTarget,setInsertTarget]=useState(null);
   const insertField=useRef(null),root=useRef(null),pendingFocus=useRef(null),previousDraft=useRef(null),insertOrigin=useRef(null);
   const [focusedRow,setFocusedRow]=useState(null);
