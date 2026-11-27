@@ -350,6 +350,7 @@ async function liveWritingSmoke(){
   await until('initial paper',scopeReady('manuscript')+"&&!!document.querySelector('#preview').getClientRects().length&&!!document.querySelector('#preview > div').dataset.retainedWork");
   if(await raw("!!document.querySelector('#layout-pages')"))throw Error('Hidden page list mounted during writing');
   if(await raw("!!document.querySelector('.workspace-publication #publication-save')"))throw Error('Hidden publication controls mounted during writing');
+  if(await raw("!!document.querySelector('.hub-project-row,#component-catalog .catalog-card')"))throw Error('Hidden workspace lists mounted during writing');
   await click('#performance-toggle');
   if(!await raw("document.querySelector('#performance-retained-preview').checked"))throw Error('Retained preview must start enabled');
   await click('#performance-close');
@@ -684,6 +685,10 @@ async function packageSmoke(){
   await exec("(()=>{const e=document.querySelector('#component-search');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,'H3');e.dispatchEvent(new Event('input',{bubbles:true}));})()");
   await until("document.querySelectorAll('#component-catalog .catalog-card').length===1&&!!document.querySelector('[data-catalog-edit=heading-3]')");
   await until("(()=>{const card=document.querySelector('[data-component-key=heading-3]'),sample=card?.querySelector('.catalog-measured-paper > div');return card?.querySelector('.catalog-measured')?.dataset.previewPhase==='ready'&&sample?.inert===true&&!!sample.shadowRoot?.querySelector('[data-page]')&&!!sample.shadowRoot?.querySelector('[data-start]');})()");
+  await exec("document.querySelector('#design-tab-assets').click()");
+  await until("!document.querySelector('#component-catalog .catalog-card')");
+  await exec("document.querySelector('#design-tab-components').click()");
+  await until("document.querySelector('#component-search').value==='H3'&&document.querySelector('#component-filter').value==='heading'&&document.querySelectorAll('#component-catalog .catalog-card').length===1&&!!document.querySelector('[data-catalog-edit=heading-3]')");
   await exec("(()=>{const e=document.querySelector('#component-search');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,'');e.dispatchEvent(new Event('input',{bubbles:true}));})()");
   await exec("(()=>{const e=document.querySelector('#component-filter');e.value='all';e.dispatchEvent(new Event('change',{bubbles:true}));})()");
   await until("document.querySelectorAll('#component-catalog .catalog-card').length>=15");
@@ -2708,6 +2713,11 @@ async function smoke(){
   const customId=await exec("Array.from(document.querySelector('#lab-library-select').options).find(e=>e.textContent==='用語解説').value");
   await exec("document.querySelector('#lab-cancel').click()");
   await until("!document.querySelector('#lab-measure')");
+  // Catalog rows are only mounted on their real screen, not in the writing view.
+  await exec("document.querySelector('#mode-design').click()");
+  await until("document.querySelector('.workspace-shell').dataset.workspaceMode==='design'");
+  await exec("document.querySelector('#design-tab-components').click()");
+  await until("!document.querySelector('#design-panel-components').hidden&&!!document.querySelector('[data-catalog-edit=registered-"+customId+"]')");
   const catalogThemeBefore=await readFile(join(smokeRoot,'new-book','themes','default','theme.yaml'),'utf8');
   await exec("(()=>{const e=document.querySelector('#component-filter');e.value='registered';e.dispatchEvent(new Event('change',{bubbles:true}));})()");
   await until("!!document.querySelector('[data-catalog-edit=registered-"+customId+"]')");
@@ -2723,6 +2733,8 @@ async function smoke(){
   await until("document.querySelector('#lab-measure')&&document.querySelector('.component-lab header').textContent.includes('H3')");
   await exec("document.querySelector('#lab-cancel').click()");
   await until("!document.querySelector('#lab-measure')");
+  await exec("document.querySelector('#mode-writing').click()");
+  await until("document.querySelector('.workspace-shell').dataset.workspaceMode==='writing'&&!document.querySelector('#component-catalog .catalog-card')");
   // Restore the previous H1 target for the legacy quick-select regressions.
   await exec("(()=>{const e=document.querySelector('#lab-level');e.value='1';e.dispatchEvent(new Event('change',{bubbles:true}));})()");
   await until("document.querySelector('#lab-level').value==='1'");
