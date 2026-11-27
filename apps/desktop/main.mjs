@@ -348,6 +348,7 @@ async function liveWritingSmoke(){
   await until('whole book without selected manuscript',scopeReady('book')+"&&!document.querySelector('#source').value&&!!document.querySelector('#layout-pages')");
   await click('#mode-writing');await click('[data-section=chapter]');
   await until('initial paper',scopeReady('manuscript')+"&&!!document.querySelector('#preview').getClientRects().length&&!!document.querySelector('#preview > div').dataset.retainedWork");
+  if(await raw("!!document.querySelector('#layout-pages')"))throw Error('Hidden page list mounted during writing');
   await click('#performance-toggle');
   if(!await raw("document.querySelector('#performance-retained-preview').checked"))throw Error('Retained preview must start enabled');
   await click('#performance-close');
@@ -1364,10 +1365,10 @@ async function packageSmoke(){
   const paperViewportWidth=await exec("document.querySelector('#preview').getBoundingClientRect().width");
   await exec("document.querySelector('#toggle-page-list').click()");
   await exec("document.querySelector('#toggle-page-info').click()");
-  await until("document.querySelector('#layout-page-list').hidden&&document.querySelector('#layout-page-info').hidden&&document.querySelector('#preview').getBoundingClientRect().width>"+paperViewportWidth+"&&document.querySelector('#workspace-layout-state').dataset.phase==='ready'");
+  await until("document.querySelector('#layout-page-list').hidden&&!document.querySelector('#layout-pages')&&document.querySelector('#layout-page-info').hidden&&document.querySelector('#preview').getBoundingClientRect().width>"+paperViewportWidth+"&&document.querySelector('#workspace-layout-state').dataset.phase==='ready'");
   await exec("document.querySelector('#toggle-page-list').click()");
   await exec("document.querySelector('#toggle-page-info').click()");
-  await until("!document.querySelector('#layout-page-list').hidden&&!document.querySelector('#layout-page-info').hidden");
+  await until("!document.querySelector('#layout-page-list').hidden&&!!document.querySelector('#layout-pages')&&!document.querySelector('#layout-page-info').hidden");
   if(!await exec("document.querySelectorAll('[data-layout-page]').length===document.querySelector('#preview > div').shadowRoot.querySelectorAll('[data-page]').length&&document.querySelector('#layout-page-scope').textContent.includes('書籍全体')&&document.querySelector('.layout-page-info').textContent.includes('chapter')&&document.querySelector('#layout-prev').disabled"))throw Error('Page list does not represent measured pages');
   await exec("document.querySelector('#layout-next').click()");
   await until("document.querySelector('[data-layout-page=\"2\"]').getAttribute('aria-current')==='page'&&document.querySelector('#preview').scrollTop>0&&document.querySelector('#layout-page-jump').value==='2'");
