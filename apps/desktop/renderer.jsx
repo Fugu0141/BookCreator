@@ -30,6 +30,7 @@ import {recoverySession} from './recovery-session.mjs';
 import {settingsDraftSession} from './settings-draft-session.mjs';
 import {createLayoutScheduler} from './layout-scheduler.mjs';
 import {createPreviewCheckpoint} from './preview-checkpoint.mjs';
+import {visiblePaperPageIndices} from './viewport-page-priority.mjs';
 import {describeLayoutInput,collectLayoutDocuments,prepareLayoutOptions,validateLayoutOptions} from './layout-input.mjs';
 import {describeMeasuredPaper} from './measured-paper.mjs';
 import {createPaperDisplay} from './paper-display.mjs';
@@ -619,9 +620,18 @@ function App(){
       const target=paperTarget(scope),display=paperDisplay.current;
       const sparse=(sparsePaperPages||retainedMode)&&!pageCache&&!reusePaperPages;
       const lease=sparse?display.getSparseBase(preview.current,target):null;
-      let result,retainedError=false;
+      let result,retainedError=false,priorityPages=[],firstVisitedPage=null;
       try{
-        result=await measurementLane.run(()=>retainedMode?createRetainedTextPagePreview(document,previewOptions,lease?.snapshot,createPreviewCheckpoint({current})):sparse?createIncrementalTextPagePreview(document,previewOptions,lease?.snapshot):createPlainTextPagePreview(document,previewOptions),{current,category:scope});
+        result=await measurementLane.run(()=>{
+          if(!retainedMode)return sparse?createIncrementalTextPagePreview(document,previewOptions,lease?.snapshot):createPlainTextPagePreview(document,previewOptions);
+          // Read at lane entry, after any waiting, from the exact retained host.
+          if(lease&&display.getSparseBase(preview.current,target)===lease)priorityPages=visiblePaperPageIndices(preview.current,lease.host);
+          const checkpoint=createPreviewCheckpoint({current});
+          return createRetainedTextPagePreview(document,previewOptions,lease?.snapshot,(stage,index)=>{
+            if(stage==='render-page'&&firstVisitedPage===null&&Number.isSafeInteger(index))firstVisitedPage=index;
+            return checkpoint();
+          },priorityPages);
+        },{current,category:scope});
       }catch(e){if(!current())return;if(!retainedMode)throw e;retainedError=true;display.forgetSparseBase();}
       if((!result&&!retainedError)||!current())return;
       let presentationStarted=performance.now();
@@ -649,7 +659,7 @@ function App(){
       if(host){
         delete host.dataset.retainedWork;
         if(retainedMode&&!sparseFallback&&result.paginationWork&&result.measurementWork){
-          host.dataset.retainedWork=JSON.stringify({pagination:result.paginationWork,measurement:result.measurementWork,scan:{hits:scanAfter.hits-scanBefore.hits,misses:scanAfter.misses-scanBefore.misses}});
+          host.dataset.retainedWork=JSON.stringify({pagination:result.paginationWork,measurement:result.measurementWork,scan:{hits:scanAfter.hits-scanBefore.hits,misses:scanAfter.misses-scanBefore.misses},priorityPages,firstVisitedPage});
         }
       }
       const {pages,retained}=publication;

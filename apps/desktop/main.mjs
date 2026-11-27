@@ -466,10 +466,14 @@ async function liveWritingSmoke(){
   await click('#preview-button');
   await until('retained base published',scopeReady('manuscript')+"&&!!document.querySelector('#preview > div').dataset.retainedWork");
   await raw("(()=>{const h=document.querySelector('#preview > div');window.__bcRetainedProbe={host:h,pages:[...h.shadowRoot.querySelectorAll('[data-page]')]};document.querySelector('#source').focus();})()");
+  // Scroll to a later page before editing; the actual retained render must
+  // visit the visible page first even if its DOM can be reused.
+  const visibleIndex=await raw("(()=>{const v=document.querySelector('#preview'),p=v.firstElementChild.shadowRoot.children[1];v.scrollTop+=p.getBoundingClientRect().top-v.getBoundingClientRect().top-v.clientTop-2;return Number(p.dataset.page);})()");
   await setSource(editedLong);
   await until('retained edit published',scopeReady('manuscript')+"&&document.querySelector('#preview > div').shadowRoot.textContent.includes('目次例')&&!!document.querySelector('#preview > div').dataset.retainedWork");
   const work=await raw("JSON.parse(document.querySelector('#preview > div').dataset.retainedWork)");
   if(!work||work.measurement.reusedBlocks<1||work.pagination.reusedBlocks<1||work.scan.misses!==1)throw Error('Retained edit did not reuse block work: '+JSON.stringify(work));
+  if(visibleIndex<1||work.priorityPages?.[0]!==visibleIndex||work.firstVisitedPage!==visibleIndex)throw Error('Retained render did not prioritize scrolled paper: '+JSON.stringify(work));
   if(!await raw("(()=>{const h=document.querySelector('#preview > div'),p=[...h.shadowRoot.querySelectorAll('[data-page]')],old=window.__bcRetainedProbe;return h===old.host&&p[0]!==old.pages[0]&&p.slice(1).some((n,i)=>n===old.pages[i+1])&&document.activeElement.id==='source';})()"))throw Error('Retained preview lost paper identity or focus');
   if(!await raw("(()=>{const h=document.querySelector('#preview > div'),p=[...h.shadowRoot.querySelectorAll('[data-page]')],old=window.__bcRetainedProbe;const block=p.find((n,i)=>i>0&&n===old.pages[i])?.querySelector('[data-block][tabindex]');if(!block)return false;block.click();const e=document.querySelector('#source');return document.activeElement===e&&e.selectionEnd>e.selectionStart;})()"))throw Error('Retained preview navigation failed');
   // Burst intervals exceed the short wait, so in-flight work may be superseded.
