@@ -38,6 +38,7 @@ import {visiblePaperPageIndices} from './viewport-page-priority.mjs';
 import {describeLayoutInput,collectLayoutDocuments,prepareLayoutOptions,validateLayoutOptions} from './layout-input.mjs';
 import {describeMeasuredPaper} from './measured-paper.mjs';
 import {createPaperDisplay} from './paper-display.mjs';
+import {invalidateLayoutState,emptyIfNeeded} from './layout-invalidation-state.mjs';
 import {createLivePreviewDelay} from './live-preview-delay.mjs';
 import {desiredLivePreviewScope,livePreviewWaitMs} from './live-preview-policy.mjs';
 const api=window.bookcreator;
@@ -393,8 +394,16 @@ function App(){
       return saved;
     }finally{controller?.resume(text);}
   }
-  const resetLayout=(clear=false,scope=layoutState.scope)=>{const retained=!clear&&paperDisplay.current.retain(preview.current,paperTarget(scope));if(!retained){paperDisplay.current.clear(preview.current);setLayoutPages([]);setActivePage(1);setPageJump('1');}setLayoutDiagnostics([]);setShowDiagnostics(false);setMeasuring(false);return retained;};
-  const invalidate=(clear=false)=>{editPreviewTracker.current.reset();generation.current++;liveDelay.current.cancel();layoutScheduler.current.invalidate();pendingDiagnostic.current=null;pendingSource.current=null;resetLayout(clear);setLayoutState(previous=>clear?{phase:'idle',scope:null,pages:0}:previous.phase==='idle'?previous:{...previous,phase:'stale',pages:0});};
+  const resetLayout=(clear=false,scope=layoutState.scope)=>{
+    // retain() owns clearing a mismatched host. Explicit clear is separate.
+    const display=paperDisplay.current;
+    if(clear)display.clear(preview.current);
+    const retained=!clear&&display.retain(preview.current,paperTarget(scope));
+    if(!retained){setLayoutPages(emptyIfNeeded);setActivePage(1);setPageJump('1');}
+    setLayoutDiagnostics(emptyIfNeeded);setShowDiagnostics(false);setMeasuring(false);
+    return retained;
+  };
+  const invalidate=(clear=false)=>{editPreviewTracker.current.reset();generation.current++;liveDelay.current.cancel();layoutScheduler.current.invalidate();pendingDiagnostic.current=null;pendingSource.current=null;resetLayout(clear);setLayoutState(previous=>invalidateLayoutState(previous,clear));};
   const confirmDiscard=()=>!dirty||window.confirm('未保存の変更を破棄しますか？');
   const confirmProjectDiscard=()=>!(dirty||themeDirty||settingsDirty)||window.confirm('未保存の原稿・テーマ・書籍設定を破棄しますか？');
   async function io(fn){if(working.current)return;working.current=true;setBusy(true);try{await fn();}catch(e){setStatus(String(e.message??e));}finally{working.current=false;setBusy(false);}}
@@ -414,6 +423,7 @@ function App(){
   },[file?.id,file?.revision,file?.editable,text,isComposing,structuredComposing,recoveryCandidate]);
 
   const [mathDraft,setMathDraft]=useState(null),mathPreview=useRef(null),mathComposing=useRef(false);
+  const [referenceDraft,setReferenceDraft]=useState(null);
   const pendingEditSelection=useRef(null);
   // Restore command selection only after React commits the edited value and
   // unlocks the source field. Never leave a frame callback that can overwrite
@@ -424,11 +434,11 @@ function App(){
     if(!p.node||generation.current!==p.job||textarea.current!==p.node||file?.id!==p.fileId||mode!=='writing'||editorView!=='source'){
       pendingEditSelection.current=null;return;
     }
-    if(busy||mathDraft||p.node.disabled)return;
+    if(busy||mathDraft||referenceDraft||p.node.disabled)return;
     pendingEditSelection.current=null;
     if(p.node.value!==p.value||!p.node.isConnected||composing.current)return;
     p.node.focus();p.node.setSelectionRange(p.start,p.end);syncSelection();
-  },[text,busy,mathDraft,file?.id,mode,editorView]);
+  },[text,busy,mathDraft,referenceDraft,file?.id,mode,editorView]);
   const MathField=mathDraft?.kind==='display'?'textarea':'input';
   const mathStale=!!mathDraft&&(mathDraft.fileId!==file?.id||mathDraft.revision!==file?.revision||mathDraft.job!==generation.current||mathDraft.source!==text);
   let mathError='';
@@ -472,7 +482,6 @@ function App(){
       else apply();
     }catch(e){setStatus('数式編集不可：'+String(e.message??e));}
   }
-  const [referenceDraft,setReferenceDraft]=useState(null);
   const referenceStale=!!referenceDraft&&(referenceDraft.fileId!==file?.id||referenceDraft.revision!==file?.revision||referenceDraft.job!==generation.current||referenceDraft.source!==text);
   async function referenceDocuments(raw){
     const snapshot=await unwrap(api.readBook()),byId=new Map(snapshot.map(d=>[d.documentId,d]));
@@ -543,8 +552,7 @@ function App(){
       const plan=planEquationReference(documents,file.id,draft.start,draft.end,draft.targetId,draft.format,deps);
       const next=applyPatches(text,[plan.patch]);
       setReferenceDraft(null);if(draft.structured){setStructuredDraft(null);commitStructured(next);setStatus('数式参照を挿入しました（未保存）。参照を含む本文の追加編集はソース編集で行えます。');return;}edit(next);setStatus('数式参照を挿入しました（未保存）。');
-      const job=generation.current;
-      requestAnimationFrame(()=>{if(textarea.current===node&&generation.current===job&&node.value===next){node.focus();node.setSelectionRange(plan.selection.start,plan.selection.end);}});
+      pendingEditSelection.current={node,fileId:file.id,job:generation.current,value:next,start:plan.selection.start,end:plan.selection.end};
     });
   }
   const [inlineColor,setInlineColor]=useState('#c2410c'),[inlineFamily,setInlineFamily]=useState('monospace'),[inlineWeight,setInlineWeight]=useState(400),[inlineSize,setInlineSize]=useState('4.2');

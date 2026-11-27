@@ -21,7 +21,11 @@ export async function runBookBenchmark(win,app,root,fixture){
     while(performance.now()<deadline){
       const state=await raw("({matched:!!("+js+"),failed:document.querySelector('#workspace-layout-state')?.dataset.phase==='failed'})");
       if(state.matched)return;
-      if(state.failed&&label!=='oversized blocks rejected')throw Error('Benchmark failed: '+label+'; '+await raw("document.querySelector('#workspace-diagnostic-list')?.textContent||document.querySelector('#status')?.textContent"));
+      if(state.failed&&label!=='oversized blocks rejected'&&label!=='enabled #toggle-diagnostics'){
+        await raw("(()=>{const b=document.querySelector('#toggle-diagnostics');if(b&&!b.disabled&&b.getAttribute('aria-expanded')==='false')b.click();})()");
+        await sleep(25);
+        throw Error('Benchmark failed: '+label+'; '+await raw("document.querySelector('#workspace-diagnostic-list')?.textContent||document.querySelector('#status')?.textContent"));
+      }
       await sleep(25);
     }
     throw Error('Benchmark timeout: '+label+'; '+await raw("JSON.stringify({phase:document.querySelector('#workspace-layout-state')?.dataset.phase,scope:document.querySelector('#workspace-layout-state')?.dataset.scope,sourceLength:document.querySelector('#source')?.value.length,freshness:document.querySelector('#preview > div')?.dataset.paperFreshness,inert:document.querySelector('#preview > div')?.inert,diagnostics:document.querySelector('#workspace-diagnostic-list')?.textContent,status:document.querySelector('#status')?.textContent})"));
@@ -75,6 +79,9 @@ export async function runBookBenchmark(win,app,root,fixture){
   // Exercise the existing hard boundary separately from the successful workloads.
   await setSource(fixture.oversizedSource);
   await until('oversized input committed',"document.querySelector('#source').value==="+JSON.stringify(fixture.oversizedSource));
+  await until('oversized blocks rejected',"document.querySelector('#workspace-layout-state')?.dataset.phase==='failed'");
+  if(await raw("!!document.querySelector('#workspace-diagnostic-list')"))throw Error('Hidden diagnostics unexpectedly mounted');
+  await click('#toggle-diagnostics');
   await until('oversized blocks rejected',"document.querySelector('#workspace-layout-state')?.dataset.phase==='failed'&&document.querySelector('#workspace-diagnostic-list')?.textContent.includes('128')&&document.querySelector('#preview > div')?.dataset.paperFreshness==='previous'&&document.querySelector('#preview > div').inert");
   await measure('large-limit-recovery','manuscript',()=>setSource(large.source),"document.querySelector('#workspace-save-state').textContent==='保存済み'");
   await measure('whole-book-open','book',()=>click('#mode-layout'));

@@ -71,3 +71,30 @@ test('sparse base lease is tied to a successful retained host and invalidated on
   assert.equal(display.retain(viewport,'b'),false);
   assert.equal(display.getSparseBase(viewport,'a'),null);
 });
+
+test('repeated stale retention does not rewrite inert or freshness, but new publication is invalidated',()=>{
+  const {viewport,host}=fixture(),display=createPaperDisplay(),old=host();
+  let inert=false,inertWrites=0,freshness,freshnessWrites=0;
+  Object.defineProperty(old,'inert',{get:()=>inert,set:v=>{inert=v;inertWrites++;}});
+  Object.defineProperty(old.dataset,'paperFreshness',{get:()=>freshness,set:v=>{freshness=v;freshnessWrites++;}});
+  display.publish(viewport,'a',old);
+  display.retain(viewport,'a');
+  const counts=[inertWrites,freshnessWrites];
+  for(let i=0;i<50;i++)assert.equal(display.retain(viewport,'a'),true);
+  assert.deepEqual([inertWrites,freshnessWrites],counts);
+  display.publish(viewport,'a',old);
+  display.retain(viewport,'a');
+  assert.equal(old.inert,true);assert.equal(old.dataset.paperFreshness,'previous');
+  assert.ok(inertWrites>counts[0]);assert.ok(freshnessWrites>counts[1]);
+});
+test('clearing an already empty viewport does not perform another DOM replacement',()=>{
+  const {viewport,host}=fixture(),display=createPaperDisplay();
+  const original=viewport.replaceChildren.bind(viewport);let calls=0;
+  viewport.replaceChildren=(...args)=>{calls++;original(...args);};
+  for(let i=0;i<20;i++)assert.equal(display.retain(viewport,'a'),false);
+  assert.equal(calls,0);
+  display.publish(viewport,'a',host());
+  assert.equal(display.retain(viewport,'b'),false);
+  assert.equal(calls,2);
+  display.clear(viewport);assert.equal(calls,2);
+});

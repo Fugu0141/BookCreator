@@ -37,13 +37,15 @@ export function createPaperDisplay(){
     return sparseBase&&host===sparseBase.host&&target===key&&host.parentNode===viewport&&host.inert===true?sparseBase:null;
   }
   function clear(viewport){
-    provisional.clear();viewport?.replaceChildren();target=null;host=null;forgetSparseBase();
+    forgetSparseBase();
+    if(viewport?.firstChild??viewport?.firstElementChild)viewport.replaceChildren();
+    target=null;host=null;
   }
   function retain(viewport,key){
     provisional.clear();
     if(!host||target!==key||host.parentNode!==viewport){clear(viewport);return false;}
-    host.inert=true;
-    host.dataset.paperFreshness='previous';
+    if(!host.inert)host.inert=true;
+    if(host.dataset.paperFreshness!=='previous')host.dataset.paperFreshness='previous';
     return true;
   }
   function publish(viewport,key,next,{reusePages=false}={}){
