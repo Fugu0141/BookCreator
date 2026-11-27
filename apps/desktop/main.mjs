@@ -403,7 +403,7 @@ async function liveWritingSmoke(){
   await until('performance memory',"document.querySelector('#performance-memory')?.dataset.phase==='ready'&&document.querySelector('#performance-memory').textContent.includes('MiB')");
   console.log('PERF sample '+await raw("JSON.stringify({rows:[...document.querySelectorAll('#performance-summary tbody tr')].map(tr=>({stage:tr.dataset.stage,category:tr.dataset.category,values:[...tr.querySelectorAll('td')].map(td=>td.textContent)})),memory:document.querySelector('#performance-memory').textContent})"));
   await click('#performance-clear');
-  await until('performance cleared',"document.querySelectorAll('#performance-summary tbody tr').length===0&&document.querySelectorAll('#performance-phase-summary tbody tr').length===0");
+  await until('performance cleared',"document.querySelectorAll('#performance-summary tbody tr').length===0&&document.querySelectorAll('#performance-phase-summary tbody tr').length===0&&!!document.querySelector('#performance-edit-summary')&&document.querySelectorAll('#performance-edit-summary tbody tr').length===0");
   await click('#performance-close');
   await until('performance closed',"!document.querySelector('#performance-panel')");
   // Exercise the experimental in-place publication on a multi-page plain
