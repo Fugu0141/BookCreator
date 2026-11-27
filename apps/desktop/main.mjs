@@ -347,7 +347,10 @@ async function liveWritingSmoke(){
   await click('#mode-layout');
   await until('whole book without selected manuscript',scopeReady('book')+"&&!document.querySelector('#source').value&&!!document.querySelector('#layout-pages')");
   await click('#mode-writing');await click('[data-section=chapter]');
-  await until('initial paper',scopeReady('manuscript')+"&&!!document.querySelector('#preview').getClientRects().length");
+  await until('initial paper',scopeReady('manuscript')+"&&!!document.querySelector('#preview').getClientRects().length&&!!document.querySelector('#preview > div').dataset.retainedWork");
+  await click('#performance-toggle');
+  if(!await raw("document.querySelector('#performance-retained-preview').checked"))throw Error('Retained preview must start enabled');
+  await click('#performance-close');
   await raw("(()=>{const e=document.querySelector('#source');e.focus();e.setSelectionRange(0,0);e.dispatchEvent(new CompositionEvent('compositionstart',{bubbles:true,data:'あ'}));})()");
   const first=saved+'\nライブ組版途中。\n',latest=saved+'\nライブ組版最終確認。\n';
   await setSource(first);
@@ -357,6 +360,14 @@ async function liveWritingSmoke(){
   await raw("document.querySelector('#source').dispatchEvent(new CompositionEvent('compositionend',{bubbles:true,data:'あ'}))");
   await until('latest paper',ready+"&&document.querySelector('#preview > div').shadowRoot.textContent.includes('ライブ組版最終確認。')&&!document.querySelector('#preview > div').shadowRoot.textContent.includes('ライブ組版途中。')&&document.activeElement.id==='source'");
   if(await readFile(path,'utf8')!==saved)throw Error('Live writing changed saved manuscript');
+  if(!await raw("!!document.querySelector('#preview > div').dataset.retainedWork"))throw Error('Default edit must use retained layout');
+  await raw("window.__bcDefaultRetainedPages=[...document.querySelector('#preview > div').shadowRoot.querySelectorAll('[data-page]')].map(p=>p.cloneNode(true))");
+  // Subsequent legacy comparison scenarios explicitly select the full baseline.
+  await click('#performance-toggle');await click('#performance-retained-preview');await click('#performance-close');
+  await click('#preview-button');
+  await until('default retained full oracle',scopeReady('manuscript')+"&&!document.querySelector('#preview > div').dataset.retainedWork");
+  if(!await raw("(()=>{const p=[...document.querySelector('#preview > div').shadowRoot.querySelectorAll('[data-page]')],old=window.__bcDefaultRetainedPages;return p.length===old.length&&p.every((n,i)=>n.isEqualNode(old[i]));})()"))throw Error('Default retained edit differs from complete paper');
+  await raw("delete window.__bcDefaultRetainedPages");
   await click('#mode-layout');
   await until('whole book follows unsaved draft',scopeReady('book')+"&&document.querySelector('#preview > div').shadowRoot.textContent.includes('ライブ組版最終確認。')&&!!document.querySelector('#layout-pages')");
   await click('#preview-button');
@@ -459,7 +470,7 @@ async function liveWritingSmoke(){
   await setSource(longSource);
   await until('retained fixture ready',scopeReady('manuscript')+"&&document.querySelector('#preview > div').shadowRoot.textContent.includes('差分確認 32')");
   await click('#performance-toggle');
-  if(await raw("document.querySelector('#performance-retained-preview').checked"))throw Error('Retained preview must default off');
+  if(await raw("document.querySelector('#performance-retained-preview').checked"))throw Error('Retained preview must remain off in the explicit baseline');
   await click('#performance-retained-preview');
   if(await raw("['#performance-sparse-paper-pages','#performance-reuse-paper-pages','#performance-page-cache-enabled'].some(s=>document.querySelector(s).checked)"))throw Error('Retained preview must exclude other page modes');
   await click('#performance-close');
