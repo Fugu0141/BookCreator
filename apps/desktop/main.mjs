@@ -2204,12 +2204,14 @@ async function smoke(){
   await until("!document.querySelector('#import-font').disabled");
   await exec("document.querySelector('#import-font').click()");
   await until("!document.querySelector('#open').disabled && !!document.querySelector('[data-project-font][data-loaded=true]')");
+  await exec("(()=>{const row=document.querySelector('[data-project-font]');row.querySelector('details').open=true;window.__smokeFontRow=row;})()");
   await exec("(()=>{const el=document.querySelector('#body-font');el.value=[...el.options].find(o=>/^BCFont_[a-f0-9]{64}$/.test(o.value)).value;el.dispatchEvent(new Event('change',{bubbles:true}));})()");
   await until("!document.querySelector('#save-theme').disabled");
   await exec("document.querySelector('#save-theme').click()");
   await until("!document.querySelector('#open').disabled && document.querySelector('#status').textContent.includes('テーマを保存しました')");
   await exec("document.querySelector('[data-section=chapter-01]').click()");
   await until("!document.querySelector('#open').disabled && document.querySelector('#source').value.includes('はじめに')");
+  if(!await exec("(()=>{const row=document.querySelector('[data-project-font]');const ok=row===window.__smokeFontRow&&row.querySelector('details').open;delete window.__smokeFontRow;return ok;})()"))throw Error('Font row or native license detail lost during writing navigation');
   await exec("document.querySelector('#preview-button').click()");
   await until("document.querySelector(\'#workspace-layout-state\').dataset.phase===\'ready\' && ("+"!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-start]')"+")");
   if(!await exec("Array.from(document.querySelector('#preview > div').shadowRoot.querySelectorAll('[data-start]')).some(l=>/BCFont_[a-f0-9]{64}/.test(l.style.fontFamily))"))throw Error('Imported face not used in measured preview');
