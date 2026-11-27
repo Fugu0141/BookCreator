@@ -1,6 +1,6 @@
 // Keep the physical measurement lane exclusive, but let the renderer handle
 // input and other browser tasks between completed Engine work units.
-const stages=['validated','image','measure-block','paginate','render-page','complete','provisional','other'];
+const stages=['validated','image','measure-block','paginate','render-key-page','render-page','render-fragment','render-line','complete','provisional','other'];
 export function createPreviewCheckpoint({
   current,
   budgetMs=8,
