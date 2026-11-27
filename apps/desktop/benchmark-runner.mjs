@@ -57,6 +57,10 @@ export async function runBookBenchmark(win,app,root,fixture){
   const mathEmpty=s=>Object.values(s).every(v=>v.entries===0&&v.hits===0&&v.misses===0);
   await click('#open');
   await until('open',"document.querySelector('.workspace-shell').dataset.workspaceMode==='writing'&&!document.querySelector('#open').disabled");
+  // Preserve the historical full baseline; the retained comparison primes each arm explicitly.
+  await click('#performance-toggle');
+  if(!await raw("document.querySelector('#performance-retained-preview').checked"))throw Error('Retained preview must start enabled');
+  await click('#performance-retained-preview');await click('#performance-close');
   for(const c of fixture.chapters){
     await measure(c.id+'-open','manuscript',()=>click('[data-section='+c.id+']'),"document.querySelector('#source').value==="+JSON.stringify(c.source));
     const original=await raw("document.querySelector('#preview > div').dataset.paperProbe='old';true");
