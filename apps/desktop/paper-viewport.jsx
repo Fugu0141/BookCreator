@@ -1,33 +1,47 @@
 import React,{useLayoutEffect,useRef,useState} from 'react';
+import {createDefaultPaperSync} from './default-paper-sync.mjs';
 
 // Zoom only the frozen preview host, not the engine's layout or physical units.
 // Keep the selected page in view when the viewport size or magnification changes.
 export function usePaperViewport(target,enabled,activePage,ready){
   const [mode,setMode]=useState('100'),[guides,setGuides]=useState(true),[percent,setPercent]=useState(100);
   const activeRef=useRef(activePage);activeRef.current=activePage;
+  // Writing uses the Engine's default 100% view. Neither readiness changes
+  // nor zoom controls on another screen should restart its DOM observer.
   useLayoutEffect(()=>{
+    if(enabled)return;
+    const viewport=target.current;if(!viewport)return;
+    const apply=createDefaultPaperSync(viewport);
+    apply();setPercent(100);
+    const mutation=new MutationObserver(apply);mutation.observe(viewport,{childList:true});
+    return ()=>mutation.disconnect();
+  },[target,enabled]);
+  const viewMode=enabled?mode:null,viewGuides=enabled?guides:null,viewReady=enabled?ready:null;
+  useLayoutEffect(()=>{
+    if(!enabled)return;
     const viewport=target.current;if(!viewport)return;
     let previousHost=null,previousScale=null;
     function apply(){
       const host=viewport.firstElementChild;if(!host)return;
       const pages=[...host.shadowRoot?.querySelectorAll('[data-page]')??[]];
       if(!pages.length)return;
-      const style=getComputedStyle(viewport);
-      const availableWidth=viewport.clientWidth-(parseFloat(style.paddingLeft)||0)-(parseFloat(style.paddingRight)||0)-16;
-      const availableHeight=viewport.clientHeight-(parseFloat(style.paddingTop)||0)-(parseFloat(style.paddingBottom)||0)-20;
-      let scale=enabled?Number(mode)/100:1;
-      if(enabled&&(mode==='width'||mode==='page')){
+      let scale=Number(viewMode)/100;
+      if(viewMode==='width'||viewMode==='page'){
+        const style=getComputedStyle(viewport);
+        const availableWidth=viewport.clientWidth-(parseFloat(style.paddingLeft)||0)-(parseFloat(style.paddingRight)||0)-16;
+        const availableHeight=viewport.clientHeight-(parseFloat(style.paddingTop)||0)-(parseFloat(style.paddingBottom)||0)-20;
         const width=Math.max(...pages.map(p=>p.offsetWidth));
         const height=Math.max(...pages.map(p=>p.offsetHeight+(parseFloat(getComputedStyle(p).marginBottom)||0)));
-        scale=Math.max(.1,Math.min(1,availableWidth>0?availableWidth/width:1,mode==='page'&&availableHeight>0?availableHeight/height:1));
+        scale=Math.max(.1,Math.min(1,availableWidth>0?availableWidth/width:1,viewMode==='page'&&availableHeight>0?availableHeight/height:1));
       }
       const changed=previousHost!==host||previousScale!==scale;
-      host.style.zoom=String(scale);
-      host.style.width=enabled?'max-content':'';
-      viewport.dataset.paperZoom=String(scale);
-      for(const guide of host.shadowRoot.querySelectorAll('[data-content-guide]'))guide.style.visibility=enabled&&!guides?'hidden':'';
+      if(host.style.zoom!==String(scale))host.style.zoom=String(scale);
+      if(host.style.width!=='max-content')host.style.width='max-content';
+      if(viewport.dataset.paperZoom!==String(scale))viewport.dataset.paperZoom=String(scale);
+      const visibility=viewGuides?'':'hidden';
+      for(const guide of host.shadowRoot.querySelectorAll('[data-content-guide]'))if(guide.style.visibility!==visibility)guide.style.visibility=visibility;
       setPercent(Math.round(scale*100));
-      if(enabled&&changed&&ready){
+      if(changed&&viewReady){
         const node=pages[Math.min(activeRef.current-1,pages.length-1)];
         if(node)viewport.scrollTop+=node.getBoundingClientRect().top-viewport.getBoundingClientRect().top-8;
       }
@@ -37,7 +51,7 @@ export function usePaperViewport(target,enabled,activePage,ready){
     const mutation=new MutationObserver(apply);mutation.observe(viewport,{childList:true});
     const resize=new ResizeObserver(apply);resize.observe(viewport);
     return ()=>{mutation.disconnect();resize.disconnect();};
-  },[target,enabled,mode,guides,ready]);
+  },[target,enabled,viewMode,viewGuides,viewReady]);
   return {mode,setMode,guides,setGuides,percent};
 }
 export function PaperViewControls({view}){
