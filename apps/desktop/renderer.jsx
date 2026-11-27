@@ -36,6 +36,7 @@ import {visiblePaperPageIndices} from './viewport-page-priority.mjs';
 import {describeLayoutInput,collectLayoutDocuments,prepareLayoutOptions,validateLayoutOptions} from './layout-input.mjs';
 import {describeMeasuredPaper} from './measured-paper.mjs';
 import {createPaperDisplay} from './paper-display.mjs';
+import {invalidateLayoutState,emptyIfNeeded} from './layout-invalidation-state.mjs';
 import {createLivePreviewDelay} from './live-preview-delay.mjs';
 import {desiredLivePreviewScope,livePreviewWaitMs} from './live-preview-policy.mjs';
 const api=window.bookcreator;
@@ -395,8 +396,16 @@ function App(){
       return saved;
     }finally{controller?.resume(text);}
   }
-  const resetLayout=(clear=false,scope=layoutState.scope)=>{const retained=!clear&&paperDisplay.current.retain(preview.current,paperTarget(scope));if(!retained){paperDisplay.current.clear(preview.current);setLayoutPages([]);setActivePage(1);setPageJump('1');}setLayoutDiagnostics([]);setShowDiagnostics(false);setMeasuring(false);return retained;};
-  const invalidate=(clear=false)=>{editPreviewTracker.current.reset();generation.current++;liveDelay.current.cancel();layoutScheduler.current.invalidate();pendingDiagnostic.current=null;pendingSource.current=null;resetLayout(clear);setLayoutState(previous=>clear?{phase:'idle',scope:null,pages:0}:previous.phase==='idle'?previous:{...previous,phase:'stale',pages:0});};
+  const resetLayout=(clear=false,scope=layoutState.scope)=>{
+    // retain() owns clearing a mismatched host. Explicit clear is separate.
+    const display=paperDisplay.current;
+    if(clear)display.clear(preview.current);
+    const retained=!clear&&display.retain(preview.current,paperTarget(scope));
+    if(!retained){setLayoutPages(emptyIfNeeded);setActivePage(1);setPageJump('1');}
+    setLayoutDiagnostics(emptyIfNeeded);setShowDiagnostics(false);setMeasuring(false);
+    return retained;
+  };
+  const invalidate=(clear=false)=>{editPreviewTracker.current.reset();generation.current++;liveDelay.current.cancel();layoutScheduler.current.invalidate();pendingDiagnostic.current=null;pendingSource.current=null;resetLayout(clear);setLayoutState(previous=>invalidateLayoutState(previous,clear));};
   const confirmDiscard=()=>!dirty||window.confirm('未保存の変更を破棄しますか？');
   const confirmProjectDiscard=()=>!(dirty||themeDirty||settingsDirty)||window.confirm('未保存の原稿・テーマ・書籍設定を破棄しますか？');
   async function io(fn){if(working.current)return;working.current=true;setBusy(true);try{await fn();}catch(e){setStatus(String(e.message??e));}finally{working.current=false;setBusy(false);}}
