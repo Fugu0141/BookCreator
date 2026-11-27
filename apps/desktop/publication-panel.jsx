@@ -2,6 +2,8 @@ import React from 'react';
 import {DiagnosticList} from './diagnostic-list.jsx';
 
 export function PublicationPanel({visible,saveLabel,dirty,themeDirty,settingsDirty,layout,diagnostics,canOpenDiagnostic,onOpenDiagnostic,blocked,canRender,onNavigate,onRender}){
+  // Publication controls do not participate in the editing render path.
+  if(!visible)return <section className="workspace-publication" hidden/>;
   const saved=!dirty&&!themeDirty&&!settingsDirty;
   const full=layout.phase==='ready'&&layout.scope==='book';
   const failed=layout.phase==='failed';
