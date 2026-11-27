@@ -100,7 +100,7 @@ function App(){
   const [showPerformance,setShowPerformance]=useState(false);
   const [reusePaperPages,setReusePaperPages]=useState(false);
   const [sparsePaperPages,setSparsePaperPages]=useState(false);
-  const [retainedPreview,setRetainedPreview]=useState(false);
+  const [retainedPreview,setRetainedPreview]=useState(true);
   const manuscriptSession=useRef(null);
   const makeScanSession=()=>createManuscriptScanSession({scan:scanDocument,scanIncremental:scanDocumentIncremental});
   if(!manuscriptSession.current)manuscriptSession.current=makeScanSession();
@@ -599,7 +599,7 @@ function App(){
     const paragraphCache=paragraphCacheEnabled?paragraphCacheRef.current:undefined;
     const pageCache=pageCacheEnabled?pageCacheRef.current:undefined;
     const mathOptions=mathCacheEnabled?mathCaches.current:{};
-    const retainedMode=retainedPreview&&!pageCache&&!reusePaperPages;
+    const retainedMode=retainedPreview&&scope==='manuscript'&&!pageCache&&!reusePaperPages;
     const scanSession=retainedMode?manuscriptSession.current:undefined;
     const raw=text;let diagnostics=[],documents=[],provisional=null;
     try{
