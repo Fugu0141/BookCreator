@@ -455,6 +455,33 @@ async function liveWritingSmoke(){
   await until('sparse source restored',scopeReady('manuscript')+"&&document.querySelector('#workspace-save-state').textContent==='保存済み'&&!document.querySelector('#preview > div').shadowRoot.textContent.includes('目次例')");
   if(await readFile(path,'utf8')!==saved)throw Error('Sparse test changed saved manuscript');
   console.log('PASS sparse generation, retained identity, navigation, full parity and disk safety');
+  // Exercise the combined retained mode separately from sparse-DOM-only.
+  await setSource(longSource);
+  await until('retained fixture ready',scopeReady('manuscript')+"&&document.querySelector('#preview > div').shadowRoot.textContent.includes('差分確認 32')");
+  await click('#performance-toggle');
+  if(await raw("document.querySelector('#performance-retained-preview').checked"))throw Error('Retained preview must default off');
+  await click('#performance-retained-preview');
+  if(await raw("['#performance-sparse-paper-pages','#performance-reuse-paper-pages','#performance-page-cache-enabled'].some(s=>document.querySelector(s).checked)"))throw Error('Retained preview must exclude other page modes');
+  await click('#performance-close');
+  await click('#preview-button');
+  await until('retained base published',scopeReady('manuscript')+"&&!!document.querySelector('#preview > div').dataset.retainedWork");
+  await raw("(()=>{const h=document.querySelector('#preview > div');window.__bcRetainedProbe={host:h,pages:[...h.shadowRoot.querySelectorAll('[data-page]')]};document.querySelector('#source').focus();})()");
+  await setSource(editedLong);
+  await until('retained edit published',scopeReady('manuscript')+"&&document.querySelector('#preview > div').shadowRoot.textContent.includes('目次例')&&!!document.querySelector('#preview > div').dataset.retainedWork");
+  const work=await raw("JSON.parse(document.querySelector('#preview > div').dataset.retainedWork)");
+  if(!work||work.measurement.reusedBlocks<1||work.pagination.reusedBlocks<1||work.scan.misses!==1)throw Error('Retained edit did not reuse block work: '+JSON.stringify(work));
+  if(!await raw("(()=>{const h=document.querySelector('#preview > div'),p=[...h.shadowRoot.querySelectorAll('[data-page]')],old=window.__bcRetainedProbe;return h===old.host&&p[0]!==old.pages[0]&&p.slice(1).some((n,i)=>n===old.pages[i+1])&&document.activeElement.id==='source';})()"))throw Error('Retained preview lost paper identity or focus');
+  if(!await raw("(()=>{const h=document.querySelector('#preview > div'),p=[...h.shadowRoot.querySelectorAll('[data-page]')],old=window.__bcRetainedProbe;const block=p.find((n,i)=>i>0&&n===old.pages[i])?.querySelector('[data-block][tabindex]');if(!block)return false;block.click();const e=document.querySelector('#source');return document.activeElement===e&&e.selectionEnd>e.selectionStart;})()"))throw Error('Retained preview navigation failed');
+  await raw("window.__bcRetainedProbe.expected=[...document.querySelector('#preview > div').shadowRoot.querySelectorAll('[data-page]')].map(p=>p.cloneNode(true))");
+  await click('#performance-toggle');await click('#performance-retained-preview');await click('#performance-close');
+  await click('#preview-button');
+  await until('retained full replacement oracle',scopeReady('manuscript')+"&&document.querySelector('#preview > div')!==window.__bcRetainedProbe.host");
+  if(!await raw("(()=>{const h=document.querySelector('#preview > div'),p=[...h.shadowRoot.querySelectorAll('[data-page]')],expected=window.__bcRetainedProbe.expected;return !h.dataset.retainedWork&&p.length===expected.length&&p.every((n,i)=>n.isEqualNode(expected[i]));})()"))throw Error('Retained preview differs from complete preview');
+  await raw("delete window.__bcRetainedProbe");
+  await setSource(saved);
+  await until('retained source restored',scopeReady('manuscript')+"&&document.querySelector('#workspace-save-state').textContent==='保存済み'&&!document.querySelector('#preview > div').shadowRoot.textContent.includes('目次例')");
+  if(await readFile(path,'utf8')!==saved)throw Error('Retained test changed saved manuscript');
+  console.log('PASS retained scan, measurement, placement, DOM parity, navigation and disk safety '+JSON.stringify(work));
   // Reopening through the normal discard path cleans any coalesced recovery draft.
   await click('#mode-home');await click('#open');
   await until('reopened book',"document.querySelector('.workspace-shell').dataset.workspaceMode==='writing'&&!document.querySelector('#open').disabled&&!document.querySelector('#source').value");
