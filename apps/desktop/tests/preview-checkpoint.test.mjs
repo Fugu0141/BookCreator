@@ -62,3 +62,17 @@ test('diagnostics count superseded checkpoints without storing arbitrary stage n
   assert.equal(stats.byStage['measure-block'].count,1);
   assert.equal(Object.hasOwn(stats.byStage,'unrecognized'),false);
 });
+
+test('fine render checkpoints retain distinct counters and gap statistics',()=>{
+  let time=0;
+  const checkpoint=createPreviewCheckpoint({current:()=>true,now:()=>time});
+  time=1;checkpoint('render-key-page');
+  time=2;checkpoint('render-page');
+  time=4;checkpoint('render-fragment');
+  time=7;checkpoint('render-line');
+  const stats=checkpoint.snapshot();
+  assert.deepEqual(stats.byStage['render-key-page'],{count:1,maxGapMs:1});
+  assert.deepEqual(stats.byStage['render-fragment'],{count:1,maxGapMs:2});
+  assert.deepEqual(stats.byStage['render-line'],{count:1,maxGapMs:3});
+  assert.equal(stats.byStage.other.count,0);
+});
