@@ -37,6 +37,7 @@ export function PerformancePanel({retainedPreview,onRetainedPreview,sparsePaperP
   return <section id="performance-panel" className="performance-panel" aria-label="性能計測">
     <header><strong>性能計測（端末内のみ）</strong><div><button id="performance-refresh" type="button" onClick={()=>void refresh()}>更新</button><button id="performance-clear" type="button" onClick={()=>{performanceMetrics.clear();previewPhaseMetrics.clear();editPreviewMetrics.clear();setRows([]);setPhaseRows([]);setEditRows([]);}}>記録を消去</button><button id="performance-close" type="button" onClick={onClose}>閉じる</button></div></header>
     <label><input id="performance-retained-preview" type="checkbox" checked={retainedPreview} disabled={cacheBlocked} onChange={e=>onRetainedPreview(e.target.checked)}/>保持型リアルタイム組版（解析・実測・配置・描画、試験機能）</label>
+    <small>保持型で再利用可能な選択原稿の紙面がある場合、執筆中の入力合流を100msから16msへ短縮します。初回・全冊などは100msのままです。</small>
     <label><input id="performance-sparse-paper-pages" type="checkbox" checked={sparsePaperPages} disabled={cacheBlocked} onChange={e=>onSparsePaperPages(e.target.checked)}/>未変更ページのDOM生成を省略（試験機能）</label>
     <label><input id="performance-reuse-paper-pages" type="checkbox" checked={reusePaperPages} disabled={cacheBlocked} onChange={e=>onReusePaperPages(e.target.checked)}/>表示中の未変更ページを維持（試験機能）</label>
     <p className="muted">直近 {rows.length} / 200 件。成功時の中央値・最大値（ms）。組版要求には入力合流時間を含みません。実測・読取は組版要求の内訳と重なるため合算しないでください。</p>
