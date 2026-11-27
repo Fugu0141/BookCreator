@@ -485,6 +485,14 @@ async function liveWritingSmoke(){
   await setSource(editedLong);
   await until('retained latest burst published',scopeReady('manuscript')+"&&document.querySelector('#preview > div').shadowRoot.textContent.includes('目次例')&&!document.querySelector('#preview > div').shadowRoot.textContent.includes('連続確認甲')&&!document.querySelector('#preview > div').shadowRoot.textContent.includes('連続確認乙')&&document.activeElement.id==='source'");
   if(await readFile(path,'utf8')!==saved)throw Error('Retained burst changed saved manuscript');
+  // The provisional layer must appear on the changed visible first page,
+  // without changing the committed page order or enabling navigation.
+  await raw("(()=>{const v=document.querySelector('#preview'),h=v.firstElementChild;v.scrollTop=0;window.__bcProvisionalProbe={seen:false,valid:true};const observer=new MutationObserver(records=>{for(const record of records)for(const node of record.addedNodes)if(node.dataset?.provisionalLayer==='true'){window.__bcProvisionalProbe.seen=true;window.__bcProvisionalProbe.valid&&=node.inert&&node.getAttribute('aria-hidden')==='true'&&h.inert&&h.shadowRoot.children[0]===record.target;}});observer.observe(h.shadowRoot,{childList:true,subtree:true});window.__bcProvisionalProbe.observer=observer;})()");
+  await setSource(longSource);
+  await until('provisional first page committed',scopeReady('manuscript')+"&&!document.querySelector('#preview > div').shadowRoot.textContent.includes('目次例')&&Number(JSON.parse(document.querySelector('#preview > div').dataset.retainedWork).provisionalCount)>0");
+  if(!await raw("(()=>{const h=document.querySelector('#preview > div'),p=window.__bcProvisionalProbe;p.observer.disconnect();const ok=p.seen&&p.valid&&!h.dataset.provisionalPages&&!h.shadowRoot.querySelector('[data-provisional-layer]')&&!h.inert;delete window.__bcProvisionalProbe;return ok;})()"))throw Error('Provisional paper was not isolated or cleaned up');
+  await setSource(editedLong);
+  await until('provisional final paper',scopeReady('manuscript')+"&&document.querySelector('#preview > div').shadowRoot.textContent.includes('目次例')&&!document.querySelector('#preview > div').dataset.provisionalPages");
   await raw("window.__bcRetainedProbe.expected=[...document.querySelector('#preview > div').shadowRoot.querySelectorAll('[data-page]')].map(p=>p.cloneNode(true))");
   await click('#performance-toggle');await click('#performance-retained-preview');await click('#performance-close');
   await click('#preview-button');
