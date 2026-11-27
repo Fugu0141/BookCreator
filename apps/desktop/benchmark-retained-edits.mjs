@@ -52,7 +52,9 @@ export async function benchmarkRetainedEdits({raw,click,until,ready,paperSignatu
         if(retained){
           if(!Number.isSafeInteger(sample.work.measurement.sharedSnapshotEntries)||sample.work.measurement.sharedSnapshotEntries<1||sample.work.measurement.sharedSnapshotEntries>sample.work.measurement.reusedBlocks)throw Error('Retained benchmark did not share measurement snapshots');
           if(!['preparationMs','publicationMs'].every(key=>Number.isFinite(sample.work.hostTiming?.[key])&&sample.work.hostTiming[key]>=0))throw Error('Missing host timing diagnostics');
+          if(!Number.isSafeInteger(sample.work.pagination.sharedSnapshotFragments)||sample.work.pagination.sharedSnapshotFragments<1)throw Error('Retained benchmark did not share placement snapshots');
           const stages=sample.work?.checkpoint?.byStage;
+          if(!stages||!['paginate-validate','paginate-key','paginate-place','paginate-match','paginate-reuse','paginate-snapshot'].every(stage=>Number.isSafeInteger(stages[stage]?.count)&&stages[stage].count>0&&Number.isFinite(stages[stage].maxGapMs)&&stages[stage].maxGapMs>=0))throw Error('Missing pagination checkpoint diagnostics');
           if(!stages||!['measure-graphemes','measure-hard-line','measure-frozen-line','measure-variable-graphemes','measure-variable-line'].every(stage=>Number.isSafeInteger(stages[stage]?.count)&&stages[stage].count>=0&&Number.isFinite(stages[stage].maxGapMs)&&stages[stage].maxGapMs>=0))throw Error('Missing measurement checkpoint diagnostics');
           if(!stages||!['render-key-page','render-fragment','render-line'].every(stage=>Number.isSafeInteger(stages[stage]?.count)&&stages[stage].count>0&&Number.isFinite(stages[stage].maxGapMs)&&stages[stage].maxGapMs>=0))throw Error('Retained benchmark missing fine render checkpoints');
         }

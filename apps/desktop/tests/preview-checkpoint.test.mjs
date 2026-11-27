@@ -88,3 +88,13 @@ test('native variable measurement checkpoints retain distinct counters and timin
   assert.deepEqual(stats.byStage['measure-variable-line'],{count:1,maxGapMs:3});
   assert.equal(stats.byStage.other.count,0);
 });
+
+test('pagination checkpoint stages are distinct and retain timing',()=>{
+  const stages=['paginate-validate','paginate-key','paginate-place','paginate-match','paginate-reuse','paginate-snapshot'];
+  let time=0;
+  const checkpoint=createPreviewCheckpoint({current:()=>true,now:()=>time,budgetMs:100});
+  for(let i=0;i<stages.length;i++){time+=i+1;checkpoint(stages[i]);}
+  const stats=checkpoint.snapshot();
+  for(let i=0;i<stages.length;i++)assert.deepEqual(stats.byStage[stages[i]],{count:1,maxGapMs:i+1});
+  assert.equal(stats.byStage.other.count,0);
+});
