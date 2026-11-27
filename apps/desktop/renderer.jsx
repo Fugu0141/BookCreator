@@ -34,7 +34,7 @@ import {describeLayoutInput,collectLayoutDocuments,prepareLayoutOptions,validate
 import {describeMeasuredPaper} from './measured-paper.mjs';
 import {createPaperDisplay} from './paper-display.mjs';
 import {createLivePreviewDelay} from './live-preview-delay.mjs';
-import {desiredLivePreviewScope} from './live-preview-policy.mjs';
+import {desiredLivePreviewScope,livePreviewWaitMs} from './live-preview-policy.mjs';
 const api=window.bookcreator;
 const studyNames={note:'補足',tip:'ポイント',warning:'注意',important:'重要',example:'例題',exercise:'練習問題',explanation:'解説'};
 const noto='BCFont_NotoSansJP',stix='BCFont_STIXTwoMath';
@@ -958,9 +958,13 @@ function App(){
   useEffect(()=>{
     const delay=liveDelay.current;
     const scope=desiredLivePreviewScope({enabled:livePreview,mode,paperVisible,hasBook:!!book,hasFile:!!file,hasPage:!!page,blocked:routeBlocked,measuring,phase:layoutState.phase,scope:layoutState.scope,override:previewScopeOverride});
-    if(scope)delay.request(()=>{if(!working.current&&!routeBlockRef.current&&!composing.current)void render(scope==='book',true);});
+    if(scope){
+      const warmRetained=retainedPreview&&!pageCacheEnabled&&!reusePaperPages&&!!paperDisplay.current.getSparseBase(preview.current,paperTarget(scope));
+      const wait=livePreviewWaitMs({mode,scope,retained:retainedPreview,warmRetained});
+      delay.request(()=>{if(!working.current&&!routeBlockRef.current&&!composing.current)void render(scope==='book',true);},wait);
+    }
     return ()=>delay.cancel();
-  },[livePreview,mode,paperVisible,book,file,text,page,order,typography,theme,fonts,routeBlocked,measuring,layoutState.phase,layoutState.scope,previewScopeOverride]);
+  },[livePreview,mode,paperVisible,book,file,text,page,order,typography,theme,fonts,routeBlocked,measuring,layoutState.phase,layoutState.scope,previewScopeOverride,retainedPreview,pageCacheEnabled,reusePaperPages]);
   // Move focus only after explicit compact navigation, never just on a resize.
   useEffect(()=>{
     const request=compactFocusRequest;
