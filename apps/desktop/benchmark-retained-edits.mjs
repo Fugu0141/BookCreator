@@ -50,7 +50,10 @@ export async function benchmarkRetainedEdits({raw,click,until,ready,paperSignatu
         if(!sample.focus||!sample.clean||!Number.isFinite(sample.finalMs)||sample.finalMs<0||sample.provisionalMs!==null&&(!Number.isFinite(sample.provisionalMs)||sample.provisionalMs<0||sample.provisionalMs>sample.finalMs))throw Error('Invalid retained benchmark sample');
         if(retained&&(!sample.work||sample.work.measurement.reusedBlocks<1||sample.work.pagination.reusedBlocks<1))throw Error('Retained benchmark did not reuse measured/placed blocks');
         if(retained){
+          if(!Number.isSafeInteger(sample.work.measurement.sharedSnapshotEntries)||sample.work.measurement.sharedSnapshotEntries<1||sample.work.measurement.sharedSnapshotEntries>sample.work.measurement.reusedBlocks)throw Error('Retained benchmark did not share measurement snapshots');
+          if(!['preparationMs','publicationMs'].every(key=>Number.isFinite(sample.work.hostTiming?.[key])&&sample.work.hostTiming[key]>=0))throw Error('Missing host timing diagnostics');
           const stages=sample.work?.checkpoint?.byStage;
+          if(!stages||!['measure-graphemes','measure-hard-line','measure-frozen-line'].every(stage=>Number.isSafeInteger(stages[stage]?.count)&&stages[stage].count>=0&&Number.isFinite(stages[stage].maxGapMs)&&stages[stage].maxGapMs>=0))throw Error('Missing measurement checkpoint diagnostics');
           if(!stages||!['render-key-page','render-fragment','render-line'].every(stage=>Number.isSafeInteger(stages[stage]?.count)&&stages[stage].count>0&&Number.isFinite(stages[stage].maxGapMs)&&stages[stage].maxGapMs>=0))throw Error('Retained benchmark missing fine render checkpoints');
         }
         if(!retained&&(sample.work||sample.provisionalMs!==null))throw Error('Baseline used retained work');
