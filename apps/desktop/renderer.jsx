@@ -4,7 +4,7 @@ import {previewPhaseMetrics} from './preview-phase-metrics.mjs';
 import {PerformancePanel} from './performance-panel.jsx';
 import {retryPreviewRead,unwrapIpc} from './preview-read-retry.mjs';
 import {CatalogSpecimen} from './catalog-specimen.jsx';
-import React,{useState,useRef,useEffect,useLayoutEffect,useMemo} from 'react';
+import React,{useState,useRef,useEffect,useLayoutEffect,useMemo,useReducer} from 'react';
 import {projectBookSettings,projectTypographySettings,projectFontChoices} from './workspace-settings-projection.mjs';
 import {createRoot} from 'react-dom/client';
 import {createManuscriptScanSession,parsePreviewInline,prepareBrowserPreview,prepareBookBrowserPreview,previewSourceRange,planInlineFormat,planListFormat,planListIndent,planListBatch,inspectDisplayMath,planDisplayMath,inspectInlineMath,planInlineMath,inspectComponentDisplayMath,planComponentDisplayMath,equationReferenceTargets,planEquationReference,planEquationNumbering,planNumberedComponentDisplayMath,hasDynamicLabels,hasStudyNumbering,studyTemplate,studyKinds,defaultStudyDesign,customStudyTemplate,isCustomComponentId,linkedStudyTemplate,slottedStudyTemplate,namedSlotDefinitions} from '../../dist/index.js';
@@ -37,6 +37,7 @@ import {describeLayoutInput,collectLayoutDocuments,prepareLayoutOptions,validate
 import {describeMeasuredPaper} from './measured-paper.mjs';
 import {invalidateLayoutState,emptyIfNeeded} from './layout-invalidation-state.mjs';
 import {createWorkspacePreviewLifecycle} from './workspace-preview-lifecycle.mjs';
+import {createManuscriptState,reduceManuscriptState,manuscriptDirty,activeStructuredHistory,planStructuredCommit,planStructuredHistoryMove} from './manuscript-state.mjs';
 import {desiredLivePreviewScope,livePreviewWaitMs} from './live-preview-policy.mjs';
 const api=window.bookcreator;
 const studyNames={note:'補足',tip:'ポイント',warning:'注意',important:'重要',example:'例題',exercise:'練習問題',explanation:'解説'};
@@ -75,7 +76,9 @@ async function resolvePreviewImage(token,id,current){if(typeof token!=='string'|
 const unwrap=unwrapIpc;
 function validPaper(page){try{return page?paperGeometry(page):null;}catch{return null;}}
 function App(){
-  const [book,setBook]=useState(null),[file,setFile]=useState(null),[text,setText]=useState(''),[status,setStatus]=useState('book.yaml を開いてください。'),[busy,setBusy]=useState(true),[measuring,setMeasuring]=useState(false);
+  const [manuscript,dispatchManuscript]=useReducer(reduceManuscriptState,undefined,createManuscriptState);
+  const {file,text}=manuscript;
+  const [book,setBook]=useState(null),[status,setStatus]=useState('book.yaml を開いてください。'),[busy,setBusy]=useState(true),[measuring,setMeasuring]=useState(false);
   const resolveImage=(id,current)=>resolvePreviewImage(book?.settingRecovery?.token,id,current);
   const [mode,setMode]=useState('home'),[showPaper,setShowPaper]=useState(false),[livePreview,setLivePreview]=useState(true);
   // CSS viewport width, not physical pixels: reacts to window size and UI zoom.
@@ -141,7 +144,6 @@ function App(){
   const [editorView,setEditorView]=useState('source'),[structuredDraft,setStructuredDraft]=useState(null);
   const [structuredComposing,setStructuredComposing]=useState(false);
   const [studyLinkDraft,setStudyLinkDraft]=useState(null);
-  const [structuredHistory,setStructuredHistory]=useState(null);
   const [designTab,setDesignTab]=useState('styles');
   const [componentSearch,setComponentSearch]=useState(''),[componentFilter,setComponentFilter]=useState('all'),[initialLibraryEntry,setInitialLibraryEntry]=useState(null);
   const [recoveryHub,setRecoveryHub]=useState(null),[recoveryHubError,setRecoveryHubError]=useState('');
@@ -188,7 +190,7 @@ function App(){
     return token?{token,target:{usage,level,entryId:initialLibraryEntry?.id??null},send:request=>unwrap(api.componentRecovery(request))}:null;
   }
   const {themeDirty,typographyValue}=useMemo(()=>projectTypographySettings(typography,theme,{fromRoles,toRoles}),[typography,theme]);
-  async function applyBook(next){resetScanSession();resetTextCache();resetMathCaches();resetParagraphCache();resetPageCache();installSettingsRecovery(next.settingRecovery);resetRecovery();invalidate(true);setPreviewScopeOverride(null);setLayoutState({phase:'idle',scope:null,pages:0});setImages([]);setImageManager(false);setImageAllowed(false);setFonts(await registerProjectFonts(next.fonts??[]));setEditorFont(noto);setRights({license:'',licenseText:'',copyAllowed:false,embedAllowed:false});setBook(next);if(next.recent)setProjects(next.recent);setCatalogError(next.catalogWarning??'');setMode('writing');setWritingPanel(null);setEditorView('source');setStructuredDraft(null);setStudyLinkDraft(null);setStructuredHistory(null);setStructuredComposing(false);setOutlineOpen(true);setCompactPane('editor');setPageListOpen(true);setPageInfoOpen(true);setShortcutHelp(false);setDesignTab('styles');setComponentSearch('');setComponentFilter('all');setInitialLibraryEntry(null);setShowPaper(livePreview);setFontManager(false);setStudyInstanceId('');setAnswerTo('');setStudyChoice('example');applySettings(next.settings);setShowSettings(false);setFile(null);setText('');setTheme(next.typography);setTypography(fromRoles(next.typography.roles));setCreating(false);setLabOpen(false);setParagraphOpen(false);setStudyOpen(false);setLabLevel("default");setStatus(next.typography.message??'原稿を選択してください。');}
+  async function applyBook(next){resetScanSession();resetTextCache();resetMathCaches();resetParagraphCache();resetPageCache();installSettingsRecovery(next.settingRecovery);resetRecovery();invalidate(true);setPreviewScopeOverride(null);setLayoutState({phase:'idle',scope:null,pages:0});setImages([]);setImageManager(false);setImageAllowed(false);setFonts(await registerProjectFonts(next.fonts??[]));setEditorFont(noto);setRights({license:'',licenseText:'',copyAllowed:false,embedAllowed:false});setBook(next);if(next.recent)setProjects(next.recent);setCatalogError(next.catalogWarning??'');setMode('writing');setWritingPanel(null);setEditorView('source');setStructuredDraft(null);setStudyLinkDraft(null);dispatchManuscript({type:'clear-history'});setStructuredComposing(false);setOutlineOpen(true);setCompactPane('editor');setPageListOpen(true);setPageInfoOpen(true);setShortcutHelp(false);setDesignTab('styles');setComponentSearch('');setComponentFilter('all');setInitialLibraryEntry(null);setShowPaper(livePreview);setFontManager(false);setStudyInstanceId('');setAnswerTo('');setStudyChoice('example');applySettings(next.settings);setShowSettings(false);dispatchManuscript({type:'clear'});setTheme(next.typography);setTypography(fromRoles(next.typography.roles));setCreating(false);setLabOpen(false);setParagraphOpen(false);setStudyOpen(false);setLabLevel("default");setStatus(next.typography.message??'原稿を選択してください。');}
   useEffect(()=>{void refreshProjects();},[]);
   async function loadRecoveryHub(){try{setRecoveryHub(await unwrap(api.listRecoveryCandidates()));setRecoveryHubError('');}catch(e){setRecoveryHub(null);setRecoveryHubError(String(e.message??e));}}
   async function refreshProjects(){await io(async()=>{let next;try{next=await unwrap(api.listProjects());setCatalogError('');}catch(e){setCatalogError(String(e.message??e));}await loadRecoveryHub();if(next)setProjects(next);});}
@@ -234,7 +236,7 @@ function App(){
     }
     if(book?.projectId===item.projectId&&item.kind==='manuscript'){
       if(!confirmDiscard())return;
-      void io(()=>withDiscard(async()=>{invalidate(true);setStructuredHistory(null);setMode('writing');setShowSettings(false);setWritingPanel(null);await route(book);}));return;
+      void io(()=>withDiscard(async()=>{invalidate(true);dispatchManuscript({type:'clear-history'});setMode('writing');setShowSettings(false);setWritingPanel(null);await route(book);}));return;
     }
     if(!confirmProjectDiscard())return;
     void io(()=>withProjectDiscard(async()=>{const next=await unwrap(api.openRegisteredProject(item.projectId));await applyBook(next);await route(next);}));
@@ -264,7 +266,7 @@ function App(){
   },[]);
   useEffect(()=>{textarea.current?.setSelectionRange(0,0);setHasSelection(false);},[file?.id]);
   useEffect(()=>{syncSelection();},[text,mode]);
-  const dirty=!!file&&text!==file.text;
+  const dirty=manuscriptDirty(manuscript);
   function installSettingsRecovery(info){
     for(const controller of Object.values(settingsControllers.current))controller.close();
     settingsControllers.current={};setSettingsReview(null);
@@ -345,7 +347,7 @@ function App(){
       setRecoveryCandidate({record:candidate,status:next.recovery.status,editable:next.editable});
       setRecoveryOpen(true);setRecoveryState({phase:'candidate',message:''});
     }else if(next.recoveryError)setRecoveryState({phase:'error',message:next.recoveryError});
-    setFile({...next,editable:next.editable&&!candidate});setText(next.text);
+    dispatchManuscript({type:'install',file:{...next,editable:next.editable&&!candidate}});
   }
   useEffect(()=>{
     const node=recoveryDialog.current;
@@ -359,9 +361,9 @@ function App(){
     setRecoveryResolving(true);
     try{
       if(action==='restore'){
-        const value=recoveryRef.current.restore();setText(value);setStructuredHistory(null);invalidate();setStatus('復旧した原稿は未保存です。内容を確認して保存してください。');
+        const value=recoveryRef.current.restore();dispatchManuscript({type:'edit',value});invalidate();setStatus('復旧した原稿は未保存です。内容を確認して保存してください。');
       }else{await recoveryRef.current.discardCandidate();setStatus('復旧候補を破棄しました。保存原稿は変更していません。');}
-      setFile(f=>({...f,editable:recoveryCandidate.editable}));setRecoveryCandidate(null);setRecoveryOpen(false);
+      dispatchManuscript({type:'editable',editable:recoveryCandidate.editable});setRecoveryCandidate(null);setRecoveryOpen(false);
     }catch(e){setRecoveryState({phase:'error',message:String(e.message??e)});}
     finally{setRecoveryResolving(false);}
   }
@@ -378,7 +380,7 @@ function App(){
     let saved;
     try{
       saved=await unwrap(api.save(file.id,file.revision,text));
-      setFile({...file,text,revision:saved.revision});
+      dispatchManuscript({type:'saved',file,value:text,revision:saved.revision});
       try{await controller?.saved(saved.revision,text);}
       catch(e){setRecoveryState({phase:'error',message:'原稿は保存済みですが復旧データを整理できません：'+String(e.message??e)});}
       return saved;
@@ -398,13 +400,13 @@ function App(){
   const confirmProjectDiscard=()=>!(dirty||themeDirty||settingsDirty)||window.confirm('未保存の原稿・テーマ・書籍設定を破棄しますか？');
   async function io(fn){if(working.current)return;working.current=true;setBusy(true);try{await fn();}catch(e){setStatus(String(e.message??e));}finally{working.current=false;setBusy(false);}}
   function open(){if(!confirmProjectDiscard())return;void io(()=>withProjectDiscard(async()=>{const next=await unwrap(api.open());if(next)await applyBook(next);}));}
-  function select(id){if(routeBlockRef.current||composing.current){setStatus('現在の操作を完了または取り消してから原稿を切り替えてください。');return;}if(file?.id===id){setCompactPane('editor');if(compactWidthRef.current)setCompactFocusRequest({pane:'editor',id});return;}if(!confirmDiscard())return;void io(()=>withDiscard(async()=>{const next=await unwrap(api.read(id));invalidate(true);setStructuredHistory(null);installRead(next);setWritingPanel(null);setCompactPane('editor');if(compactWidthRef.current)setCompactFocusRequest({pane:'editor',id:next.id});setStatus(next.editable?'原稿を読み込みました。':'混在改行のため読み取り専用です。');}));}
+  function select(id){if(routeBlockRef.current||composing.current){setStatus('現在の操作を完了または取り消してから原稿を切り替えてください。');return;}if(file?.id===id){setCompactPane('editor');if(compactWidthRef.current)setCompactFocusRequest({pane:'editor',id});return;}if(!confirmDiscard())return;void io(()=>withDiscard(async()=>{const next=await unwrap(api.read(id));invalidate(true);dispatchManuscript({type:'clear-history'});installRead(next);setWritingPanel(null);setCompactPane('editor');if(compactWidthRef.current)setCompactFocusRequest({pane:'editor',id:next.id});setStatus(next.editable?'原稿を読み込みました。':'混在改行のため読み取り専用です。');}));}
   function save(){if(composing.current||routeBlockRef.current||!file?.editable||!dirty)return;void io(async()=>{await persistManuscript();setStatus('保存しました。');});}
   const [includeOptionalSlots,setIncludeOptionalSlots]=useState(false);
   const [studyChoice,setStudyChoice]=useState('example'),[studyInstanceId,setStudyInstanceId]=useState(''),[answerTo,setAnswerTo]=useState('');
   const canLink=studyChoice==='explanation'||isCustomComponentId(studyChoice);
   function markConfirmedEdit(started){if(livePreview&&mode==='writing'&&paperVisible&&document.visibilityState==='visible')editPreviewTracker.mark(started);}
-  function edit(value,fromStructured=false){const started=performance.now();if(!fromStructured)setStructuredHistory(null);setText(value);invalidate();if(value!==text){if(composing.current)imeChanged.current=true;else markConfirmedEdit(started);}setStatus('未保存の変更があります。');}
+  function edit(value,history=null){const started=performance.now();dispatchManuscript({type:'edit',value,history});invalidate();if(value!==text){if(composing.current)imeChanged.current=true;else markConfirmedEdit(started);}setStatus('未保存の変更があります。');}
   const composing=useRef(false),[isComposing,setIsComposing]=useState(false);
   // Only confirmed source changes are recorded; IME intermediate text and
   // uncommitted structured/math/component drafts are excluded.
@@ -835,7 +837,7 @@ function App(){
       const next=await unwrap(api.read(d.documentId));
       if(job!==generation.current)return;
       if(next.text!==d.source){setStatus('診断後に対象原稿が変更されました。再組版してください。');return;}
-      invalidate(true);setStructuredHistory(null);installRead(next);reveal();
+      invalidate(true);dispatchManuscript({type:'clear-history'});installRead(next);reveal();
     }));
   }
   useEffect(()=>{
@@ -850,9 +852,9 @@ function App(){
   function switchEditorView(next){if(routeBlocked||!file)return;setEditorView(next);setWritingPanel(null);setHasSelection(false);}
   function openStructuredSource(range){if(routeBlocked||!file)return;pendingSource.current={job:generation.current,id:file.id,range};switchEditorView('source');}
   useEffect(()=>{const p=pendingSource.current;if(!p||editorView!=='source'||mode!=='writing')return;pendingSource.current=null;if(p.job!==generation.current||p.id!==file?.id)return;textarea.current?.focus();textarea.current?.setSelectionRange(p.range.start,p.range.end);syncSelection();},[editorView,mode,file?.id]);
-  const currentHistory=structuredHistory&&structuredHistory.fileId===file?.id&&structuredHistory.current===text?structuredHistory:null;
-  function commitStructured(next){if(next===text)return;const past=[...(currentHistory?.past??[]),text].slice(-20);while(past.reduce((sum,s)=>sum+s.length,0)>1000000&&past.length)past.shift();setStructuredHistory({fileId:file.id,current:next,past,future:[]});edit(next,true);}
-  function restoreStructured(action){if(routeBlocked||!file?.editable||!currentHistory)return;const {past,future}=currentHistory;const next=action==='undo'?past.at(-1):future[0];if(next===undefined)return;setStructuredHistory({fileId:file.id,current:next,past:action==='undo'?past.slice(0,-1):[...past,text],future:action==='undo'?[text,...future]:future.slice(1)});edit(next,true);setStatus(action==='undo'?'構造編集を元に戻しました。':'構造編集をやり直しました。');}
+  const currentHistory=activeStructuredHistory(manuscript);
+  function commitStructured(next){const history=planStructuredCommit(manuscript,next);if(history)edit(next,history);}
+  function restoreStructured(action){if(routeBlocked||!file?.editable)return;const history=planStructuredHistoryMove(manuscript,action);if(!history)return;edit(history.current,history);setStatus(action==='undo'?'構造編集を元に戻しました。':'構造編集をやり直しました。');}
   function performBlockOperation(request){if(routeBlocked||!file?.editable||editorView!=='structured'||mode!=='writing')return;try{const next=planBlockOperation(text,request,{scan:scanDocument,parseInline:parseStructuredInline,applyPatches,validateMath:parseDisplayMath,theme});commitStructured(next);setStatus('ブロック操作を反映しました。');return next;}catch(e){setStatus(String(e.message??e));}}
   function structuredNumbering(source,row){
     if(routeBlocked||working.current||!file?.editable||source!==text||editorView!=='structured'||mode!=='writing')return;
