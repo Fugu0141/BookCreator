@@ -1,6 +1,7 @@
 import {mkdir,writeFile,readFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {benchmarkFixture} from './benchmark-fixture.mjs';
+import {benchmarkRetainedEdits} from './benchmark-retained-edits.mjs';
 import {cacheComparisonPlan,summarizeCacheComparison} from './benchmark-comparison.mjs';
 import {benchmarkPaperSignature} from './benchmark-paper-signature.mjs';
 import {phaseKeys} from './preview-phase-metrics.mjs';
@@ -393,5 +394,6 @@ export async function runBookBenchmark(win,app,root,fixture){
   }
   await setPartial(false);
   const partialComparison=summarizeCacheComparison(partialComparisons.map(s=>({label:'cache-pair-'+s.pair+'-'+s.arm,scope:'manuscript',elapsedMs:s.elapsedMs})),'manuscript');
-  console.log('BENCH report '+JSON.stringify({version:11,fixtureVersion:2,defaultParagraphCacheEnabled:true,partialComparison,partialComparisons,baselinePage,pageComparison,pageComparisons,paragraphEditComparison,paragraphEditComparisons,cacheComparison,phaseComparisons,mathComparison,mathComparisons,paragraphComparison,paragraphComparisons,chapters:fixture.chapters.map(c=>({id:c.id,characters:c.source.length,sections:c.sections,blocks:c.blocks})),initialMemory,finalMemory:memory(),samples,summary,baselineCache,baselineMath,baselineParagraph,finalCache}));
+  const retainedEdits=await benchmarkRetainedEdits({raw,click,until,ready,paperSignature,large,root});
+  console.log('BENCH report '+JSON.stringify({version:12,fixtureVersion:2,retainedEdits,defaultParagraphCacheEnabled:true,partialComparison,partialComparisons,baselinePage,pageComparison,pageComparisons,paragraphEditComparison,paragraphEditComparisons,cacheComparison,phaseComparisons,mathComparison,mathComparisons,paragraphComparison,paragraphComparisons,chapters:fixture.chapters.map(c=>({id:c.id,characters:c.source.length,sections:c.sections,blocks:c.blocks})),initialMemory,finalMemory:memory(),samples,summary,baselineCache,baselineMath,baselineParagraph,finalCache}));
 }
