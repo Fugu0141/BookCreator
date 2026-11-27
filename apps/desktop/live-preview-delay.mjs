@@ -7,13 +7,14 @@ export function createLivePreviewDelay({delay=100,schedule=setTimeout,unschedule
   }
   return {
     cancel,
-    request(run){
+    request(run,wait=delay){
+      if(!Number.isFinite(wait)||wait<0)throw RangeError('Invalid live preview delay');
       cancel();
       const ticket=version;
       timer=schedule(()=>{
         if(ticket!==version)return;
-        timer=null;run();
-      },delay);
+        timer=null;version++;run();
+      },wait);
     }
   };
 }
