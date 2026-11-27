@@ -28,6 +28,7 @@ const deps={scan:scanDocument,validate:validateScannedBlocks,index:indexBlockIds
 import {recoverySession} from './recovery-session.mjs';
 import {settingsDraftSession} from './settings-draft-session.mjs';
 import {createLayoutScheduler} from './layout-scheduler.mjs';
+import {createPreviewCheckpoint} from './preview-checkpoint.mjs';
 import {describeLayoutInput,collectLayoutDocuments,prepareLayoutOptions,validateLayoutOptions} from './layout-input.mjs';
 import {describeMeasuredPaper} from './measured-paper.mjs';
 import {createPaperDisplay} from './paper-display.mjs';
@@ -168,7 +169,7 @@ function App(){
     invalidate();setStatus('数式フォントを変更しました（未保存）。');
   }
   const weightsFor=family=>{const f=fonts.find(f=>f.alias===family);return f?[f.weight]:[400,500,600,700];};
-  function importFont(){void io(async()=>{const result=await unwrap(api.importFont(rights));if(!result)return;setRights({license:'',licenseText:'',copyAllowed:false,embedAllowed:false});const registered=await registerProjectFonts(result.fonts);resetScanSession();resetTextCache();resetMathCaches();resetParagraphCache();resetPageCache();setFonts(registered);invalidate();setStatus(result.duplicate?'同じフォントは登録済みです。':registered.some(f=>f.id===result.id&&!f.loaded)?'登録しましたがブラウザ読込失敗。出版不可。':'フォントを登録しました。');});}
+  function importFont(){void io(async()=>{const result=await unwrap(api.importFont(rights));if(!result)return;setRights({license:'',licenseText:'',copyAllowed:false,embedAllowed:false});invalidate();const registered=await registerProjectFonts(result.fonts);resetScanSession();resetTextCache();resetMathCaches();resetParagraphCache();resetPageCache();setFonts(registered);invalidate();setStatus(result.duplicate?'同じフォントは登録済みです。':registered.some(f=>f.id===result.id&&!f.loaded)?'登録しましたがブラウザ読込失敗。出版不可。':'フォントを登録しました。');});}
   const [imageManager,setImageManager]=useState(false),[images,setImages]=useState([]),[imageAllowed,setImageAllowed]=useState(false);
   function toggleImages(){if(imageManager){setImageManager(false);return;}void io(async()=>{setImages(await unwrap(api.listImages()));setImageManager(true);});}
   function importImage(){void io(async()=>{const result=await unwrap(api.importImage(imageAllowed));if(!result)return;setImages(result.images);setImageAllowed(false);setStatus(result.duplicate?'同じ画像は登録済みです。':'PNG素材を登録しました。');});}
@@ -616,8 +617,8 @@ function App(){
       const lease=sparse?display.getSparseBase(preview.current,target):null;
       let result,retainedError=false;
       try{
-        result=await measurementLane.run(()=>retainedMode?createRetainedTextPagePreview(document,previewOptions,lease?.snapshot):sparse?createIncrementalTextPagePreview(document,previewOptions,lease?.snapshot):createPlainTextPagePreview(document,previewOptions),{current,category:scope});
-      }catch(e){if(!retainedMode)throw e;retainedError=true;display.forgetSparseBase();}
+        result=await measurementLane.run(()=>retainedMode?createRetainedTextPagePreview(document,previewOptions,lease?.snapshot,createPreviewCheckpoint({current})):sparse?createIncrementalTextPagePreview(document,previewOptions,lease?.snapshot):createPlainTextPagePreview(document,previewOptions),{current,category:scope});
+      }catch(e){if(!current())return;if(!retainedMode)throw e;retainedError=true;display.forgetSparseBase();}
       if((!result&&!retainedError)||!current())return;
       let presentationStarted=performance.now();
       const adapters={previewSourceRange,paperThumbnail,onNavigate:(documentId,range)=>{
@@ -736,7 +737,7 @@ function App(){
     if(next===mode)return;
     if(busy||settingsReview||recoveryOpen||composing.current||structuredComposing||structuredDraft||studyLinkDraft||mathDraft||referenceDraft||labOpen||paragraphOpen||studyOpen){setStatus('現在の操作を完了または取り消してから画面を切り替えてください。');return;}
     if(next!=='home'&&!book)return;
-    setCreating(false);setPreviewScopeOverride(null);setMode(next);setCompactPane('editor');setCompactFocusRequest(null);setWritingPanel(null);if(next==='home'){resetScanSession();resetTextCache();resetMathCaches();resetParagraphCache();resetPageCache();setShowPerformance(false);setHomeTab('projects');setRecoveryHub(null);setRecoveryHubError('');}setShowSettings(next==='settings');
+    setCreating(false);setPreviewScopeOverride(null);setMode(next);setCompactPane('editor');setCompactFocusRequest(null);setWritingPanel(null);if(next==='home'){invalidate(true);resetScanSession();resetTextCache();resetMathCaches();resetParagraphCache();resetPageCache();setShowPerformance(false);setHomeTab('projects');setRecoveryHub(null);setRecoveryHubError('');}setShowSettings(next==='settings');
   }
   function workspaceKey(event){
     // Leave native input undo/redo, IME and active modal interactions alone.
