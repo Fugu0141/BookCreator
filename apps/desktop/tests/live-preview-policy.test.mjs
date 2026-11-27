@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {desiredLivePreviewScope} from '../live-preview-policy.mjs';
+import {desiredLivePreviewScope,livePreviewWaitMs} from '../live-preview-policy.mjs';
 const base={enabled:true,mode:'layout',paperVisible:false,hasBook:true,hasFile:false,hasPage:true,blocked:false,measuring:false,phase:'idle',scope:null};
 const choose=patch=>desiredLivePreviewScope({...base,...patch});
 test('layout defaults to whole book even before a manuscript is opened',()=>{
@@ -37,4 +37,12 @@ test('settings always measure the full book, including unsaved section order',()
   assert.equal(choose({mode:'settings',paperVisible:true,phase:'stale',scope:'book'}),'book');
   assert.equal(choose({mode:'settings',paperVisible:true,phase:'ready',scope:'book'}),null);
   assert.equal(choose({mode:'settings',paperVisible:false}),null);
+});
+
+test('short wait requires a warm retained manuscript in writing mode',()=>{
+  const base={mode:'writing',scope:'manuscript',retained:true,warmRetained:true};
+  assert.equal(livePreviewWaitMs(base),16);
+  for(const patch of [{mode:'layout'},{mode:'design'},{mode:'settings'},{mode:'home'},{scope:'book'},{scope:null},{retained:false},{warmRetained:false},{warmRetained:undefined}]){
+    assert.equal(livePreviewWaitMs({...base,...patch}),100);
+  }
 });
