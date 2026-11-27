@@ -5,7 +5,8 @@ import {createEditPreviewTracker} from './edit-preview-metrics.mjs';
 import {PerformancePanel} from './performance-panel.jsx';
 import {retryPreviewRead,unwrapIpc} from './preview-read-retry.mjs';
 import {CatalogSpecimen} from './catalog-specimen.jsx';
-import React,{useState,useRef,useEffect,useLayoutEffect} from 'react';
+import React,{useState,useRef,useEffect,useLayoutEffect,useMemo} from 'react';
+import {projectBookSettings,projectTypographySettings,projectFontChoices} from './workspace-settings-projection.mjs';
 import {createRoot} from 'react-dom/client';
 import {createManuscriptScanSession,parsePreviewInline,prepareBrowserPreview,prepareBookBrowserPreview,previewSourceRange,planInlineFormat,planListFormat,planListIndent,planListBatch,inspectDisplayMath,planDisplayMath,inspectInlineMath,planInlineMath,inspectComponentDisplayMath,planComponentDisplayMath,equationReferenceTargets,planEquationReference,planEquationNumbering,planNumberedComponentDisplayMath,hasDynamicLabels,hasStudyNumbering,studyTemplate,studyKinds,defaultStudyDesign,customStudyTemplate,isCustomComponentId,linkedStudyTemplate,slottedStudyTemplate,namedSlotDefinitions} from '../../dist/index.js';
 import {scanDocument,scanDocumentIncremental,validateScannedBlocks,indexBlockIds,applyPatches,parseReferenceToken} from '../../../BookCreator_Markdown/dist/index.js';
@@ -156,7 +157,7 @@ function App(){
   const settingsControllers=useRef({}),settingsDialog=useRef(null);
   const [settingsCandidates,setSettingsCandidates]=useState({}),[settingsRecoveryStates,setSettingsRecoveryStates]=useState({}),[settingsReview,setSettingsReview]=useState(null),[settingsResolving,setSettingsResolving]=useState(false);
   const typographyLocked=!!settingsCandidates.typography,bookSettingsLocked=!!settingsCandidates['book-settings'];
-  const settingsDirty=!!savedSettings&&JSON.stringify({page,sections:order})!==JSON.stringify({page:savedSettings.page,sections:savedSettings.sections.filter(s=>s.editable).map(s=>({id:s.id,startOn:s.startOn}))});
+  const {settingsDirty,bookSettingsValue}=useMemo(()=>projectBookSettings(page,order,savedSettings),[page,order,savedSettings]);
   function applySettings(s){setSavedSettings(s);setPage(s.page);setOrder(s.sections.filter(x=>x.editable).map(x=>({id:x.id,startOn:x.startOn})));setBook(b=>b?{...b,sections:s.sections,pageSettings:s.page}:b);}
   function saveBookSettings(){if(bookSettingsLocked)return;void io(async()=>{await persistSettings('book-settings');setStatus('書籍設定を保存しました。');});}
   function changePage(key,value){if(bookSettingsLocked)return;setPage(p=>({...p,[key]:value}));invalidate();}
@@ -164,15 +165,13 @@ function App(){
   function setStart(id,startOn){if(bookSettingsLocked)return;setOrder(prev=>prev.map(s=>s.id===id?{...s,startOn}:s));invalidate();}
   function discardSettings(){if(bookSettingsLocked)return;if(savedSettings){applySettings(savedSettings);invalidate();}}
   const [fonts,setFonts]=useState([]),[fontManager,setFontManager]=useState(false),[rights,setRights]=useState({license:'',licenseText:'',copyAllowed:false,embedAllowed:false});
-  const fontChoices=[...choices,...fonts.map(f=>({id:f.alias,label:f.family+' '+f.style+' · '+f.sha256.slice(0,8)+(f.loaded?'':'（読込失敗）'),disabled:!f.loaded}))];
-  const mathFontChoices=[{id:'auto',label:'自動（システム数式フォント）'},{id:stix,label:'STIX Two Math（同梱）'},...fontChoices.filter(c=>fonts.some(f=>f.alias===c.id&&f.hasMathTable&&f.weight===400))];
+  const {fontChoices,mathFontChoices,componentFonts,weightsFor}=useMemo(()=>projectFontChoices(fonts,choices,stix,idsByFamily),[fonts]);
   function setMathFont(value){
     if(typographyLocked)return;
     if(!mathFontChoices.some(c=>c.id===value&&!c.disabled))return;
     setTypography(t=>{const {mathFontFamily:_,...text}=t;return value==='auto'?text:{...text,mathFontFamily:value};});
     invalidate();setStatus('数式フォントを変更しました（未保存）。');
   }
-  const weightsFor=family=>{const f=fonts.find(f=>f.alias===family);return f?[f.weight]:[400,500,600,700];};
   function importFont(){void io(async()=>{const result=await unwrap(api.importFont(rights));if(!result)return;setRights({license:'',licenseText:'',copyAllowed:false,embedAllowed:false});invalidate();const registered=await registerProjectFonts(result.fonts);resetScanSession();resetTextCache();resetMathCaches();resetParagraphCache();resetPageCache();setFonts(registered);invalidate();setStatus(result.duplicate?'同じフォントは登録済みです。':registered.some(f=>f.id===result.id&&!f.loaded)?'登録しましたがブラウザ読込失敗。出版不可。':'フォントを登録しました。');});}
   const [imageManager,setImageManager]=useState(false),[images,setImages]=useState([]),[imageAllowed,setImageAllowed]=useState(false);
   function toggleImages(){if(imageManager){setImageManager(false);return;}void io(async()=>{setImages(await unwrap(api.listImages()));setImageManager(true);});}
@@ -184,13 +183,12 @@ function App(){
   const [labOpen,setLabOpen]=useState(false),[labLevel,setLabLevel]=useState('default');
   const [libraryNotice,setLibraryNotice]=useState('');
   function changeLibrary(action,afterSave){return io(async()=>{try{if(action.type==='delete'&&text.includes(action.id))throw Error('現在の原稿に部品IDが含まれています。参照を解除してから削除してください。');const next=await unwrap(api.changeComponentLibrary(theme.revision,action));await afterSave?.(next.revision);setTheme(next);invalidate();setLibraryNotice('部品ライブラリを保存しました。');}catch(e){setLibraryNotice(String(e.message??e));}});}
-  const componentFonts=fontChoices.map(c=>({id:idsByFamily[c.id]??('font-'+c.id.slice(7)),label:c.label,weights:weightsFor(c.id),disabled:c.disabled}));
   function applyHeadingDesign(design,afterSave){return io(async()=>{const next=await unwrap(api.saveHeadingDesign(theme.revision,design,labLevel));await afterSave?.(next.revision);setTheme(next);setLabOpen(false);invalidate();setStatus(design?.componentId?'共有部品を見出しに割り当てました。':'見出し部品をテーマに保存しました。');});}
   function labRecovery(usage,level){
     const token=book?.settingRecovery?.token;
     return token?{token,target:{usage,level,entryId:initialLibraryEntry?.id??null},send:request=>unwrap(api.componentRecovery(request))}:null;
   }
-  const themeDirty=!!theme&&JSON.stringify(typography)!==JSON.stringify(fromRoles(theme.roles));
+  const {themeDirty,typographyValue}=useMemo(()=>projectTypographySettings(typography,theme,{fromRoles,toRoles}),[typography,theme]);
   async function applyBook(next){resetScanSession();resetTextCache();resetMathCaches();resetParagraphCache();resetPageCache();installSettingsRecovery(next.settingRecovery);resetRecovery();invalidate(true);setPreviewScopeOverride(null);setLayoutState({phase:'idle',scope:null,pages:0});setImages([]);setImageManager(false);setImageAllowed(false);setFonts(await registerProjectFonts(next.fonts??[]));setEditorFont(noto);setRights({license:'',licenseText:'',copyAllowed:false,embedAllowed:false});setBook(next);if(next.recent)setProjects(next.recent);setCatalogError(next.catalogWarning??'');setMode('writing');setWritingPanel(null);setEditorView('source');setStructuredDraft(null);setStudyLinkDraft(null);setStructuredHistory(null);setStructuredComposing(false);setOutlineOpen(true);setCompactPane('editor');setPageListOpen(true);setPageInfoOpen(true);setShortcutHelp(false);setDesignTab('styles');setComponentSearch('');setComponentFilter('all');setInitialLibraryEntry(null);setShowPaper(livePreview);setFontManager(false);setStudyInstanceId('');setAnswerTo('');setStudyChoice('example');applySettings(next.settings);setShowSettings(false);setFile(null);setText('');setTheme(next.typography);setTypography(fromRoles(next.typography.roles));setCreating(false);setLabOpen(false);setParagraphOpen(false);setStudyOpen(false);setLabLevel("default");setStatus(next.typography.message??'原稿を選択してください。');}
   useEffect(()=>{void refreshProjects();},[]);
   async function loadRecoveryHub(){try{setRecoveryHub(await unwrap(api.listRecoveryCandidates()));setRecoveryHubError('');}catch(e){setRecoveryHub(null);setRecoveryHubError(String(e.message??e));}}
@@ -291,7 +289,6 @@ function App(){
     }
     setSettingsCandidates(candidates);setSettingsRecoveryStates(states);
   }
-  const typographyValue=JSON.stringify(toRoles(typography)),bookSettingsValue=JSON.stringify({page,sections:order});
   useEffect(()=>{
     if(theme?.revision)settingsControllers.current.typography?.update({revision:theme.revision,value:JSON.parse(typographyValue),dirty:themeDirty});
   },[theme?.revision,typographyValue,themeDirty]);
