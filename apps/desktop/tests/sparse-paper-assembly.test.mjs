@@ -22,6 +22,7 @@ test('resolves omitted and changed pages in order without moving nodes',()=>{
   assert.equal(a.reused,2);
   assert.deepEqual(a.pages.map(p=>p.node),[old[0],fresh,old[2]]);
   assert.deepEqual(a.pages.map(p=>p.reuse),[true,false,true]);
+  assert.deepEqual(a.pages.map(p=>p.fragments),a.pages.map(p=>Array.from(p.node.querySelectorAll('[data-block]'))));
   assert.deepEqual(a.removed,[old[3]]);
   assert.deepEqual(previousRoot.childNodes,old);
   assert.equal(result.changedElement.shadowRoot.childNodes[0],fresh);

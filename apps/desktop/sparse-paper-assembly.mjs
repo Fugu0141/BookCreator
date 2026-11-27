@@ -44,6 +44,8 @@ export function prepareSparsePaperAssembly(previousRoot,result){
   let cursor=0;
   for(const page of pages){
     const fragments=Array.from(page.node.querySelectorAll('[data-block]'));
+    // Borrow the validated fragment order for the same synchronous publish transaction.
+    page.fragments=fragments;
     const expected=plan.pages[page.index].fragments;
     if(!Array.isArray(expected)||fragments.length!==expected.length)return null;
     for(let i=0;i<fragments.length;i++){
