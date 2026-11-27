@@ -349,6 +349,7 @@ async function liveWritingSmoke(){
   await click('#mode-writing');await click('[data-section=chapter]');
   await until('initial paper',scopeReady('manuscript')+"&&!!document.querySelector('#preview').getClientRects().length&&!!document.querySelector('#preview > div').dataset.retainedWork");
   if(await raw("!!document.querySelector('#layout-pages')"))throw Error('Hidden page list mounted during writing');
+  if(await raw("!!document.querySelector('#workspace-diagnostic-list')"))throw Error('Hidden diagnostic list mounted during writing');
   if(await raw("!!document.querySelector('.workspace-publication #publication-save')"))throw Error('Hidden publication controls mounted during writing');
   if(await raw("!!document.querySelector('.hub-project-row,#component-catalog .catalog-card')"))throw Error('Hidden workspace lists mounted during writing');
   await click('#performance-toggle');
@@ -1856,6 +1857,7 @@ async function crashRecoverySmoke(prepare){
   await click('#hub-recovery');
   await until('home recovery candidate',"document.querySelector('#hub-recovery-summary')?.textContent==='1 件の復旧候補'&&document.querySelectorAll('.hub-recovery-row').length===1&&document.querySelector('.hub-recovery-row').textContent.includes('執筆フロー検証書籍')&&document.querySelector('.hub-recovery-row').dataset.recoverySection==='chapter-01'&&!document.querySelector('.hub-recovery-row').textContent.includes('強制終了後に復旧する未保存原稿。')");
   await click('.hub-recovery-open');
+  await until('hidden recovery list unmounted',"document.querySelector('.workspace-shell').dataset.workspaceMode==='writing'&&!document.querySelector('.hub-recovery-row,#hub-recovery-summary')");
   await until('recovery after forced exit',"document.querySelector('#recovery-dialog').open&&document.querySelector('#recovery-saved-text').value==="+JSON.stringify(saved)+"&&document.querySelector('#recovery-draft-text').value==="+JSON.stringify(draft)+"&&!!document.querySelector('#recovery-restore')");
   await click('#recovery-later');
   await until('deferred', "!document.querySelector('#recovery-dialog').open&&document.querySelector('#source').readOnly");
