@@ -5,7 +5,7 @@ export function installInputProbe({values,intervalMs}){
   const viewport=document.querySelector('#preview'),state=document.querySelector('#workspace-layout-state'),input=document.querySelector('#source');
   viewport.scrollTop=0;input.focus();
   const origin=performance.now(),timers=[];
-  const probe={started:null,provisionalMs:null,finalMs:null,dispatchOffsetsMs:[],timerLagMs:[],intermediatePublications:0,totalMs:null};
+  const probe={started:null,provisionalMs:null,finalMs:null,dispatchOffsetsMs:[],timerLagMs:[],dispatchWorkMs:[],intermediatePublications:0,totalMs:null};
   let index=-1,seenCurrent=false;
   const observer=new MutationObserver(()=>{
     const host=viewport.firstElementChild;
@@ -33,6 +33,7 @@ export function installInputProbe({values,intervalMs}){
     if(i===values.length-1)probe.started=now;
     Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(input,values[i]);
     input.dispatchEvent(new Event('input',{bubbles:true}));
+    probe.dispatchWorkMs.push(performance.now()-now);
   };
   // Queue all deadlines against the same clock. Late callbacks expose event-loop
   // contention instead of silently shifting the requested input cadence.

@@ -53,6 +53,8 @@ export async function benchmarkRetainedEdits({raw,click,until,ready,paperSignatu
           if(!Number.isSafeInteger(sample.work.measurement.sharedSnapshotEntries)||sample.work.measurement.sharedSnapshotEntries<1||sample.work.measurement.sharedSnapshotEntries>sample.work.measurement.reusedBlocks)throw Error('Retained benchmark did not share measurement snapshots');
           if(!['preparationMs','publicationMs'].every(key=>Number.isFinite(sample.work.hostTiming?.[key])&&sample.work.hostTiming[key]>=0))throw Error('Missing host timing diagnostics');
           if(!Number.isSafeInteger(sample.work.pagination.sharedSnapshotFragments)||sample.work.pagination.sharedSnapshotFragments<1)throw Error('Retained benchmark did not share placement snapshots');
+          const cancelled=sample.work.cancelledJobs;
+          if(!cancelled||!Number.isSafeInteger(cancelled.dropped)||cancelled.dropped<0||!Array.isArray(cancelled.jobs)||cancelled.jobs.length>8||cancelled.jobs.some(j=>!['read','prepare','lane','engine','publish','fallback'].includes(j.phase)||!Number.isFinite(j.elapsedMs)||j.elapsedMs<0||j.preparationMs!==null&&(!Number.isFinite(j.preparationMs)||j.preparationMs<0)))throw Error('Missing cancelled preview diagnostics');
           const stages=sample.work?.checkpoint?.byStage;
           if(!stages||!['paginate-validate','paginate-key','paginate-place','paginate-match','paginate-reuse','paginate-snapshot'].every(stage=>Number.isSafeInteger(stages[stage]?.count)&&stages[stage].count>0&&Number.isFinite(stages[stage].maxGapMs)&&stages[stage].maxGapMs>=0))throw Error('Missing pagination checkpoint diagnostics');
           if(!stages||!['measure-graphemes','measure-hard-line','measure-frozen-line','measure-variable-graphemes','measure-variable-line'].every(stage=>Number.isSafeInteger(stages[stage]?.count)&&stages[stage].count>=0&&Number.isFinite(stages[stage].maxGapMs)&&stages[stage].maxGapMs>=0))throw Error('Missing measurement checkpoint diagnostics');
@@ -60,7 +62,7 @@ export async function benchmarkRetainedEdits({raw,click,until,ready,paperSignatu
         }
         if(!retained&&(sample.work||sample.provisionalMs!==null))throw Error('Baseline used retained work');
         const {finalMs,provisionalMs,pages,work}=sample;
-        const burst=item.id==='burst'?{dispatchOffsetsMs:sample.dispatchOffsetsMs,timerLagMs:sample.timerLagMs,intermediatePublications:sample.intermediatePublications,totalMs:sample.totalMs}:undefined;
+        const burst=item.id==='burst'?{dispatchOffsetsMs:sample.dispatchOffsetsMs,timerLagMs:sample.timerLagMs,dispatchWorkMs:sample.dispatchWorkMs,intermediatePublications:sample.intermediatePublications,totalMs:sample.totalMs}:undefined;
         samples.push({case:item.id,pair,arm,finalMs,provisionalMs,pages,work,...(burst?{burst}:{})});
         await edit(large.source);
         if(await paperSignature()!==original||await readFile(join(root,'manuscript',large.id+'.md'),'utf8')!==large.source)throw Error('Retained benchmark restore failed');
@@ -96,6 +98,7 @@ export function summarizeBurstInputSamples(rows){
     if(!b||!['uncached','warm'].includes(r.arm)||!Number.isInteger(r.pair)||r.pair<1||r.pair>4||
       !Array.isArray(b.dispatchOffsetsMs)||b.dispatchOffsetsMs.length!==5||
       !Array.isArray(b.timerLagMs)||b.timerLagMs.length!==5||
+      !Array.isArray(b.dispatchWorkMs)||b.dispatchWorkMs.length!==5||b.dispatchWorkMs.some(n=>!Number.isFinite(n)||n<0)||
       b.dispatchOffsetsMs.some((n,i)=>!Number.isFinite(n)||n<0||(i>0&&n<b.dispatchOffsetsMs[i-1]))||
       b.timerLagMs.some((n,i)=>!Number.isFinite(n)||n<0||Math.abs(n-Math.max(0,b.dispatchOffsetsMs[i]-35*i))>0.001)||
       !Number.isInteger(b.intermediatePublications)||b.intermediatePublications<0||b.intermediatePublications>4||
@@ -105,7 +108,8 @@ export function summarizeBurstInputSamples(rows){
   const arms=Object.fromEntries(['uncached','warm'].map(arm=>{
     const selected=rows.filter(r=>r.arm===arm);
     const lag=selected.flatMap(r=>r.burst.timerLagMs.slice(1)).sort((a,b)=>a-b);
-    return [arm,{timerLagP95Ms:lag[Math.ceil(lag.length*.95)-1],timerLagMaxMs:lag.at(-1),intermediatePublications:selected.reduce((n,r)=>n+r.burst.intermediatePublications,0),scheduledInputs:lag.length}];
+    const dispatch=selected.flatMap(r=>r.burst.dispatchWorkMs).sort((a,b)=>a-b);
+    return [arm,{dispatchWorkP95Ms:dispatch[Math.ceil(dispatch.length*.95)-1],dispatchWorkMaxMs:dispatch.at(-1),timerLagP95Ms:lag[Math.ceil(lag.length*.95)-1],timerLagMaxMs:lag.at(-1),intermediatePublications:selected.reduce((n,r)=>n+r.burst.intermediatePublications,0),scheduledInputs:lag.length}];
   }));
   return {intervalMs:35,inputsPerSample:5,lastInputToFinal:compare(r=>r.finalMs),firstInputTaskToFinal:compare(r=>r.burst.totalMs),arms};
 }
