@@ -44,10 +44,11 @@ export function PaperViewControls({view}){
   return <div className="layout-view-tools"><label>表示倍率<select id="layout-zoom" value={view.mode} onChange={e=>view.setMode(e.target.value)}>{['50','75','100','125','150','200','width','page'].map(v=><option key={v} value={v}>{v==='width'?'幅に合わせる':v==='page'?'ページ全体':v+'%'}</option>)}</select></label><output id="layout-zoom-value" aria-live="polite">{view.percent}%</output><label><input id="layout-guides" type="checkbox" checked={view.guides} onChange={e=>view.setGuides(e.target.checked)}/>余白ガイド</label></div>;
 }
 // Geometry-only overview: no duplicate text, image assets or interactive page DOM.
-export function paperThumbnail(page){
+export function paperThumbnail(page,fragments){
   const width=parseFloat(page.style.width),height=parseFloat(page.style.height);
   if(!(width>0&&height>0))return null;
-  const boxes=[...page.querySelectorAll(':scope > [data-block]')].slice(0,60).map(node=>({x:parseFloat(node.style.left),y:parseFloat(node.style.top),w:parseFloat(node.style.width),h:parseFloat(node.style.height)})).filter(b=>Object.values(b).every(Number.isFinite)&&b.w>0&&b.h>0);
+  const direct=fragments?fragments.filter(node=>node.parentNode===page):[...page.querySelectorAll(':scope > [data-block]')];
+  const boxes=direct.slice(0,60).map(node=>({x:parseFloat(node.style.left),y:parseFloat(node.style.top),w:parseFloat(node.style.width),h:parseFloat(node.style.height)})).filter(b=>Object.values(b).every(Number.isFinite)&&b.w>0&&b.h>0);
   return {width,height,boxes};
 }
 export function PaperThumbnail({shape}){
