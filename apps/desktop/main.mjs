@@ -2854,7 +2854,10 @@ async function smoke(){
   await exec("document.querySelector('#preview-button').click()");
   await until("document.querySelector(\'#workspace-layout-state\').dataset.phase===\'ready\' && ("+"!!document.querySelector('#preview > div')?.shadowRoot?.querySelector('[data-named-slot=hint]')"+")");
   await exec("document.querySelector('#preview > div').shadowRoot.querySelector('[data-named-slot=hint]').click()");
-  if(!await exec("(()=>{const e=document.querySelector('#source');return e.value.slice(e.selectionStart,e.selectionEnd)==='追加の原稿を入力してください。';})()"))throw Error('Named slot source selection is not independent');
+  const namedSlotSelected="(()=>{const e=document.querySelector('#source');return document.activeElement===e&&e.value.slice(e.selectionStart,e.selectionEnd)==='追加の原稿を入力してください。';})()";
+  if(!await exec(namedSlotSelected))throw Error('Named slot source selection is not independent');
+  await exec("new Promise(resolve=>requestAnimationFrame(()=>resolve(true)))");
+  if(!await exec(namedSlotSelected))throw Error('Late insertion selection overwrote named slot navigation');
   await exec("document.querySelector('#save').click()");
   await until("document.querySelector('#save').disabled && !document.querySelector('#open').disabled");
   // Optional slots and their conditional groups disappear only in instances that omit them.

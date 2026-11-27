@@ -25,7 +25,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: Fugu0141/BookCreator_LayoutEngine
-          ref: dc58e2998babc14e2129accea5a435979f958af2
+          ref: 247a6d50ae1cc66230bf6163825957416146fafb
           path: BookCreator_LayoutEngine
           persist-credentials: false
       - uses: actions/setup-node@v4

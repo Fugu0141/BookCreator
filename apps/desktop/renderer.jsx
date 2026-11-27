@@ -412,17 +412,18 @@ function App(){
   },[file?.id,file?.revision,file?.editable,text,isComposing,structuredComposing,recoveryCandidate]);
 
   const [mathDraft,setMathDraft]=useState(null),mathPreview=useRef(null),mathComposing=useRef(false);
-  const pendingMathSelection=useRef(null);
-  // Restore selection only after React commits the edited value and unlocks
-  // the source field. A frame callback can run while async IPC is still busy.
+  const pendingEditSelection=useRef(null);
+  // Restore command selection only after React commits the edited value and
+  // unlocks the source field. Never leave a frame callback that can overwrite
+  // a newer paper navigation selection.
   useLayoutEffect(()=>{
-    const p=pendingMathSelection.current;
+    const p=pendingEditSelection.current;
     if(!p)return;
-    if(generation.current!==p.job||textarea.current!==p.node||file?.id!==p.fileId||mode!=='writing'||editorView!=='source'){
-      pendingMathSelection.current=null;return;
+    if(!p.node||generation.current!==p.job||textarea.current!==p.node||file?.id!==p.fileId||mode!=='writing'||editorView!=='source'){
+      pendingEditSelection.current=null;return;
     }
     if(busy||mathDraft||p.node.disabled)return;
-    pendingMathSelection.current=null;
+    pendingEditSelection.current=null;
     if(p.node.value!==p.value||!p.node.isConnected||composing.current)return;
     p.node.focus();p.node.setSelectionRange(p.start,p.end);syncSelection();
   },[text,busy,mathDraft,file?.id,mode,editorView]);
@@ -461,7 +462,7 @@ function App(){
       const plan=mathDraft.kind==='inline'?planInlineMath(text,mathDraft.start,mathDraft.end,mathDraft.formula,deps,context):mathDraft.component?(mathDraft.mode==='insert'&&mathDraft.numbered?planNumberedComponentDisplayMath(context.documents,context.documentId,mathDraft.start,mathDraft.end,mathDraft.formula,mathDraft.equationId,deps):planComponentDisplayMath(text,mathDraft.start,mathDraft.end,mathDraft.formula,deps,context)):planDisplayMath(text,mathDraft.start,mathDraft.end,mathDraft.formula,scanDocument,parseDisplayMath,mathDraft.mode==='insert'&&mathDraft.numbered?mathDraft.equationId:undefined);
       const next=applyPatches(text,[plan.patch]);
       setMathDraft(null);edit(next);setStatus((mathDraft.kind==='inline'?'本文内数式':'独立数式')+'を'+(plan.action==='apply'?'挿入':'更新')+'しました（未保存）。');
-      pendingMathSelection.current={node,fileId:file.id,job:generation.current,value:next,start:plan.selection.start,end:plan.selection.end};
+      pendingEditSelection.current={node,fileId:file.id,job:generation.current,value:next,start:plan.selection.start,end:plan.selection.end};
     };
     try{
       if(mathStale||node.value!==mathDraft.source)throw Error('原稿が変更されました。数式エディタを開き直してください。');
@@ -594,7 +595,8 @@ function App(){
       if(!last||last.kind!=='directive'||!last.closed||last.range.start!==start||last.range.end!==next.length||parsed.diagnostics.length)throw Error('末尾が未閉鎖のブロック内にあるか、原稿の構文を確認してください。');
       if(indexBlockIds([{documentId:file.id,revision:file.revision,parsed}]).diagnostics.length)throw Error('原稿内で部品IDが重複しています。');
       edit(next);setStudyInstanceId('');setAnswerTo('');setStatus('参考書部品を原稿末尾へ追加しました（未保存）。');
-      requestAnimationFrame(()=>{if(textarea.current){const lines=template.split('\n'),line=names.length?2:1,p=start+lines.slice(0,line).join('\n').length+1;textarea.current.focus();textarea.current.setSelectionRange(p,p+lines[line].length);}});
+      const lines=template.split('\n'),line=names.length?2:1,p=start+lines.slice(0,line).join('\n').length+1;
+      pendingEditSelection.current={node:textarea.current,fileId:file.id,job:generation.current,value:next,start:p,end:p+lines[line].length};
     }catch(e){setStatus(String(e.message??e));}
   }
   async function render(whole=false,automatic=false){
