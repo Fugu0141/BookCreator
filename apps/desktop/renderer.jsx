@@ -30,6 +30,7 @@ import {recoverySession} from './recovery-session.mjs';
 import {settingsDraftSession} from './settings-draft-session.mjs';
 import {createLayoutScheduler} from './layout-scheduler.mjs';
 import {createPreviewCheckpoint} from './preview-checkpoint.mjs';
+import {createCancelledPreviewLog} from './cancelled-preview-log.mjs';
 import {visiblePaperPageIndices} from './viewport-page-priority.mjs';
 import {describeLayoutInput,collectLayoutDocuments,prepareLayoutOptions,validateLayoutOptions} from './layout-input.mjs';
 import {describeMeasuredPaper} from './measured-paper.mjs';
@@ -251,6 +252,8 @@ function App(){
   if(!editPreviewTracker.current)editPreviewTracker.current=createEditPreviewTracker();
   const layoutScheduler=useRef(null);
   if(!layoutScheduler.current)layoutScheduler.current=createLayoutScheduler();
+  const cancelledPreviewLog=useRef(null);
+  if(!cancelledPreviewLog.current)cancelledPreviewLog.current=createCancelledPreviewLog();
   const paperDisplay=useRef(null);
   if(!paperDisplay.current)paperDisplay.current=createPaperDisplay();
   const liveDelay=useRef(null);
@@ -616,13 +619,14 @@ function App(){
     const mathOptions=mathCacheEnabled?mathCaches.current:{};
     const retainedMode=retainedPreview&&scope==='manuscript'&&!pageCache&&!reusePaperPages;
     const scanSession=retainedMode?manuscriptSession.current:undefined;
-    const raw=text;let diagnostics=[],documents=[],provisional=null;
+    const raw=text;let diagnostics=[],documents=[],provisional=null,checkpoint=null,preparationMs=null,phase='read';
+    const diagnosticTarget=paperTarget(scope);
     try{
       const input=describeLayoutInput({whole,file,raw,page,savedSettings,typography,theme,fonts,order,job,bundledFingerprint:__BUNDLED_FONT_FINGERPRINT__},{paperGeometry,hasDynamicLabels,hasStudyNumbering});
       const current=()=>layoutScheduler.current.isCurrent(job);
       const snapshot=whole||input.needsContext?await retryPreviewRead(()=>unwrap(api.readPreviewBook(book.settingRecovery.token)),{current,category:'source'}):undefined;
       if(!layoutScheduler.current.isCurrent(job))return;
-      const preparationStarted=performance.now();
+      phase='prepare';const preparationStarted=performance.now();
       documents=collectLayoutDocuments(input,snapshot);
       const scanBefore=scanSession?.stats();
       const prepared=prepareLayoutOptions(input,documents,prepareBookBrowserPreview,scanSession?{...deps,scanSession}:deps);
@@ -631,20 +635,21 @@ function App(){
       if(!prepared.options)throw Error(diagnostics.map(d=>d.code+' '+d.message).join('\n'));
       const options=prepared.options;
       validateLayoutOptions(options,input.fonts);
-      const preparationMs=performance.now()-preparationStarted;
+      preparationMs=performance.now()-preparationStarted;
       const geometry=input.geometry;
       const previewOptions={...options,paper:geometry.paper,measurementCache,paragraphCache,pageCache,...mathOptions,collectTimings:true,resolveImage:id=>resolveImage(id,current)};
       const target=paperTarget(scope),display=paperDisplay.current;
       const sparse=(sparsePaperPages||retainedMode)&&!pageCache&&!reusePaperPages;
       const lease=sparse?display.getSparseBase(preview.current,target):null;
-      let result,retainedError=false,priorityPages=[],firstVisitedPage=null,provisionalCount=0,checkpoint=null;
+      let result,retainedError=false,priorityPages=[],firstVisitedPage=null,provisionalCount=0;
+      phase='lane';
       try{
         result=await measurementLane.run(()=>{
           if(!retainedMode)return sparse?createIncrementalTextPagePreview(document,previewOptions,lease?.snapshot):createPlainTextPagePreview(document,previewOptions);
           // Read at lane entry, after any waiting, from the exact retained host.
           if(lease&&display.getSparseBase(preview.current,target)===lease)priorityPages=visiblePaperPageIndices(preview.current,lease.host);
           if(automatic&&mode==='writing'&&scope==='manuscript'&&priorityPages.length)provisional=display.beginProvisional(preview.current,target,lease,current);
-          checkpoint=createPreviewCheckpoint({current});
+          phase='engine';checkpoint=createPreviewCheckpoint({current});
           return createRetainedTextPagePreview(document,previewOptions,lease?.snapshot,(stage,index)=>{
             if(stage==='render-page'&&firstVisitedPage===null&&Number.isSafeInteger(index))firstVisitedPage=index;
             return checkpoint(stage);
@@ -662,7 +667,7 @@ function App(){
         },{current,category:scope});
       }catch(e){if(!current())return;if(!retainedMode)throw e;retainedError=true;display.forgetSparseBase();}
       if((!result&&!retainedError)||!current())return;
-      let presentationStarted=performance.now();
+      phase='publish';let presentationStarted=performance.now();
       const adapters={previewSourceRange,paperThumbnail,onNavigate:(documentId,range)=>{
         if(!layoutScheduler.current.isCurrent(job))return;
         if(documentId!==file?.id){setStatus('この断片は '+documentId+' の原稿です。左の原稿一覧から開いてください。');return;}
@@ -673,7 +678,7 @@ function App(){
       let publication=sparse&&result?display.publishSparse(preview.current,target,result,lease,(root,pages)=>describeMeasuredPaper(result,options,adapters,{root,pages})):null;
       let sparseFallback=false;
       if(sparse&&!publication){
-        sparseFallback=true;display.forgetSparseBase();
+        phase='fallback';sparseFallback=true;display.forgetSparseBase();
         result=await measurementLane.run(()=>createPlainTextPagePreview(document,previewOptions),{current,category:scope});
         if(!result||!current()||!preview.current)return;
         presentationStarted=performance.now();
@@ -687,7 +692,7 @@ function App(){
       if(host){
         delete host.dataset.retainedWork;
         if(retainedMode&&!sparseFallback&&result.paginationWork&&result.measurementWork){
-          host.dataset.retainedWork=JSON.stringify({pagination:result.paginationWork,measurement:result.measurementWork,scan:{hits:scanAfter.hits-scanBefore.hits,misses:scanAfter.misses-scanBefore.misses},priorityPages,firstVisitedPage,provisionalCount,checkpoint:checkpoint?.snapshot(),hostTiming:{preparationMs,publicationMs:performance.now()-presentationStarted}});
+          host.dataset.retainedWork=JSON.stringify({pagination:result.paginationWork,measurement:result.measurementWork,scan:{hits:scanAfter.hits-scanBefore.hits,misses:scanAfter.misses-scanBefore.misses},priorityPages,firstVisitedPage,provisionalCount,checkpoint:checkpoint?.snapshot(),cancelledJobs:cancelledPreviewLog.current.take(diagnosticTarget),hostTiming:{preparationMs,publicationMs:performance.now()-presentationStarted}});
         }
       }
       const {pages,retained}=publication;
@@ -699,7 +704,12 @@ function App(){
       if(!sparseFallback)previewPhaseMetrics.record(scope,!!measurementCache,{...result.timings,presentationMs:performance.now()-presentationStarted},mathCacheEnabled,!!paragraphCache,!!pageCache,reusePaperPages,sparse,retainedMode);
       if(!automatic)setStatus(result.plan.pages.length+' ページ · '+(whole?'書籍全体':'選択原稿')+' · 実測プレビュー（出版不可）');
     }catch(e){if(layoutScheduler.current.isCurrent(job)){editPreviewTracker.current.reset();outcome='failed';setLayoutState({phase:'failed',scope,pages:0});setLayoutDiagnostics(diagnosticRecords(diagnostics,documents,e));if(!automatic)setStatus(String(e.message??e));}}
-    finally{provisional?.clear();performanceMetrics.record({stage:'layout',category:scope,outcome,waitMs:startedAt-requestedAt,runMs:performance.now()-startedAt});if(layoutScheduler.current.isCurrent(job))setMeasuring(false);}
+    finally{
+      provisional?.clear();
+      const elapsedMs=performance.now()-startedAt;
+      if(retainedMode&&automatic&&outcome==='cancelled')cancelledPreviewLog.current.record(diagnosticTarget,{phase,elapsedMs,preparationMs,checkpoint:checkpoint?.snapshot()??null});
+      performanceMetrics.record({stage:'layout',category:scope,outcome,waitMs:startedAt-requestedAt,runMs:elapsedMs});if(layoutScheduler.current.isCurrent(job))setMeasuring(false);
+    }
   }
   function navigatePage(number){
     if(layoutState.phase!=='ready'||!Number.isInteger(number)||number<1||number>layoutPages.length)return;
