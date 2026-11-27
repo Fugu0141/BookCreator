@@ -71,12 +71,21 @@ export async function benchmarkRetainedEdits({raw,click,until,ready,paperSignatu
     }
   }
   await setRetained(false);
-  const summaries=cases.map(({id})=>{
-    const rows=samples.filter(s=>s.case===id);
-    const final=summarizeCacheComparison(rows.map(s=>({label:'cache-pair-'+s.pair+'-'+s.arm,scope:'manuscript',elapsedMs:s.finalMs})),'manuscript');
-    const provisional=rows.filter(s=>s.arm==='warm'&&s.provisionalMs!==null);
-    return {case:id,final,provisionalCount:provisional.length,retainedCount:rows.filter(s=>s.arm==='warm').length,provisionalSamples:provisional.map(s=>({pair:s.pair,firstDomMs:s.provisionalMs,finalDomMs:s.finalMs,leadMs:s.finalMs-s.provisionalMs}))};
-  });
+  const summaries=cases.map(({id})=>summarizeRetainedEditSamples(id,samples.filter(s=>s.case===id)));
   console.log('BENCH retained '+JSON.stringify({version:1,summaries,samples}));
   return {summaries,samples};
+}
+
+export function summarizeRetainedEditSamples(id,rows){
+  for(const r of rows){
+    if(!Number.isFinite(r.finalMs)||r.finalMs<=0||r.provisionalMs!==null&&(!Number.isFinite(r.provisionalMs)||r.provisionalMs<=0||r.provisionalMs>r.finalMs||r.arm!=='warm'))throw Error('Invalid retained edit latency');
+  }
+  const compare=select=>summarizeCacheComparison(rows.map(s=>({label:'cache-pair-'+s.pair+'-'+s.arm,scope:'manuscript',elapsedMs:select(s)})),'manuscript');
+  const provisional=rows.filter(s=>s.arm==='warm'&&s.provisionalMs!==null);
+  const percentile=(values,q)=>[...values].sort((a,b)=>a-b)[Math.ceil(values.length*q)-1];
+  const p95=select=>Object.fromEntries(['uncached','warm'].map(arm=>[arm,percentile(rows.filter(s=>s.arm===arm).map(select),.95)]));
+  const first=s=>s.provisionalMs??s.finalMs;
+  return {case:id,final:compare(s=>s.finalMs),first:compare(first),finalP95:p95(s=>s.finalMs),firstP95:p95(first),
+    provisionalCount:provisional.length,retainedCount:rows.filter(s=>s.arm==='warm').length,
+    provisionalSamples:provisional.map(s=>({pair:s.pair,firstDomMs:s.provisionalMs,finalDomMs:s.finalMs,leadMs:s.finalMs-s.provisionalMs}))};
 }
