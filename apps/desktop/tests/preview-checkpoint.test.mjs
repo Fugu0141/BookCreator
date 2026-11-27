@@ -76,3 +76,15 @@ test('fine render checkpoints retain distinct counters and gap statistics',()=>{
   assert.deepEqual(stats.byStage['render-line'],{count:1,maxGapMs:3});
   assert.equal(stats.byStage.other.count,0);
 });
+
+test('native variable measurement checkpoints retain distinct counters and timing',()=>{
+  let time=0;
+  const checkpoint=createPreviewCheckpoint({current:()=>true,now:()=>time});
+  time=1;checkpoint('measure-variable-graphemes');
+  time=4;checkpoint('measure-variable-line');
+  time=6;checkpoint('measure-variable-graphemes');
+  const stats=checkpoint.snapshot();
+  assert.deepEqual(stats.byStage['measure-variable-graphemes'],{count:2,maxGapMs:2});
+  assert.deepEqual(stats.byStage['measure-variable-line'],{count:1,maxGapMs:3});
+  assert.equal(stats.byStage.other.count,0);
+});
