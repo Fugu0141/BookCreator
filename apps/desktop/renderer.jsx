@@ -31,6 +31,7 @@ import {settingsDraftSession} from './settings-draft-session.mjs';
 import {createLayoutScheduler} from './layout-scheduler.mjs';
 import {createPreviewCheckpoint} from './preview-checkpoint.mjs';
 import {createCancelledPreviewLog} from './cancelled-preview-log.mjs';
+import {yieldCurrentPreview} from './preview-task-boundary.mjs';
 import {visiblePaperPageIndices} from './viewport-page-priority.mjs';
 import {describeLayoutInput,collectLayoutDocuments,prepareLayoutOptions,validateLayoutOptions} from './layout-input.mjs';
 import {describeMeasuredPaper} from './measured-paper.mjs';
@@ -619,7 +620,7 @@ function App(){
     const mathOptions=mathCacheEnabled?mathCaches.current:{};
     const retainedMode=retainedPreview&&scope==='manuscript'&&!pageCache&&!reusePaperPages;
     const scanSession=retainedMode?manuscriptSession.current:undefined;
-    const raw=text;let diagnostics=[],documents=[],provisional=null,checkpoint=null,preparationMs=null,phase='read';
+    const raw=text;let diagnostics=[],documents=[],provisional=null,checkpoint=null,preparationMs=null,preparationYieldMs=null,phase='read';
     const diagnosticTarget=paperTarget(scope);
     try{
       const input=describeLayoutInput({whole,file,raw,page,savedSettings,typography,theme,fonts,order,job,bundledFingerprint:__BUNDLED_FONT_FINGERPRINT__},{paperGeometry,hasDynamicLabels,hasStudyNumbering});
@@ -636,6 +637,15 @@ function App(){
       const options=prepared.options;
       validateLayoutOptions(options,input.fonts);
       preparationMs=performance.now()-preparationStarted;
+      // Host preparation is synchronous and outside the Engine's slice budget.
+      // Let queued input run before acquiring the physical measurement lane.
+      if(automatic&&retainedMode){
+        phase='prepare-yield';
+        const boundaryStarted=performance.now();
+        const stillCurrent=await yieldCurrentPreview(current);
+        preparationYieldMs=performance.now()-boundaryStarted;
+        if(!stillCurrent)return;
+      }
       const geometry=input.geometry;
       const previewOptions={...options,paper:geometry.paper,measurementCache,paragraphCache,pageCache,...mathOptions,collectTimings:true,resolveImage:id=>resolveImage(id,current)};
       const target=paperTarget(scope),display=paperDisplay.current;
@@ -692,7 +702,7 @@ function App(){
       if(host){
         delete host.dataset.retainedWork;
         if(retainedMode&&!sparseFallback&&result.paginationWork&&result.measurementWork){
-          host.dataset.retainedWork=JSON.stringify({pagination:result.paginationWork,measurement:result.measurementWork,scan:{hits:scanAfter.hits-scanBefore.hits,misses:scanAfter.misses-scanBefore.misses},priorityPages,firstVisitedPage,provisionalCount,checkpoint:checkpoint?.snapshot(),cancelledJobs:cancelledPreviewLog.current.take(diagnosticTarget),hostTiming:{preparationMs,publicationMs:performance.now()-presentationStarted}});
+          host.dataset.retainedWork=JSON.stringify({pagination:result.paginationWork,measurement:result.measurementWork,scan:{hits:scanAfter.hits-scanBefore.hits,misses:scanAfter.misses-scanBefore.misses},priorityPages,firstVisitedPage,provisionalCount,checkpoint:checkpoint?.snapshot(),cancelledJobs:cancelledPreviewLog.current.take(diagnosticTarget),hostTiming:{preparationMs,preparationYieldMs,publicationMs:performance.now()-presentationStarted}});
         }
       }
       const {pages,retained}=publication;
@@ -707,7 +717,7 @@ function App(){
     finally{
       provisional?.clear();
       const elapsedMs=performance.now()-startedAt;
-      if(retainedMode&&automatic&&outcome==='cancelled')cancelledPreviewLog.current.record(diagnosticTarget,{phase,elapsedMs,preparationMs,checkpoint:checkpoint?.snapshot()??null});
+      if(retainedMode&&automatic&&outcome==='cancelled')cancelledPreviewLog.current.record(diagnosticTarget,{phase,elapsedMs,preparationMs,preparationYieldMs,checkpoint:checkpoint?.snapshot()??null});
       performanceMetrics.record({stage:'layout',category:scope,outcome,waitMs:startedAt-requestedAt,runMs:elapsedMs});if(layoutScheduler.current.isCurrent(job))setMeasuring(false);
     }
   }
