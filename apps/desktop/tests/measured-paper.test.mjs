@@ -38,3 +38,27 @@ test('sparse publication consumes validated fragments and updates current source
   listeners.click({composedPath:()=>[b,root],stopPropagation(){}});
   assert.deepEqual(nav,[['doc-a',{start:40,end:45}],['doc-b',{start:60,end:65}]]);
 });
+
+test('reused paper thumbnail geometry is shared, but current navigation is rebuilt',()=>{
+  const listeners={},nav=[],calls=[];
+  const page={},block={style:{},querySelectorAll:()=>[]};
+  const root={addEventListener:(name,fn)=>{listeners[name]=fn;}};
+  const origin={documentId:'doc',blockKey:'a'};
+  const options={sections:[{blocks:[{origin}]}]};
+  const adapter={previewSourceRange:(_,s)=>s.range,paperThumbnail:(p,fragments)=>{
+    assert.equal(p,page);assert.deepEqual(fragments,[block]);
+    const value={sample:calls.length};calls.push(value);return value;
+  },onNavigate:(...args)=>nav.push(args)};
+  function publish(reuse,start){
+    return describeMeasuredPaper({slices:[{origin,range:{start,end:start+1}}]},options,adapter,{root,pages:[{node:page,reuse,fragments:[block]}]})[0];
+  }
+  const first=publish(false,1),next=publish(true,5);
+  assert.equal(next.thumbnail,first.thumbnail);assert.equal(calls.length,1);
+  listeners.click({composedPath:()=>[block,root],stopPropagation(){}});
+  assert.deepEqual(nav,[['doc',{start:5,end:6}]]);
+  assert.notEqual(publish(false,9).thumbnail,first.thumbnail);
+  assert.equal(calls.length,2);
+  const otherAdapter={...adapter,paperThumbnail:()=>null};
+  const other=describeMeasuredPaper({slices:[{origin,range:{start:10,end:11}}]},options,otherAdapter,{root,pages:[{node:page,reuse:true,fragments:[block]}]})[0];
+  assert.equal(other.thumbnail,null);
+});

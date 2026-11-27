@@ -1,4 +1,7 @@
 import {installPaperNavigation} from './paper-navigation.mjs';
+// A reused page preserves physical geometry; source bindings must still be
+// rebuilt. Weak keys keep geometry from extending the lifetime of old DOM.
+const thumbnailCache=new WeakMap();
 // DOM adapter: measured paper metadata and source navigation bindings.
 // Does not own editor state or perform a file operation.
 export function describeMeasuredPaper(result,options,{previewSourceRange,paperThumbnail,onNavigate},assembly){
@@ -31,7 +34,14 @@ export function describeMeasuredPaper(result,options,{previewSourceRange,paperTh
         if(named)bind(node,previewSourceRange(block,named,named.name));
       }
     }
-    return {number:index+1,documents:[...documents],blocks:fragments.length,thumbnail:paperThumbnail(page)};
+    let thumbnail;
+    const cached=reuse?thumbnailCache.get(page):undefined;
+    if(cached&&cached.adapter===paperThumbnail)thumbnail=cached.value;
+    else{
+      thumbnail=paperThumbnail(page,fragments);
+      thumbnailCache.set(page,{adapter:paperThumbnail,value:thumbnail});
+    }
+    return {number:index+1,documents:[...documents],blocks:fragments.length,thumbnail};
   });
   installPaperNavigation(root,bindings,onNavigate);
   return pages;
