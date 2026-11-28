@@ -1,4 +1,5 @@
 import {areaPercentFromDrag} from './component-area-drag.mjs';
+import {MAX_PAPER_TRAILING_SPACE} from './paper-area-store.mjs';
 
 // These are IL minimum occupied dimensions, not the width of measured text.
 // Only explicit user intent is returned; measured geometry is never persisted.
@@ -41,4 +42,26 @@ export function finishPaperAreaDrag(gesture,{current,placement,pointerPx,cancell
   const preview=previewPaperAreaDrag(gesture,pointerPx);
   if(!preview?.changed)return null;
   return planPaperAreaIntent({target:gesture.target,current,placement,axis:gesture.axis,value:preview.value});
+}
+
+
+// Gap gestures use physical micrometres, not occupied-height percentages.
+// Zero is a valid starting point, and no layout or saved state is changed here.
+export function beginPaperGapDrag({target,current,placement={},value=0,bodyPx,bodyHeight,originPx}){
+  if(!canEditPaperArea(target,current)||placement.mode==='fixed'||placement.fixed)return null;
+  if(!Number.isSafeInteger(bodyHeight)||bodyHeight<=0||!Number.isFinite(bodyPx)||bodyPx<=0||!Number.isFinite(originPx)||!Number.isSafeInteger(value)||value<0||value>MAX_PAPER_TRAILING_SPACE)return null;
+  const max=Math.floor(Math.min(bodyHeight,MAX_PAPER_TRAILING_SPACE)/1000)*1000;
+  if(value>max)return null;
+  return {target:{...target},value,bodyPx,bodyHeight,originPx,max};
+}
+export function previewPaperGapDrag(gesture,pointerPx){
+  if(!gesture||!Number.isFinite(pointerPx))return null;
+  const delta=pointerPx-gesture.originPx;
+  const value=Math.max(0,Math.min(gesture.max,Math.round((gesture.value+delta/gesture.bodyPx*gesture.bodyHeight)/1000)*1000));
+  return {value,extentPx:value/gesture.bodyHeight*gesture.bodyPx,changed:Math.abs(delta)>=2&&value!==gesture.value};
+}
+export function finishPaperGapDrag(gesture,{current,placement={},pointerPx,cancelled=false}){
+  if(cancelled||!gesture||!canEditPaperArea(gesture.target,current)||placement.mode==='fixed'||placement.fixed)return null;
+  const proposal=previewPaperGapDrag(gesture,pointerPx);
+  return proposal?.changed?proposal.value:null;
 }
