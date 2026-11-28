@@ -81,3 +81,23 @@ test('reused fragments skip topology searches while rebinding math and named slo
   assert.deepEqual(nav,[['a',{start:100,end:105}],['a',{start:102,end:103}],['a',{start:101,end:104}]]);
   publish(false);assert.equal(searches,4);
 });
+
+test('source index isolates document and block keys and resolves the current source object',()=>{
+  const root={addEventListener(){}};
+  const fragment=()=>({style:{},querySelectorAll:()=>[]});
+  const origin=(documentId,blockKey)=>({documentId,blockKey});
+  const a=origin('a,b','c'),b=origin('a','b,c'),c=origin('other','c');
+  const previous={origin:a},current={origin:a},second={origin:b},third={origin:c};
+  const slices=[a,b,c,origin('missing','c')].map(origin=>({origin,textStart:0,textEnd:1}));
+  const options={sections:[{blocks:[previous,second,{kind:'break',origin:a}]},{blocks:[third,current,{kind:'break',origin:c}]}]};
+  const seen=[];
+  const fragments=slices.map(fragment);
+  describeMeasuredPaper({slices},options,{
+    previewSourceRange:(block,slice)=>{seen.push([block,slice]);return block?{start:1,end:2}:null;},
+    paperThumbnail:()=>null,onNavigate:()=>{}
+  },{root,pages:[{node:{},reuse:false,fragments}]});
+  assert.deepEqual(seen.map(([block])=>block),[current,second,third,undefined]);
+  assert.equal(seen[0][0],current);
+  assert.deepEqual(seen.map(([,slice])=>slice),slices);
+  assert.equal(fragments[3].tabIndex,undefined);
+});
