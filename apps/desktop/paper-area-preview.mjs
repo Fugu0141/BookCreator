@@ -34,7 +34,7 @@ export function verifySavedAreaPreview(prepared,result){
 
 // A transient proposal is never a saved snapshot or a published host plan.
 // The caller owns cancellation and the physical browser measurement lane.
-export async function measureInlineAreaProposal(context,values,measure,current){
+export async function measureInlineAreaProposal(context,values,measure,current,privateCaches={}){
   if(!current())return;
   const id=context.target.documentId;
   const before=context.areaPrepared.document;
@@ -42,7 +42,16 @@ export async function measureInlineAreaProposal(context,values,measure,current){
   if(encodePaperAreaDocument(draft)===encodePaperAreaDocument(before))return;
   const {measurementCache,paragraphCache,pageCache,inlineMathCache,displayMathCache,mathCache,intelligentLayout,...options}=context.options;
   const prepared=prepareSavedAreaPreview(options,{revision:context.areaSnapshot.revision,document:draft},{whole:false,documentId:id});
-  const result=await measure(prepared.options);
+  // Reuse only explicitly supplied draft-owned caches, never normal preview
+  // caches or page templates. The engine checks text width and font identity.
+  const draftOptions={...prepared.options};
+  for(const name of ['paragraphCache','mathCache','displayMathCache']){
+    if(privateCaches[name]!==undefined){
+      if(privateCaches[name]===context.options[name])throw Error('Draft cache must not be shared with saved paper');
+      draftOptions[name]=privateCaches[name];
+    }
+  }
+  const result=await measure(draftOptions);
   if(!result||!current())return;
   if(result.plan?.completeness!=='full'||result.plan.diagnostics.some(d=>d.severity==='error'))throw Error('配置案が成立しません。');
   verifySavedAreaPreview(prepared,result);
