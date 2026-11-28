@@ -12,6 +12,7 @@ import {recoveryKey,recoveryStore,recoveryStatus} from './manuscript-recovery.mj
 import {listUnifiedRecovery} from './recovery-hub.mjs';
 import {settingsRecovery} from './settings-recovery.mjs';
 import {componentRecovery} from './component-recovery.mjs';
+import {exportSavedTrialPdf} from './trial-pdf-export.mjs';
 import {createPreviewReadLane} from './preview-read-lane.mjs';
 const PACKAGE_CRASH_PREPARE=process.argv.includes('--package-crash-prepare');
 const PACKAGE_CRASH_VERIFY=process.argv.includes('--package-crash-verify');
@@ -185,6 +186,16 @@ async function run(){
   handle('saveHeadingDesign',async(...args)=>{checkArgs(args,3);return requireWorkspace().saveHeadingDesign(...args);});
   handle('saveTypography',async(...args)=>{checkArgs(args,2);return requireWorkspace().saveTypography(...args);});
   handle('readBook',async(...args)=>{checkArgs(args,0);return requireWorkspace().readBook();});
+  handle('exportTrialPdf',async(...args)=>{
+    checkArgs(args,2);
+    const [token,request]=args,current=requireWorkspace();
+    if(typeof token!=='string'||token!==settingsToken)throw Error('Invalid PDF export session');
+    return exportSavedTrialPdf({workspace:current,request,BrowserWindow,isCurrent:()=>workspace===current&&settingsToken===token&&!closing&&!win.isDestroyed(),
+      chooseDestination:async()=>{
+        const result=await dialog.showSaveDialog(win,{title:'試しPDFを書き出す（新規保存）',defaultPath:'BookCreator-trial.pdf',filters:[{name:'PDF',extensions:['pdf']}]});
+        return result.canceled?null:result.filePath;
+      }});
+  });
   // Preview reads do not acquire busy. Foreground IPC may proceed, but any
   // overlapping snapshot is rejected before it reaches the renderer.
   // Read-only, numeric process working-set snapshot. Never acquires workspace lock.
