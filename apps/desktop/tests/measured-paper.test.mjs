@@ -136,3 +136,25 @@ test('block origin is separate from the inline navigation range and follows reus
   publish(50,true);assert.deepEqual(paperBlockRangeForNode(node),{start:50,end:62});
   root.host.inert=true;assert.equal(paperBlockRangeForNode(node),null);
 });
+
+test('clicked line in a merged paragraph run resolves current source without changing navigation range',()=>{
+  const listeners={},root={host:{inert:false},addEventListener:(name,fn)=>{listeners[name]=fn;}};
+  const block={style:{},querySelectorAll:()=>[],getRootNode:()=>root};
+  const line={dataset:{start:'7',end:'11'}};
+  const page={},nav=[];
+  function publish(start,reuse){
+    const origin={documentId:'a',blockKey:'k',range:{start,end:start+13}};
+    describeMeasuredPaper({slices:[{origin,textStart:0,textEnd:12,sourceSlice:{start,end:start+12}}]},{sections:[{blocks:[{origin}]}]},{
+      previewSourceRange:(_,s)=>s.sourceSlice,paperThumbnail:()=>null,onNavigate:(...args)=>nav.push(args)
+    },{root,pages:[{node:page,reuse,fragments:[block]}]});
+  }
+  publish(10,false);
+  listeners.click({composedPath:()=>[line,block,root],stopPropagation(){}});
+  assert.deepEqual(nav.pop(),['a',{start:10,end:22},block,{start:17,end:21},line]);
+  publish(50,true);
+  listeners.click({composedPath:()=>[line,block,root],stopPropagation(){}});
+  assert.deepEqual(nav.pop(),['a',{start:50,end:62},block,{start:57,end:61},line]);
+  line.dataset.end='99';
+  listeners.click({composedPath:()=>[line,block,root],stopPropagation(){}});
+  assert.deepEqual(nav.pop(),['a',{start:50,end:62},block]);
+});
