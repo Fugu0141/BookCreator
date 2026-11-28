@@ -33,7 +33,7 @@ const smokeRoot=PACKAGE_RESTART_SMOKE?restartSmokeRoot():SMOKE?mkdtempSync(join(
 if(smokeRoot)app.setPath('userData',smokeRoot);
 protocol.registerSchemesAsPrivileged([{scheme:'bookcreator',privileges:{standard:true,secure:true,supportFetchAPI:true}}]);
 const PAGE='bookcreator://app/index.html';
-const ASSETS=new Map([['/index.html',['index.html','text/html; charset=utf-8']],['/renderer.js',['build/renderer.js','text/javascript; charset=utf-8']],['/preview-preparation-worker.js',['build/preview-preparation-worker.js','text/javascript; charset=utf-8']],['/style.css',['style.css','text/css; charset=utf-8']]]);
+const ASSETS=new Map([['/index.html',['index.html','text/html; charset=utf-8']],['/print.html',['print.html','text/html; charset=utf-8']],['/print-renderer.js',['build/print-renderer.js','text/javascript; charset=utf-8']],['/renderer.js',['build/renderer.js','text/javascript; charset=utf-8']],['/preview-preparation-worker.js',['build/preview-preparation-worker.js','text/javascript; charset=utf-8']],['/style.css',['style.css','text/css; charset=utf-8']]]);
 let win,workspace,closing=false,busy=false,projectFontAssets=new Map();
 const previewReadLane=createPreviewReadLane();
 const previewImageLane=createPreviewReadLane();
@@ -121,7 +121,8 @@ async function run(){
     }
     if(u.host!=='app'||request.method!=='GET'||u.search||!entry)return new Response('Not found',{status:404});
     const data=await readFile(new URL(entry[0],import.meta.url));
-    return new Response(data,{headers:{'Content-Type':entry[1],'Content-Security-Policy':CSP,'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
+    const policy=u.pathname==='/print.html'?CSP.replace("connect-src 'none'","connect-src 'self'"):CSP;
+    return new Response(data,{headers:{'Content-Type':entry[1],'Content-Security-Policy':policy,'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
   });
   win=new BrowserWindow({width:1280,height:850,show:!SMOKE,title:'BookCreator – Development Preview',webPreferences:{additionalArguments:BENCHMARK?['--bc-editor-benchmark']:[],preload:fileURLToPath(new URL('./preload.cjs',import.meta.url)),contextIsolation:true,nodeIntegration:false,sandbox:true,webSecurity:true,devTools:false}});
   win.webContents.setWindowOpenHandler(()=>({action:'deny'}));

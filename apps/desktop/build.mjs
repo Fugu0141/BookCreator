@@ -25,5 +25,7 @@ const fingerprint=hash.digest('hex');
 await writeFile('build/fonts-manifest.json',JSON.stringify({schemaVersion:2,family:'BCFont_NotoSansJP',fingerprint,assets,math:{family:STIX_FONT.family,asset:STIX_FONT.asset,sha256:mathSha256,sourceCommit:STIX_FONT.commit}},null,2));
 await build({entryPoints:['renderer.jsx'],bundle:true,format:'esm',platform:'browser',target:'chrome156',outfile:'build/renderer.js',define:{'process.env.NODE_ENV':'"production"','__BUNDLED_FONT_FINGERPRINT__':JSON.stringify(fingerprint)},legalComments:'inline'});
 
+await build({entryPoints:['print-renderer.mjs'],bundle:true,format:'esm',platform:'browser',target:'chrome156',outfile:'build/print-renderer.js',legalComments:'inline'});
+
 // Static, same-origin worker. No blob URLs or runtime imports are required.
 await build({entryPoints:['preview-preparation-worker.mjs'],bundle:true,format:'iife',platform:'browser',target:'chrome156',outfile:'build/preview-preparation-worker.js',legalComments:'inline'});
