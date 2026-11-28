@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {prepareSavedAreaPreview,verifySavedAreaPreview,measureInlineAreaProposal,resolvePaperAreaSelection,captureBookAreaLease,prepareBookAreaCommit,prepareBookAreaRestore,acknowledgeBookAreaCommit,prepareBookFixedRelease,resolveBookFixedSelection,prepareBookFixedCommit,resolveBookMoveBounds,prepareBookPreferredCommit,prepareBookGroupCommit,prepareBookGroupRelease,resolveBookGroupMembers,validBookMovePage,createBookPositionPreviewSession,measureBookPositionGeometry} from '../paper-area-preview.mjs';
+import {prepareSavedAreaPreview,verifySavedAreaPreview,measureInlineAreaProposal,resolvePaperAreaSelection,captureBookAreaLease,prepareBookAreaCommit,prepareBookAreaRestore,acknowledgeBookAreaCommit,prepareBookFixedRelease,resolveBookFixedSelection,prepareBookFixedCommit,resolveBookMoveBounds,prepareBookPreferredCommit,prepareBookGroupCommit,prepareBookGroupRelease,resolveBookGroupMembers,validBookMovePage,createBookPositionPreviewSession,measureBookPositionGeometry,bookGroupProtectedRanges} from '../paper-area-preview.mjs';
 const origin=(documentId,blockKey,persistentId)=>({documentId,blockKey,persistentId});
 const options={revision:'r1',fingerprint:'f1',width:1000,height:2000,sections:[{id:'a',blocks:[{origin:origin('a','40','q')}]},{id:'b',blocks:[{origin:origin('b','70','q')}]}]};
 const snapshot={revision:'saved',document:{schemaVersion:1,entries:[{documentId:'a',persistentId:'q',minHeightPercent:30},{documentId:'b',persistentId:'q',minWidthPercent:50}]}};
@@ -351,4 +351,15 @@ test('geometry-only position guide verifies intents and rejects obsolete generat
   assert.equal(await measureBookPositionGeometry(context,'move',position,{...session,isCurrent:()=>false},()=>true),undefined);
   await assert.rejects(()=>measureBookPositionGeometry(context,'move',position,{...session,request:async()=>({...outcome,draft:{...outcome.draft,layout:{...layout,fragments:[fragment,other]}}})},()=>true),/固定位置/);
   assert.equal(snapshot.document.entries[0].bookFixed,undefined);
+});
+
+
+test('group reorder protection resolves source ranges by document and persistent ID',()=>{
+  const entries=[{documentId:'a',persistentId:'q',bookGroup:{id:'g',layout:'vertical'}},{documentId:'a',persistentId:'r',bookGroup:{id:'g',layout:'vertical'}}];
+  const a={origin:{...origin('a','40','q'),range:{start:40,end:60}}},b={origin:{...origin('a','80','r'),range:{start:80,end:100}}};
+  const context={areaPrepared:{document:{entries}},options:{sections:[{blocks:[a,b,{origin:origin('b','40','q')}]}]}};
+  assert.deepEqual(bookGroupProtectedRanges(context,'a'),[{start:40,end:60},{start:80,end:100}]);
+  assert.deepEqual(bookGroupProtectedRanges(context,'b'),[]);
+  assert.equal(bookGroupProtectedRanges({...context,options:{sections:[{blocks:[a]}]}},'a'),null);
+  assert.equal(bookGroupProtectedRanges({...context,options:{sections:[{blocks:[a,a,b]}]}},'a'),null);
 });
