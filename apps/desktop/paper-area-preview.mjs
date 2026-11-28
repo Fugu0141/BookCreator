@@ -113,3 +113,23 @@ export function prepareBookAreaCommit(context,values){
   const value=validatePaperAreaDocument({schemaVersion:1,entries:next.entries.filter(e=>e.documentId===documentId)});
   return {prepared,value,documentId,lease:context.bookLease,expectedRevision:context.areaSnapshot.revision};
 }
+
+
+// One history step is one scoped disk transaction. Refuse a restore that
+// would change multiple manuscripts, even if the caller supplies a ticket.
+export function prepareBookAreaRestore(context,ticket){
+  if(context?.scope!=='book'||!context.bookLease||!context.areaSnapshot||!context.areaPrepared||!ticket||ticket.revision!==context.areaSnapshot.revision||encodePaperAreaDocument(ticket.before)!==encodePaperAreaDocument(context.areaPrepared.document))throw Error('全冊配置履歴が変更されました。');
+  const before=validatePaperAreaDocument(ticket.before),next=validatePaperAreaDocument(ticket.next);
+  const slice=(doc,id)=>validatePaperAreaDocument({schemaVersion:1,entries:doc.entries.filter(e=>e.documentId===id)});
+  const ids=new Set([...before.entries,...next.entries].map(e=>e.documentId));
+  const changed=[...ids].filter(id=>encodePaperAreaDocument(slice(before,id))!==encodePaperAreaDocument(slice(next,id)));
+  if(changed.length!==1||!context.bookLease.documents.some(d=>d.documentId===changed[0]))throw Error('全冊配置履歴の復元対象が不正です。');
+  const documentId=changed[0];
+  const {measurementCache,paragraphCache,pageCache,inlineMathCache,displayMathCache,mathCache,intelligentLayout,...options}=context.options;
+  const prepared=prepareSavedAreaPreview(options,{revision:ticket.revision,document:next},{whole:true});
+  return {prepared,documentId,value:slice(next,documentId),lease:context.bookLease,expectedRevision:ticket.revision};
+}
+export function acknowledgeBookAreaCommit(commit,saved){
+  if(typeof saved?.revision!=='string'||encodePaperAreaDocument(saved.document)!==encodePaperAreaDocument(commit.value))throw Error('全冊配置の保存応答が一致しません。');
+  return {revision:saved.revision,document:commit.prepared.document};
+}
