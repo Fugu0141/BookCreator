@@ -491,6 +491,7 @@ async function benchmarkBookPositionDrag({win,raw,click,until,ready,paperSignatu
       await raw("new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))");
       await raw(target+".click()");
       await click('#book-paper-preferred-mode');
+      if(!await raw("document.querySelector('.book-paper-toolbar')?.dataset.tool==='preferred'&&!document.querySelector('#book-paper-position-mode')&&!document.querySelector('#book-paper-fixed-toggle')&&!document.querySelector('#book-paper-group-mode')&&!document.querySelector('#book-paper-area-undo')&&!document.querySelector('#book-paper-block-up')"))throw Error('Unrelated tools exposed during preferred position editing');
       await until('drag handle',"document.querySelector('#book-paper-position-drag')?.dataset.geometryAvailable==='true'");
       await raw("new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))");
       const probe=await raw("(()=>{const h=document.querySelector('#book-paper-position-drag'),r=h.getBoundingClientRect(),d=h.dataset;for(const fx of [.5,.25,.75])for(const fy of [.5,.25,.75]){const x=Math.round(r.left+r.width*fx),y=Math.round(r.top+r.height*fy);if(document.elementFromPoint(x,y)===h)return {point:{x,y},up:Number(d.originY)/Number(d.bodyHeight)*Number(d.bodyPixels),down:(Number(d.maxY)-Number(d.originY))/Number(d.bodyHeight)*Number(d.bodyPixels)};}return null;})()");
@@ -516,7 +517,7 @@ async function benchmarkBookPositionDrag({win,raw,click,until,ready,paperSignatu
         rows.push({sample:i+1,geometry,paper,pointerToGuideMs,dropToPaperMs});
       }finally{win.webContents.sendInputEvent({type:'mouseUp',...end,button:'left',clickCount:1});}
       await click('#book-paper-preferred-mode');
-      await until('draft closed',"!document.querySelector('#book-paper-position-drag')&&!document.querySelector('.paper-inline-live')");
+      await until('draft closed',"!document.querySelector('#book-paper-position-drag')&&!document.querySelector('.paper-inline-live')&&document.querySelector('.book-paper-toolbar')?.dataset.tool==='select'&&!!document.querySelector('#book-paper-area-undo')&&!!document.querySelector('#book-paper-group-mode')");
       if(await paperSignature()!==baseline||await readFile(path,'utf8')!==source)throw Error('Cancelled drag changed published paper or manuscript');
     }
     await readFile(join(root,'layouts','paper-area.json')).then(()=>{throw Error('Unsaved drag persisted paper intent');},e=>{if(e.code!=='ENOENT')throw e;});
