@@ -1,6 +1,7 @@
 import {validateHeadingDesign,validateHeadingLevels,validateComponentLibrary,emptyComponentLibrary,validateHeadingBindings,resolveHeadingBindings,validateParagraphDesign,resolveParagraphBinding,validateComponentDesign,resolveStudyDesigns,studyKinds} from '../../dist/preview-component.js';
 import {resolvePageSettings,paperGeometry,marginString} from './book-settings.mjs';
 import {projectImages} from './project-images.mjs';
+import {paperAreaPersistence} from './paper-area-persistence.mjs';
 import {projectFonts} from './project-fonts.mjs';
 import {open,lstat,realpath,rename,unlink,mkdir} from 'node:fs/promises';
 import {constants} from 'node:fs';
@@ -242,6 +243,7 @@ export async function openWorkspace(manifestPath){
     catch(e){if(e.code==='THEME')return {editable:false,roles:null,revision:null,message:e.message};throw e;}
   }
   function publicTheme(t){return {editable:t.editable,roles:t.roles,revision:t.revision,studyResourceErrors:t.studyResourceErrors??{},studyDesigns:t.studyDesigns??{},studyBindings:t.studyBindings??{},studyEditable:t.studyEditable===true,studyMessage:t.studyMessage,paragraphDesign:t.paragraphDesign??null,paragraphBinding:t.paragraphBinding??null,paragraphEditable:t.paragraphEditable===true,paragraphMessage:t.paragraphMessage,headingDesign:t.headingDesign??null,headingLevels:t.headingLevels??{},componentMessage:t.componentMessage,componentEditable:t.componentEditable===true,bindings:t.bindings??{},library:t.library??emptyComponentLibrary(),libraryEditable:t.libraryEditable===true,libraryMessage:t.libraryMessage,...(t.message?{message:t.message}:{})};}
+  const areaPersistence=paperAreaPersistence(root,{checkManifest,readManuscript:current});
   function settingsView(){return {revision:manifestHash,page:summary.pageSettings,sections:structuredClone(summary.sections),message:summary.pageMessage};}
   function validateSettingsValue(value){
     if(!record(value)||Object.keys(value).some(k=>!['page','sections'].includes(k))||!record(value.page)||Object.keys(value.page).some(k=>!['size','firstSide','margin'].includes(k))||!Array.isArray(value.sections))fail('PAGE','Invalid book settings');
@@ -257,6 +259,11 @@ export async function openWorkspace(manifestPath){
     get summary(){return structuredClone(summary);},
     get manifestPath(){return manifest;},
     async bookSettings(){await checkManifest();return settingsView();},
+    async readPaperArea(id){return areaPersistence.read(id);},
+    async savePaperArea(id,sourceRevision,expectedRevision,value){
+      if(busy)fail('BUSY','Another write is in progress');
+      busy=true;try{return await areaPersistence.save(id,sourceRevision,expectedRevision,value);}finally{busy=false;}
+    },
     // Only the main process uses these typed recovery snapshots. No disk writes.
     // Recovery is never a theme save. Resolve the editor target and resources
     // with the same validators as the actual apply/register operations.
