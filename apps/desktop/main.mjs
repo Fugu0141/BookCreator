@@ -2382,6 +2382,12 @@ async function smoke(){
   await until("!!document.querySelector('#lab-measure')");
   if(!await exec("(()=>{const q=s=>document.querySelector(s),a=q('.lab-layers').getBoundingClientRect(),b=q('.lab-canvas').getBoundingClientRect(),c=q('.lab-inspector').getBoundingClientRect();return a.width>0&&b.width>0&&c.width>0&&a.right<=b.left&&b.right<=c.left&&q('.lab-layers').contains(q('[data-lab-node]'))&&q('.lab-inspector').contains(q('#lab-padding'))&&q('.lab-canvas').contains(q('#lab-preview'));})()"))throw Error('Component editor pane order or controls incorrect');
   await until("document.querySelector('#lab-add-options').hidden&&document.querySelector('#lab-property-appearance').hidden===false&&document.querySelector('#lab-property-layout').hidden&&document.querySelector('#lab-property-details').hidden");
+  // Row/column parts must be selectable from the measured canvas, not only the layer list.
+  await until("!!document.querySelector('#lab-preview > div')?.shadowRoot?.querySelector('[data-component-node=content][data-lab-selectable]')");
+  await exec("(()=>{const el=document.querySelector('#lab-preview > div').shadowRoot.querySelector('[data-component-node=content]');el.dispatchEvent(new PointerEvent('pointerdown',{button:0,pointerId:1,isPrimary:true,bubbles:true}));})()");
+  await until("document.querySelector('.lab-selection-caption').textContent.includes('content')&&document.querySelector('#lab-preview > div').shadowRoot.querySelector('[data-component-node=content]').style.outline.includes('solid')");
+  await exec("(()=>{const el=document.querySelector('#lab-preview > div').shadowRoot.querySelector('[data-component-node=bar]');el.focus();el.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));})()");
+  await until("document.querySelector('.lab-selection-caption').textContent.includes('bar')&&document.querySelector('#lab-preview > div').shadowRoot.querySelector('[data-component-node=bar]').style.outline.includes('solid')");
   await exec("document.querySelector('#lab-add-menu').click()");
   await until("!document.querySelector('#lab-add-options').hidden&&!!document.querySelector('#lab-add-label').getClientRects().length");
   await exec("document.querySelector('#lab-add-menu').click()");
