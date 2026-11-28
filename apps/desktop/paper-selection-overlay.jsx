@@ -1,5 +1,5 @@
 import React,{useLayoutEffect,useRef,useState} from 'react';
-import {clipPaperRect,placePaperPropertyPanel,paperPositionFromDrag,paperPositionFromPagePointer,resolvePaperSelectionNodes,preferredPositionEditStart} from './paper-selection-geometry.mjs';
+import {clipPaperRect,placePaperPropertyPanel,paperPositionFromDrag,paperPositionFromPagePointer,resolvePaperSelectionNodes,preferredPositionEditStart,placeBookPositionPanel} from './paper-selection-geometry.mjs';
 import {createIntelligentGeometryDraftSession,createFullRetainedTextPagePreview,createParagraphMeasurementCache,createMathCompilationCache,createDisplayMathGeometryCache,createInlineMathGeometryCache} from '../../../BookCreator_LayoutEngine/dist/index.js';
 import {measurementLane} from './measurement-lane.mjs';
 import {createPreviewCheckpoint} from './preview-checkpoint.mjs';
@@ -144,7 +144,7 @@ export function BookPositionOverlay({viewport,node,context,bounds,onCommit,onClo
   const rect=geometry?rectFor(display):null,handleRect=geometry?rectFor(position):null;
   const pageCount=context.plan.pageCount;
   const crossPage=!preferredMode&&Number.isSafeInteger(pageCount)&&pageCount>0&&pageCount<=512;
-  const panel=geometry?placePaperPropertyPanel(geometry.clipped,geometry.visible,{width:260,height:preferredMode?270:220}):null;
+  const panel=geometry?placeBookPositionPanel(geometry.clipped,handleRect?{left:handleRect.left+2,top:handleRect.top+2,width:32,height:32}:null,geometry.visible,{width:260,height:preferredMode?270:220}):null;
   const changed=!!proposal&&(proposal.page!==context.position.page||proposal.x!==context.position.x||proposal.y!==context.position.y);
   const parseTolerance=(v,max)=>/^\d+(?:\.\d{1,3})?$/.test(v)&&Number.isSafeInteger(Math.round(Number(v)*1000))&&Number(v)*1000<=max?Math.round(Number(v)*1000):null;
   const tolerance={x:parseTolerance(tx,body.width),y:parseTolerance(ty,body.height)},validTolerance=tolerance.x!==null&&tolerance.y!==null;
@@ -208,7 +208,7 @@ export function BookPositionOverlay({viewport,node,context,bounds,onCommit,onClo
   const placement=shown?.intelligentLayout?.fragments.find(f=>f.origin.documentId===context.selection.documentId&&f.origin.blockKey===context.selection.blockKey)?.placement;
   return <>
     {shown&&<div className="paper-inline-live" aria-hidden="true" inert={true} style={{left:visible.left,top:visible.top,width:visible.right-visible.left,height:visible.bottom-visible.top}}><div ref={liveMount} style={{position:'absolute',left:host.left,top:host.top,width:host.width,transformOrigin:'top left',transform:'scale('+host.sx+','+host.sy+')'}}/></div>}
-    {handleRect&&!needsRebase&&<div className="paper-selection-frame" style={handleRect}>
+    {handleRect&&!needsRebase&&<div className="paper-selection-frame book-position-frame" style={handleRect}>
       <button id="book-paper-position-drag" data-dragging={dragging} data-geometry-available={!!draft.current?.geometrySession} data-invalid={invalid} data-origin-y={position.y} data-max-y={bounds.maxY} data-body-height={body.height} data-body-pixels={body.pixelHeight} type="button" className="paper-block-drag" aria-label="位置をドラッグ（矢印キーでも移動）" title={preferredMode?'同一ページ内で希望位置を指定':'表示中の別ページへもドラッグ可能。矢印キーは1 mm、Shiftで5 mm'}
         onPointerDown={e=>{if(e.button!==0||!e.isPrimary||gesture.current||!context.current())return;e.preventDefault();e.currentTarget.focus({preventScroll:true});try{e.currentTarget.setPointerCapture(e.pointerId);}catch{return;}const page=preferredMode?geometry.body:geometry.pages.get(position.page);if(!page){e.currentTarget.releasePointerCapture(e.pointerId);return;}setDragging(true);gesture.current={id:e.pointerId,x:e.clientX,y:e.clientY,position,node:e.currentTarget,grab:{x:(e.clientX-page.left)/page.width*body.width-position.x,y:(e.clientY-page.top)/page.height*body.height-position.y}};}}
         onPointerMove={e=>{if(gesture.current?.id!==e.pointerId)return;const next=get(e);setGhost(next);setInvalid(!next);}}
@@ -217,7 +217,7 @@ export function BookPositionOverlay({viewport,node,context,bounds,onCommit,onClo
     </div>}
     {quickFrames.map(f=><div key={f.key} className={'book-geometry-draft-frame'+(f.selected?' is-selected':'')} aria-hidden="true" style={f.rect}/>)}
     {rect&&!needsRebase&&<div className="paper-drop-guide" aria-hidden="true" style={rect}/>}
-    <div className="paper-inline-area-toolbar" style={panel} role="group" aria-label={preferredMode?'希望位置の移動案':'固定位置の移動案'}>
+    <div className="paper-inline-area-toolbar book-position-panel" style={panel} role="group" aria-label={preferredMode?'希望位置の移動案':'固定位置の移動案'}>
       <small role="status">{needsRebase?'以前の希望位置は現在の本文領域では直接編集できません。':invalid?'本文領域外には移動できません。':display.page+1+'ページ · X '+display.x/1000+' / Y '+display.y/1000+' mm'+(preferredMode&&!preferenceChanged?'（保存済みの希望）':'（未確定）')}</small>
       {needsRebase&&<><small>保存済み：{stored.position.page+1}ページ X {stored.position.x/1000} / Y {stored.position.y/1000} mm、許容 ±{stored.tolerance.x/1000} / ±{stored.tolerance.y/1000} mm</small><button type="button" id="book-paper-preferred-rebase" onClick={()=>{if(!context.current())return;setProposal(null);setRebased(true);}}>現在の紙面を基準に再指定</button></>}
       {quickMode&&<small className="paper-inline-live-status" data-position-phase={quickResult?'geometry-ready':quick?.key===quickKey&&quick.error?'geometry-conflict':'geometry-pending'} data-elapsed-ms={quickResult?quick.elapsedMs:undefined} data-queue-ms={quickResult?quick.queueMs:undefined} role="status">{invalid?'':quick?.key===quickKey&&quick.error?'配置案が成立しません：'+quick.error:quickResult?'軽量配置案 · 移動 '+quickResult.changed.length+'件 · '+quickResult.pageCount+'ページ（未確定）':'配置ガイド（ドロップ後に実測）'}</small>}
