@@ -1,4 +1,4 @@
-import {validatePaperAreaDocument,bindPaperAreaDocument} from './paper-area-store.mjs';
+import {validatePaperAreaDocument,bindPaperAreaDocument,setPaperAreaValues,encodePaperAreaDocument} from './paper-area-store.mjs';
 
 function reject(diagnostics){
   const e=Object.assign(Error('保存済みの占有領域を適用できません：'+diagnostics.map(d=>d.documentId+'/'+d.persistentId+' '+d.code).join('、')),{code:'AREA_CONFLICT',diagnostics});
@@ -30,4 +30,22 @@ export function verifySavedAreaPreview(prepared,result){
     const rect=placement?.occupiedRect??placement?.rect,c=intent.placement.sizeConstraints;
     if(!rect||!Number.isSafeInteger(rect.width)||!Number.isSafeInteger(rect.height)||rect.width<Math.ceil(prepared.options.width*(c.minWidthPercent??0)/100)||rect.height<Math.ceil(prepared.options.height*(c.minHeightPercent??0)/100))throw Error('指定した占有領域が組版結果に確保されていません。');
   }
+}
+
+// A transient proposal is never a saved snapshot or a published host plan.
+// The caller owns cancellation and the physical browser measurement lane.
+export async function measureInlineAreaProposal(context,values,measure,current){
+  if(!current())return;
+  const id=context.target.documentId;
+  const before=context.areaPrepared.document;
+  const draft=setPaperAreaValues(before,{documentId:id,persistentId:context.persistentId,values});
+  if(encodePaperAreaDocument(draft)===encodePaperAreaDocument(before))return;
+  const {measurementCache,paragraphCache,pageCache,inlineMathCache,displayMathCache,mathCache,intelligentLayout,...options}=context.options;
+  const prepared=prepareSavedAreaPreview(options,{revision:context.areaSnapshot.revision,document:draft},{whole:false,documentId:id});
+  const result=await measure(prepared.options);
+  if(!result||!current())return;
+  if(result.plan?.completeness!=='full'||result.plan.diagnostics.some(d=>d.severity==='error'))throw Error('配置案が成立しません。');
+  verifySavedAreaPreview(prepared,result);
+  if(!current())return;
+  return result;
 }
