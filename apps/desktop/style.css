@@ -674,3 +674,16 @@ body{font-family:BCFont_NotoSansJP,system-ui,sans-serif}.font-control,.typograph
 .lab-gui-first .lab-area-controls label select,.lab-gui-first .lab-area-controls label input{width:auto;max-width:112px;margin:0;font-size:12px}
 .lab-gui-first .lab-area-controls input[type=number]{width:65px}
 .lab-gui-first #lab-area-measured-height{font-size:12px;color:#475569;font-variant-numeric:tabular-nums}
+
+.lab-gui-first #lab-component-area-fields[hidden]{display:none!important}
+.lab-component-area-controls{display:flex;align-items:flex-start;gap:10px;padding:8px;margin-top:6px;border:1px solid #dce3eb;background:#f8fafc;border-radius:8px}
+.lab-area-mini{width:92px;flex:0 0 92px}
+.lab-component-area-settings{flex:1;min-width:0;display:grid;gap:4px}
+.lab-gui-first .lab-area-slider label{display:flex;justify-content:space-between;gap:5px;margin:0;font-size:12px;font-weight:600}
+.lab-area-slider output{font-variant-numeric:tabular-nums;color:#235b91}
+.lab-gui-first .lab-area-slider input[type=range]{display:block;width:100%;margin:4px 0;accent-color:#3478b7}
+.lab-area-presets{display:flex;gap:4px;flex-wrap:wrap}
+.lab-gui-first .lab-area-presets button{background:white;color:#334155;border:1px solid #dce3eb;padding:3px 9px;border-radius:5px;font-size:12px}
+.lab-gui-first .lab-area-presets button[aria-pressed=true]{background:#e0eefb;border-color:#b8d5ef;color:#235b91}
+.lab-component-area-settings small{color:#526579;font-size:11px}
+@media(max-width:650px){.lab-area-mini{width:64px;flex-basis:64px}}
