@@ -101,3 +101,35 @@ export function createPaperAreaDraft(initial={schemaVersion:1,entries:[]}){
     markSaved(lease){check(lease);saved=encodePaperAreaDocument(current);return snapshot();}
   };
 }
+
+// Session-only history of successfully persisted scoped documents.
+// A plan is a one-use lease; never mutate history until the disk write succeeds.
+export function createSavedPaperAreaHistory(){
+  let scope=null,revision=null,current=null,undo=[],redo=[],epoch=0;
+  const matches=(key,snapshot)=>scope===key&&current!==null&&revision===snapshot.revision&&current===encodePaperAreaDocument(snapshot.document);
+  const clear=()=>{scope=null;revision=null;current=null;undo=[];redo=[];epoch++;};
+  function plan(key,snapshot,action,next){
+    const same=matches(key,snapshot);
+    const before=validatePaperAreaDocument(snapshot.document);
+    if(action==='undo'||action==='redo'){
+      if(!same)return null;
+      next=(action==='undo'?undo:redo).at(-1);
+      if(!next)return null;
+    }else if(action!=='edit')throw Error('Invalid history action');
+    next=validatePaperAreaDocument(next);
+    if(encodePaperAreaDocument(before)===encodePaperAreaDocument(next))return null;
+    return Object.freeze({epoch,key,revision:snapshot.revision,before,next,action,same});
+  }
+  function accept(ticket,saved){
+    if(!ticket||ticket.epoch!==epoch||typeof saved.revision!=='string'||encodePaperAreaDocument(saved.document)!==encodePaperAreaDocument(ticket.next))throw Error('Invalid saved history acknowledgement');
+    if(!ticket.same){undo=[];redo=[];}
+    if(ticket.action==='edit'){undo.push(ticket.before);if(undo.length>100)undo.shift();redo=[];}
+    else if(ticket.action==='undo'){undo.pop();redo.push(ticket.before);}
+    else {redo.pop();undo.push(ticket.before);}
+    scope=ticket.key;revision=saved.revision;current=encodePaperAreaDocument(saved.document);epoch++;
+  }
+  return {clear,plan,accept,availability(key,snapshot){
+    const same=matches(key,snapshot);
+    return {canUndo:same&&undo.length>0,canRedo:same&&redo.length>0};
+  }};
+}
