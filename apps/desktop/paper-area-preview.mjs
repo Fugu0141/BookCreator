@@ -9,6 +9,7 @@ function reject(diagnostics){
 export function prepareSavedAreaPreview(options,snapshot,{whole,documentId}){
   const stored=validatePaperAreaDocument(snapshot.document);
   const document=whole?stored:validatePaperAreaDocument({schemaVersion:1,entries:stored.entries.filter(e=>e.documentId===documentId)});
+  if(!whole&&document.entries.some(e=>e.bookFixed))throw Object.assign(Error('絶対ページ位置の固定設定は全冊紙面で確認してください。'),{code:'AREA_BOOK_SCOPE'});
   if(!document.entries.length)return {options,document,revision:snapshot.revision,intents:[]};
   const blocks=options.sections.flatMap(s=>s.blocks.filter(b=>!('kind' in b)));
   const bound=bindPaperAreaDocument(document,blocks);
@@ -39,6 +40,8 @@ export function verifySavedAreaPreview(prepared,result){
   for(const intent of bound.intents){
     if(intent.placement.spaceBefore&&(beforeClearance.get(JSON.stringify([intent.documentId,intent.blockKey]))??-1)<intent.placement.spaceBefore)throw Error('指定した前方余白が組版結果に確保されていません。');
     const placement=byKey.get(JSON.stringify([intent.documentId,intent.blockKey]))?.placement;
+    const fixed=intent.placement.fixed;
+    if(fixed&&(!placement?.fixed||placement.page!==fixed.page||placement.rect?.x!==fixed.x||placement.rect?.y!==fixed.y))throw Error('指定した固定位置が組版結果に保持されていません。');
     const rect=placement?.occupiedRect??placement?.rect,c=intent.placement.sizeConstraints??{},gap=intent.placement.spaceAfter??0;
     if(!rect||!Number.isSafeInteger(rect.width)||!Number.isSafeInteger(rect.height)||rect.width<Math.ceil(prepared.options.width*(c.minWidthPercent??0)/100)||rect.height<Math.ceil(prepared.options.height*(c.minHeightPercent??0)/100)+gap||(gap>0&&(!Number.isSafeInteger(placement?.rect?.height)||rect.height<placement.rect.height+gap)))throw Error('指定した占有領域が組版結果に確保されていません。');
   }
