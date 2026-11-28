@@ -532,8 +532,8 @@ async function benchmarkBookPositionDrag({win,raw,click,until,ready,paperSignatu
     await raw(target+".scrollIntoView({block:'center',inline:'center'})");
     await raw("new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))");
     await raw(target+".click()");
-    await click('#book-paper-preferred-mode');
-    await until('coordinate fields',"!!document.querySelector('#book-paper-coordinate-y')");
+    await click('#book-inspector-preferred');
+    await until('coordinate fields',"!!document.querySelector('#book-inspector-area-editor #book-paper-coordinate-y')");
     const field=(value)=>raw("(()=>{const e=document.querySelector('#book-paper-coordinate-y');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,"+JSON.stringify(value)+");e.dispatchEvent(new Event('input',{bubbles:true}));})()");
     const oldY=await raw("Number(document.querySelector('#book-paper-coordinate-y').value)");
     const maxY=await raw("Number(document.querySelector('#book-paper-position-drag').dataset.maxY)/1000");
@@ -545,6 +545,8 @@ async function benchmarkBookPositionDrag({win,raw,click,until,ready,paperSignatu
     await click('#book-paper-coordinate-apply');
     await until('exact coordinate reflected',"document.querySelector('#book-paper-coordinate-y')?.value==="+JSON.stringify(nextY)+"&&!document.querySelector('#book-paper-coordinate-apply')").catch(async e=>{throw Error(e.message+'; '+JSON.stringify(await dragState())+'; coordinate='+await raw("document.querySelector('#book-paper-coordinate-y')?.value"));});
     await readTiming('paper-ready');
+    await click('#book-position-undock');
+    await until('docked coordinate proposal retained',"!document.querySelector('#book-inspector-area-editor #book-paper-coordinate-y')&&document.querySelector('#book-paper-coordinate-y')?.value==="+JSON.stringify(nextY)+"&&!!document.querySelector('[data-position-phase=paper-ready]')");
     const reflected=await raw("(()=>{const e=document.querySelector('[data-position-phase=paper-ready]');return {y:document.querySelector('#book-paper-coordinate-y').value,key:JSON.parse(e.dataset.proposalKey)};})()");
     if(reflected.y!==nextY||reflected.key[3]!==Math.round(Number(nextY)*1000))throw Error('Exact coordinate was not reflected: '+JSON.stringify({expected:nextY,reflected}));
     await raw("window.dispatchEvent(new Event('resize'))");
