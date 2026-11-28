@@ -730,3 +730,20 @@ body{font-family:BCFont_NotoSansJP,system-ui,sans-serif}.font-control,.typograph
 .paper-inline-gap-handle:focus-visible{outline:2px solid #3478b7;outline-offset:2px;}
 
 .paper-inline-gap-handle{width:32px;font-size:10px;white-space:nowrap;}
+
+
+/* Contextual controls keep the working paper larger. History scopes stay
+   explicit; the detailed values are disclosed only when requested. */
+.paper-context-header{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 6px;}
+.paper-il-toggle{display:flex;align-items:center;gap:4px;font-size:12px;}
+.paper-il-toggle small{font-size:10px;color:#576b7c;}
+.paper-block-toolbar{gap:4px;padding:5px 0;border-top:1px solid #d9e1e8;margin-bottom:5px;}
+.paper-block-toolbar .paper-context-selection{flex:1 0 100%;font-size:12px;color:#576b7c;}
+.paper-context-actions{display:inline-flex;align-items:center;gap:3px;border:1px solid #d0dae2;border-radius:5px;padding:2px;}
+.paper-context-actions[hidden],.paper-inline-properties[hidden]{display:none;}
+.paper-context-actions span{font-size:11px;color:#576b7c;padding:0 3px;}
+.paper-block-toolbar button{font-size:12px;padding:4px 7px;min-height:26px;}
+.paper-inline-area-toolbar{box-sizing:border-box;overflow:auto;overscroll-behavior:contain;}
+.paper-inline-summary{display:flex;align-items:center;justify-content:space-between;gap:6px;width:100%;min-width:0;}
+.paper-inline-summary small{min-width:0;overflow-wrap:anywhere;font-size:11px;}
+.paper-inline-properties{display:flex;flex-wrap:wrap;gap:4px;width:100%;border-top:1px solid #d0dae2;padding-top:5px;}
