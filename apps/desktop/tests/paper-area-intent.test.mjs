@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {canEditPaperArea,planPaperAreaIntent,beginPaperAreaDrag,previewPaperAreaDrag,finishPaperAreaDrag} from '../paper-area-intent.mjs';
+import {canEditPaperArea,planPaperAreaIntent,beginPaperAreaDrag,previewPaperAreaDrag,finishPaperAreaDrag,beginPaperGapDrag,previewPaperGapDrag,finishPaperGapDrag} from '../paper-area-intent.mjs';
 const target={documentId:'chapter',blockKey:'example',revision:'r1',fingerprint:'f1',fragmentCount:1};
 const input={target,current:{...target}};
 test('independent occupied constraints preserve explicit mode, spacing and unrelated dimensions',()=>{
@@ -41,4 +41,23 @@ test('cancel, stale revision, no movement and return to fractional origin do not
   }
   assert.equal(beginPaperAreaDrag({...input,axis:'width',occupiedPx:0,bodyPx:800,originPx:0}),null);
   assert.equal(beginPaperAreaDrag({...input,axis:'width',occupiedPx:200,bodyPx:800,originPx:0,placement:{mode:'fixed'}}),null);
+});
+
+test('gap drag is zoom invariant, independently measured in millimetres and can return to zero',()=>{
+  for(const scale of [.5,1,2]){
+    const start={...input,value:0,bodyPx:800*scale,bodyHeight:200000,originPx:300*scale};
+    const gesture=beginPaperGapDrag(start);
+    assert.equal(previewPaperGapDrag(gesture,340*scale).value,10000);
+    assert.equal(finishPaperGapDrag(gesture,{current:target,pointerPx:340*scale}),10000);
+    const existing=beginPaperGapDrag({...start,value:10000});
+    assert.equal(finishPaperGapDrag(existing,{current:target,pointerPx:260*scale}),0);
+    assert.equal(previewPaperGapDrag(existing,10000).value,200000);
+    assert.equal(previewPaperGapDrag(existing,-10000).value,0);
+    assert.equal(finishPaperGapDrag(existing,{current:target,pointerPx:start.originPx}),null);
+    assert.equal(finishPaperGapDrag(existing,{current:{...target,revision:'r2'},pointerPx:500}),null);
+    assert.equal(finishPaperGapDrag(existing,{current:target,pointerPx:500,cancelled:true}),null);
+    assert.equal(finishPaperGapDrag(existing,{current:target,pointerPx:500,placement:{mode:'fixed'}}),null);
+    assert.equal(beginPaperGapDrag({...start,placement:{mode:'fixed'}}),null);
+    assert.equal(beginPaperGapDrag({...start,bodyPx:0}),null);
+  }
 });
