@@ -1,0 +1,48 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {scanDocument,applyPatches} from '../../../../BookCreator_Markdown/dist/index.js';
+import {parsePreviewInline} from '../../../dist/index.js';
+import {parsePreviewMath,parseDisplayMath} from '../../../../BookCreator_LayoutEngine/dist/index.js';
+import {projectStructuredEditor} from '../structured-projection.mjs';
+import {canBlockOperation,planBlockOperation} from '../structured-operations.mjs';
+const parseInline=value=>parsePreviewInline(value,0,parsePreviewMath);
+const deps={scan:scanDocument,parseInline,applyPatches,validateMath:parseDisplayMath};
+const project=source=>projectStructuredEditor(source,scanDocument,parseInline).rows;
+const move=(source,index,action)=>planBlockOperation(source,{source,index,action},deps);
+const question=':::component{name="exercise" #q-1}\n$2x=4$ を解きなさい。\n:::\n';
+const answer=':::component{name="explanation" #a-1 answer-to="q-1"}\n$x=2$ です。\n:::\n';
+const note=':::callout{kind="note"}\n補足です。\n:::\n';
+test('move whole identified study block across a paragraph and back',()=>{
+  const source='# 章\n\n本文です。\n\n'+question+'\n'+answer;
+  assert.equal(canBlockOperation(source,project(source),2,'up'),true);
+  const next=move(source,2,'up');
+  assert.equal(next,'# 章\n\n'+question+'\n本文です。\n\n'+answer);
+  assert.equal(project(next)[1].study.id,'q-1');
+  assert.equal(project(next)[3].study.answerTo,'q-1');
+  assert.equal(move(next,1,'down'),source);
+});
+test('allow moving unrelated supported study blocks while retaining nested content',()=>{
+  const custom='::::component{name="example" #ex-1}\n:::slot{name="content"}\n例題 $x^2$ です。\n:::\n\n:::slot{name="hint"}\nヒントです。\n:::\n::::\n';
+  const source=custom+'\n'+note;
+  assert.equal(move(source,0,'down'),note+'\n'+custom);
+});
+test('linked question and answer cannot swap; heading and unsupported structures remain protected',()=>{
+  const source='# 章\n\n'+question+'\n'+answer;
+  const rows=project(source);
+  for(const [index,action] of [[1,'up'],[1,'down'],[2,'up'],[1,'delete'],[1,'duplicate']]){
+    assert.equal(canBlockOperation(source,rows,index,action),false);
+    assert.throws(()=>move(source,index,action),/操作できません/);
+  }
+  const code=question+'\n'+'~~~js\nconst a=1;\n~~~\n';
+  assert.equal(canBlockOperation(code,project(code),0,'down'),false);
+});
+test('CRLF and final block without newline preserve boundary style and study content',()=>{
+  const source=(note+'\n'+question.trimEnd()).replace(/\n/g,'\r\n');
+  const next=move(source,0,'down');
+  assert.equal(next,(question+'\n'+note.trimEnd()).replace(/\n/g,'\r\n'));
+  assert.equal(move(next,0,'down'),source);
+});
+test('stale source refuses move',()=>{
+  const source=note+'\n'+question;
+  assert.throws(()=>planBlockOperation(source,{source:source+'変更',index:0,action:'down'},deps),/原稿が変化/);
+});
