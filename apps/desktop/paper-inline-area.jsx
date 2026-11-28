@@ -1,7 +1,7 @@
 import React,{useLayoutEffect,useRef,useState} from 'react';
 import {beginPaperAreaDrag,previewPaperAreaDrag,finishPaperAreaDrag} from './paper-area-intent.mjs';
 import {clipPaperRect} from './paper-selection-geometry.mjs';
-import {createPlainTextPagePreview} from '../../../BookCreator_LayoutEngine/dist/index.js';
+import {createPlainTextPagePreview,createParagraphMeasurementCache,createMathCompilationCache,createDisplayMathGeometryCache} from '../../../BookCreator_LayoutEngine/dist/index.js';
 import {measurementLane} from './measurement-lane.mjs';
 import {measureInlineAreaProposal} from './paper-area-preview.mjs';
 
@@ -11,6 +11,14 @@ export function PaperInlineArea({viewport,node,context,onCommit}){
   const [geometry,setGeometry]=useState(null),[proposal,setProposal]=useState({}),[ghost,setGhost]=useState(null);
   const active=useRef(null),liveMount=useRef(null);
   const [live,setLive]=useState(null);
+  // Private to this mounted block / revision. No DOM page cache or
+  // normal-paper cache is borrowed, even when the user cancels.
+  const draftCaches=useRef(null);
+  useLayoutEffect(()=>{
+    const caches={paragraphCache:createParagraphMeasurementCache(document),mathCache:createMathCompilationCache(),displayMathCache:createDisplayMathGeometryCache(document)};
+    draftCaches.current=caches;
+    return ()=>{draftCaches.current=null;for(const cache of Object.values(caches))cache.clear();};
+  },[node,context.target.revision,context.target.fingerprint]);
   const {target,placement}=context;
   const stored=placement.sizeConstraints??{};
   const latest=useRef(null);latest.current={proposal,context};
@@ -93,12 +101,12 @@ export function PaperInlineArea({viewport,node,context,onCommit}){
   useLayoutEffect(()=>{
     setLive(null);
     if(!canPreview)return;
-    const controller=new AbortController(),candidate=latest.current.context;
+    const controller=new AbortController(),candidate=latest.current.context,caches=draftCaches.current;
     const current=()=>!controller.signal.aborted&&candidate.current()&&!latest.current.context.disabled;
     const [w,h]=JSON.parse(liveKey),values={...(w!==null?{width:w}:{}),...(h!==null?{height:h}:{})};
     const timer=setTimeout(()=>{
       if(!current())return;
-      void measureInlineAreaProposal(candidate,values,options=>measurementLane.run(()=>createPlainTextPagePreview(document,options),{current,signal:controller.signal,priority:'background',category:'paper-area-live'}),current)
+      void measureInlineAreaProposal(candidate,values,options=>measurementLane.run(()=>createPlainTextPagePreview(document,options),{current,signal:controller.signal,priority:'background',category:'paper-area-live'}),current,caches??{})
         .then(result=>{if(current())setLive({key:liveKey,result});})
         .catch(error=>{if(current())setLive({key:liveKey,error:String(error.message??error)});});
     },120);

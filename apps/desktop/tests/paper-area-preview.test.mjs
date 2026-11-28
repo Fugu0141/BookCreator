@@ -42,3 +42,16 @@ test('transient resize measures scoped intent without mutating saved data or sha
   assert.equal(await measureInlineAreaProposal(context,{height:50},()=>{throw Error('stale measured');},()=>false),undefined);
   await assert.rejects(()=>measureInlineAreaProposal(context,{height:75},async()=>result,()=>true),/占有領域/);
 });
+
+test('draft-owned caches are reused, never page templates or normal preview caches',async()=>{
+  const shared={},paragraph={},math={},display={};
+  const context={target:{documentId:'a'},persistentId:'q',areaPrepared:prepareSavedAreaPreview(options,snapshot,{whole:false,documentId:'a'}),areaSnapshot:snapshot,options:{...options,paragraphCache:shared,mathCache:shared,displayMathCache:shared,pageCache:shared}};
+  const privateCaches={paragraphCache:paragraph,mathCache:math,displayMathCache:display,pageCache:shared,measurementCache:shared};
+  for(const height of [40,50]){
+    await measureInlineAreaProposal(context,{height},async o=>{
+      assert.equal(o.paragraphCache,paragraph);assert.equal(o.mathCache,math);assert.equal(o.displayMathCache,display);
+      assert.equal(o.pageCache,undefined);assert.equal(o.measurementCache,undefined);
+    },()=>true,privateCaches);
+  }
+  await assert.rejects(()=>measureInlineAreaProposal(context,{height:50},()=>{throw Error('must not measure');},()=>true,{paragraphCache:shared}),/must not be shared/);
+});
