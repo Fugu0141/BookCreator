@@ -65,7 +65,7 @@ export function paperAreaPersistence(root,{checkManifest,readManuscript}){
         await verifySource(id,sourceRevision);
         await verifyBook?.();
         const old=await readAll();
-        if(!verifyBook&&(doc.entries.some(e=>e.bookFixed)||old.document.entries.some(e=>e.documentId===id&&e.bookFixed)))fail('INPUT','Absolute page locks require full-book verification');
+        if(!verifyBook&&(doc.entries.some(e=>e.bookFixed||e.bookPreferred)||old.document.entries.some(e=>e.documentId===id&&(e.bookFixed||e.bookPreferred))))fail('INPUT','Absolute page locks require full-book verification');
         if(old.revision!==expectedRevision)fail('CONFLICT','Paper area file changed externally');
         const merged=validatePaperAreaDocument({schemaVersion:1,entries:[...old.document.entries.filter(e=>e.documentId!==id),...doc.entries]});
         if(encodePaperAreaDocument(merged)===encodePaperAreaDocument(old.document))return scoped(old,id);
