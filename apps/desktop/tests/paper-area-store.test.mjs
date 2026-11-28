@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {validatePaperAreaDocument,encodePaperAreaDocument,decodePaperAreaDocument,setPaperAreaValue,setPaperAreaValues,bindPaperAreaDocument,createPaperAreaDraft,createSavedPaperAreaHistory} from '../paper-area-store.mjs';
+import {validatePaperAreaDocument,encodePaperAreaDocument,decodePaperAreaDocument,setPaperAreaValue,setPaperAreaValues,setBookPaperFixed,bindPaperAreaDocument,createPaperAreaDraft,createSavedPaperAreaHistory} from '../paper-area-store.mjs';
 const empty={schemaVersion:1,entries:[]};
 const width={documentId:'ch',persistentId:'q-1',axis:'width',value:50};
 const height={...width,axis:'height',value:25};
@@ -107,4 +107,17 @@ test('leading and trailing whitespace are independent and do not replace dimensi
   assert.deepEqual(bindPaperAreaDocument(next,[fragment('10')]).intents,[{documentId:'ch',blockKey:'10',placement:{sizeConstraints:{minWidthPercent:50,minHeightPercent:25},spaceBefore:4000,spaceAfter:6000}}]);
   assert.deepEqual(setPaperAreaValues(next,{...edit,values:{before:0}}).entries,[{...edit,minWidthPercent:50,minHeightPercent:25,spaceAfter:6000}]);
   for(const before of [-1,1.5,1000001])assert.throws(()=>setPaperAreaValues(doc,{...edit,values:{before}}));
+});
+
+test('absolute page lock roundtrips and preserves all explicit area constraints on release',()=>{
+  const edit={documentId:'ch',persistentId:'q-1'};
+  const position={page:2,x:12000,y:45000};
+  const fixed=setBookPaperFixed(doc,{...edit,position});
+  assert.deepEqual(decodePaperAreaDocument(encodePaperAreaDocument(fixed)),fixed);
+  assert.ok(Object.isFrozen(fixed.entries[0].bookFixed));
+  assert.deepEqual(bindPaperAreaDocument(fixed,[fragment('70')]).intents,[{documentId:'ch',blockKey:'70',placement:{sizeConstraints:{minWidthPercent:50,minHeightPercent:25},mode:'fixed',fixed:position}}]);
+  assert.throws(()=>setPaperAreaValues(fixed,{...edit,values:{width:60}}),/固定位置/);
+  assert.deepEqual(setBookPaperFixed(fixed,{...edit,position:null}),doc);
+  assert.deepEqual(setBookPaperFixed(setBookPaperFixed(empty,{...edit,position}),{...edit,position:null}),empty);
+  for(const bad of [{page:-1,x:0,y:0},{page:10000,x:0,y:0},{page:0,x:0.5,y:0},{page:0,x:0,y:0,width:1},{page:0,x:0},undefined])assert.throws(()=>setBookPaperFixed(doc,{...edit,position:bad}));
 });
