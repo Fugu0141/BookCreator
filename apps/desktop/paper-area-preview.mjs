@@ -312,3 +312,27 @@ export function createBookPositionPreviewSession(){
     }
   };
 }
+
+
+// The geometry-only result is a transient guide, not a complete paper or a
+// print/save ticket. Verify every explicit intent before drawing it.
+export async function measureBookPositionGeometry(context,action,values,session,current){
+  if(!current())return;
+  const commit=action==='move'?prepareBookFixedCommit(context,'move',values):action==='preferred'?prepareBookPreferredCommit(context,values):null;
+  if(!['move','preferred'].includes(action))throw Error('Invalid position geometry action');
+  if(!commit)return;
+  const outcome=await session.request(commit.prepared.options.intelligentLayout);
+  if(!current()||outcome.status!=='ready'||!session.isCurrent(outcome.generation))return;
+  const draft=outcome.draft;
+  if(draft?.kind!=='intelligent-geometry-draft'||!Number.isSafeInteger(draft.pageCount)||draft.pageCount<1)throw Error('配置案の座標が不正です。');
+  verifySavedAreaPreview(commit.prepared,{intelligentLayout:draft.layout});
+  const key=f=>JSON.stringify([f.origin.documentId,f.origin.blockKey,f.unitStart??null,f.unitEnd??null,f.continuationIndex??null]);
+  const before=new Map(context.plan.fragments.map(f=>[key(f),f.placement]));
+  const changed=draft.layout.fragments.flatMap(f=>{
+    const a=before.get(key(f)),b=f.placement,ar=a?.occupiedRect??a?.rect,br=b.occupiedRect??b.rect;
+    if(!br||!Number.isSafeInteger(b.page)||b.page<0||b.page>=draft.pageCount||![br.x,br.y,br.width,br.height].every(Number.isSafeInteger)||br.x<0||br.y<0||br.width<=0||br.height<=0)throw Error('配置案の矩形が不正です。');
+    if(a&&ar&&a.page===b.page&&['x','y','width','height'].every(k=>ar[k]===br[k]))return [];
+    return [{key:key(f),page:b.page,rect:br,selected:f.origin.documentId===context.selection.documentId&&f.origin.blockKey===context.selection.blockKey}];
+  });
+  return {changed,pageCount:draft.pageCount,layout:draft.layout,generation:outcome.generation};
+}
