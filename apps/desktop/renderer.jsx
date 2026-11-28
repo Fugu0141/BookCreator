@@ -43,6 +43,7 @@ import {LayoutPageToolbar} from './layout-page-toolbar.jsx';
 import {createWorkspacePreviewLifecycle} from './workspace-preview-lifecycle.mjs';
 import {manuscriptDirty,activeStructuredHistory,planStructuredCommit,planStructuredHistoryMove} from './manuscript-state.mjs';
 import {createManuscriptStore} from './manuscript-store.mjs';
+import {persistManuscript as persistManuscriptTransaction} from './manuscript-persistence.mjs';
 import {SourceEditor} from './source-editor.jsx';
 import {LivePreviewBridge} from './live-preview-bridge.jsx';
 const api=window.bookcreator;
@@ -384,19 +385,12 @@ function App(){
     if(!controller||recoveryCandidate)return fn();
     await controller.pause();
     try{await controller.discard();return await fn();}
-    finally{if(recoveryRef.current===controller)controller.resume(text);}
+    finally{if(recoveryRef.current===controller)controller.resume(manuscriptStore.getSnapshot().text);}
   }
-  async function persistManuscript(){
-    const controller=recoveryRef.current;
-    await controller?.pause();
-    let saved;
-    try{
-      saved=await unwrap(api.save(file.id,file.revision,text));
-      dispatchManuscript({type:'saved',file,value:text,revision:saved.revision});
-      try{await controller?.saved(saved.revision,text);}
-      catch(e){setRecoveryState({phase:'error',message:'原稿は保存済みですが復旧データを整理できません：'+String(e.message??e)});}
-      return saved;
-    }finally{controller?.resume(text);}
+  function persistManuscript(){
+    return persistManuscriptTransaction({store:manuscriptStore,getController:()=>recoveryRef.current,
+      save:(id,revision,value)=>unwrap(api.save(id,revision,value)),
+      onRecoveryError:e=>setRecoveryState({phase:'error',message:'原稿は保存済みですが復旧データを整理できません：'+String(e.message??e)})});
   }
   const retainLayoutHost=(clear=false,scope=layoutState.scope,targetFile=file)=>{
     // retain() owns clearing a mismatched host. Explicit clear is separate.
@@ -409,7 +403,7 @@ function App(){
   async function io(fn){if(working.current)return;working.current=true;setBusy(true);try{await fn();}catch(e){setStatus(String(e.message??e));}finally{working.current=false;setBusy(false);}}
   function open(){if(!confirmProjectDiscard())return;void io(()=>withProjectDiscard(async()=>{const next=await unwrap(api.open());if(next)await applyBook(next);}));}
   function select(id){if(routeBlockRef.current||composing.current){setStatus('現在の操作を完了または取り消してから原稿を切り替えてください。');return;}if(file?.id===id){setCompactPane('editor');if(compactWidthRef.current)setCompactFocusRequest({pane:'editor',id});return;}if(!confirmDiscard())return;void io(()=>withDiscard(async()=>{const next=await unwrap(api.read(id));invalidate(true);dispatchManuscript({type:'clear-history'});installRead(next);setWritingPanel(null);setCompactPane('editor');if(compactWidthRef.current)setCompactFocusRequest({pane:'editor',id:next.id});setStatus(next.editable?'原稿を読み込みました。':'混在改行のため読み取り専用です。');}));}
-  function save(){if(composing.current||routeBlockRef.current||!file?.editable||!dirty)return;void io(async()=>{await persistManuscript();setStatus('保存しました。');});}
+  function save(){const current=manuscriptStore.getMetadata();if(composing.current||routeBlockRef.current||!current.file?.editable||!current.dirty)return;void io(async()=>{if(await persistManuscript())setStatus(manuscriptStore.getMetadata().dirty?'保存しました。新しい未保存の変更があります。':'保存しました。');});}
   const [includeOptionalSlots,setIncludeOptionalSlots]=useState(false);
   const [studyChoice,setStudyChoice]=useState('example'),[studyInstanceId,setStudyInstanceId]=useState(''),[answerTo,setAnswerTo]=useState('');
   const canLink=studyChoice==='explanation'||isCustomComponentId(studyChoice);
@@ -784,17 +778,17 @@ function App(){
     try{
       if(decision==='save'){
         saving=true;working.current=true;setBusy(true);
-        if(dirty){await persistManuscript();completed.push('原稿');}
+        if(manuscriptStore.getMetadata().dirty&&await persistManuscript())completed.push('原稿');
         if(themeDirty){await persistSettings('typography');completed.push('テーマ');}
         if(settingsDirty){await persistSettings('book-settings');completed.push('書籍設定');}
       }
       if(decision==='discard'){await pauseSettingDrafts();await discardSettingDrafts();await recoveryRef.current?.pause();await recoveryRef.current?.discard();}
-      else if(decision==='save'){await pauseSettingDrafts();await recoveryRef.current?.pause();}
+      else if(decision==='save'){await pauseSettingDrafts();await recoveryRef.current?.pause();if(manuscriptStore.getMetadata().dirty)throw Error('保存後に原稿が変更されました。再度保存してください。');}
       await api.completeClose(closeRequest.token,decision==='cancel'?'cancel':'exit');
       if(decision==='cancel')setCloseRequest(null);
     }catch(e){
       const message=(completed.length?completed.join('・')+'は保存済み。':'')+'終了できませんでした：'+String(e.message??e);
-      resumeSettingDrafts();recoveryRef.current?.resume(text);setCloseError(message);setStatus(message);
+      resumeSettingDrafts();recoveryRef.current?.resume(manuscriptStore.getSnapshot().text);setCloseError(message);setStatus(message);
     }finally{
       if(saving){working.current=false;setBusy(false);}
       closeAction.current=false;setCloseSaving(false);
