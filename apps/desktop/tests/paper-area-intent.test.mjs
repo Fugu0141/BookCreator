@@ -61,3 +61,18 @@ test('gap drag is zoom invariant, independently measured in millimetres and can 
     assert.equal(beginPaperGapDrag({...start,bodyPx:0}),null);
   }
 });
+
+test('leading gap grows upward and shrinks downward, including zero and zoom',()=>{
+  for(const scale of [.5,1,2]){
+    const start={...input,value:0,bodyPx:800*scale,bodyHeight:200000,originPx:300*scale,side:'before'};
+    const gesture=beginPaperGapDrag(start);
+    assert.equal(previewPaperGapDrag(gesture,260*scale).value,10000);
+    assert.equal(finishPaperGapDrag(gesture,{current:target,pointerPx:260*scale}),10000);
+    const existing=beginPaperGapDrag({...start,value:10000});
+    assert.equal(finishPaperGapDrag(existing,{current:target,pointerPx:340*scale}),0);
+    assert.equal(previewPaperGapDrag(existing,-10000).value,200000);
+    assert.equal(finishPaperGapDrag(existing,{current:target,pointerPx:260*scale,cancelled:true}),null);
+    assert.equal(finishPaperGapDrag(existing,{current:{...target,fingerprint:'old'},pointerPx:260*scale}),null);
+    assert.equal(beginPaperGapDrag({...start,side:'unknown'}),null);
+  }
+});
