@@ -182,8 +182,8 @@ export function prepareBookFixedCommit(context,action,position){
   if(target.fixed!==!!stored||stored&&['page','x','y'].some(k=>stored[k]!==target.position[k])||(action!=='move'&&(action==='lock')===target.fixed))throw Error('固定状態が現在の紙面と一致しません。');
   if(action==='move'){
     const bounds=resolveBookMoveBounds(context,target);
-    if(!bounds||!position||Object.keys(position).length!==3||position.page!==target.position.page||!Number.isSafeInteger(position.x)||!Number.isSafeInteger(position.y)||position.x<0||position.y<0||position.x>bounds.maxX||position.y>bounds.maxY)throw Error('移動先が現在の本文領域に収まりません。');
-    if(position.x===target.position.x&&position.y===target.position.y)return null;
+    if(!bounds||!position||Object.keys(position).length!==3||!validBookMovePage(context,target,position.page)||!Number.isSafeInteger(position.x)||!Number.isSafeInteger(position.y)||position.x<0||position.y<0||position.x>bounds.maxX||position.y>bounds.maxY)throw Error('移動先が現在の本文領域に収まりません。');
+    if(position.page===target.position.page&&position.x===target.position.x&&position.y===target.position.y)return null;
   }
   const next=setBookPaperFixed(before,{documentId,persistentId:target.persistentId,position:action==='move'?position:action==='lock'?target.position:null});
   const {measurementCache,paragraphCache,pageCache,inlineMathCache,displayMathCache,mathCache,intelligentLayout,...options}=context.options;
@@ -271,4 +271,12 @@ export function prepareBookGroupRelease(context,documentId,groupId){
   const before=validatePaperAreaDocument(snapshot.document),members=before.entries.filter(e=>e.documentId===documentId&&e.bookGroup?.id===groupId).map(e=>e.persistentId);
   const next=setBookPaperGroup(before,{documentId,groupId,members,layout:null});
   return {documentId,value:validatePaperAreaDocument({schemaVersion:1,entries:next.entries.filter(e=>e.documentId===documentId)}),lease,expectedRevision:snapshot.revision};
+}
+
+
+// Only pages from the latest complete published plan are eligible.
+export function validBookMovePage(context,target,page){
+  if(!Number.isSafeInteger(page)||page<0)return false;
+  const count=context.plan?.pageCount;
+  return Number.isSafeInteger(count)&&count>0&&count<=512?page<count:page===target.position.page;
 }

@@ -28,3 +28,14 @@ export function paperPositionFromDrag(position,bounds,body,delta){
   if(!Number.isSafeInteger(x)||!Number.isSafeInteger(y)||x<0||y<0||x>bounds.maxX||y>bounds.maxY)return null;
   return {page:position.page,x,y};
 }
+
+
+// Convert a pointer in a target page's body to its local physical origin.
+// Preserve the grab offset in µm across different page origins and zoom.
+export function paperPositionFromPagePointer(page,body,pointer,grab,bounds){
+  if(!page||!body||!pointer||!grab||!bounds||![page.page,body.width,body.height,bounds.maxX,bounds.maxY].every(Number.isSafeInteger)||page.page<0||body.width<=0||body.height<=0||bounds.maxX<0||bounds.maxY<0||![page.left,page.top,page.width,page.height,pointer.x,pointer.y,grab.x,grab.y].every(Number.isFinite)||page.width<=0||page.height<=0)return null;
+  if(pointer.x<page.left||pointer.y<page.top||pointer.x>=page.left+page.width||pointer.y>=page.top+page.height)return null;
+  const x=Math.round((pointer.x-page.left)/page.width*body.width-grab.x),y=Math.round((pointer.y-page.top)/page.height*body.height-grab.y);
+  if(!Number.isSafeInteger(x)||!Number.isSafeInteger(y)||x<0||y<0||x>bounds.maxX||y>bounds.maxY)return null;
+  return {page:page.page,x,y};
+}

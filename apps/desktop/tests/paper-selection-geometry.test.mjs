@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {clipPaperRect,placePaperPropertyPanel,paperPositionFromDrag} from '../paper-selection-geometry.mjs';
+import {clipPaperRect,placePaperPropertyPanel,paperPositionFromDrag,paperPositionFromPagePointer} from '../paper-selection-geometry.mjs';
 const v={left:10,top:20,right:110,bottom:120};
 test('visible rectangle and partial clipping',()=>{
   assert.deepEqual(clipPaperRect({left:20,top:30,right:70,bottom:80},v),{left:20,top:30,width:50,height:50});
@@ -26,4 +26,13 @@ test('physical drag position is zoom-independent and rejects out-of-bounds desti
   assert.deepEqual(paperPositionFromDrag(origin,bounds,{...body,pixelWidth:250,pixelHeight:500},{x:25,y:-25}),expected);
   assert.deepEqual(paperPositionFromDrag(origin,bounds,body,{x:0,y:0}),origin);
   for(const delta of [{x:-101,y:0},{x:301,y:0},{x:0,y:601},{x:NaN,y:0}])assert.equal(paperPositionFromDrag(origin,bounds,body,delta),null);
+});
+
+
+test('cross-page pointer preserves physical grab offset with different page origins and zoom',()=>{
+  const body={width:100000,height:200000},bounds={maxX:80000,maxY:150000},grab={x:2000,y:3000};
+  const page={page:4,left:550,top:20,width:500,height:1000};
+  assert.deepEqual(paperPositionFromPagePointer(page,body,{x:660,y:185},grab,bounds),{page:4,x:20000,y:30000});
+  assert.deepEqual(paperPositionFromPagePointer({...page,left:800,width:250,height:500},body,{x:855,y:102.5},grab,bounds),{page:4,x:20000,y:30000});
+  for(const pointer of [{x:549,y:185},{x:1050,y:185},{x:550,y:20},{x:1000,y:185},{x:660,y:900}])assert.equal(paperPositionFromPagePointer(page,body,pointer,grab,bounds),null);
 });
