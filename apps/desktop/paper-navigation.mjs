@@ -46,3 +46,15 @@ export function preparePaperNavigationTransfer(previousRoot,nextRoot,plan){
   }
   return ()=>installPaperNavigation(previousRoot,bindings,next.onNavigate);
 }
+
+/** Resolve the actual measured fragment under a pointer without navigating. */
+export function paperBindingAtPoint(root,x,y){
+  if(!root||root.host?.inert||!Number.isFinite(x)||!Number.isFinite(y))return null;
+  const state=roots.get(root);
+  if(!state||typeof root.elementFromPoint!=='function')return null;
+  for(let node=root.elementFromPoint(x,y);node&&node!==root;node=node.parentNode){
+    const binding=state.bindings.get(node);
+    if(binding)return {...binding,node};
+  }
+  return null;
+}
