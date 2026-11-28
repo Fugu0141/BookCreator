@@ -668,3 +668,9 @@ body{font-family:BCFont_NotoSansJP,system-ui,sans-serif}.font-control,.typograph
 .lab-gui-first .lab-sample-toggle{background:#fff;border:1px solid #dce3eb;color:#475569;padding:5px 8px;font-size:12px}
 .lab-gui-first footer{background:#fff;border-top:1px solid #e1e6ec;padding:8px 12px}
 .lab-gui-first footer #lab-apply,.lab-gui-first footer #lab-open-registration{background:#235f98;border-radius:6px}
+
+.lab-gui-first .lab-area-controls{display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-width:0}
+.lab-gui-first .lab-area-controls label{display:flex;align-items:center;gap:4px;margin:0;font-size:12px}
+.lab-gui-first .lab-area-controls label select,.lab-gui-first .lab-area-controls label input{width:auto;max-width:112px;margin:0;font-size:12px}
+.lab-gui-first .lab-area-controls input[type=number]{width:65px}
+.lab-gui-first #lab-area-measured-height{font-size:12px;color:#475569;font-variant-numeric:tabular-nums}
