@@ -60,6 +60,20 @@ export function preparePaperNavigationTransfer(previousRoot,nextRoot,plan){
   return ()=>installPaperNavigation(previousRoot,bindings,next.onNavigate);
 }
 
+/** Resolve the actual measured fragment under a pointer without navigating. */
+export function paperBindingAtPoint(root,x,y){
+  if(!root||root.host?.inert||!Number.isFinite(x)||!Number.isFinite(y))return null;
+  const state=roots.get(root);
+  if(!state||typeof root.elementFromPoint!=='function')return null;
+  const path=[];
+  for(let node=root.elementFromPoint(x,y);node&&node!==root;node=node.parentNode){
+    const binding=state.bindings.get(node);
+    if(binding)return {...binding,node,...lineHit(binding,path)};
+    path.push(node);
+  }
+  return null;
+}
+
 // Block operations use the current source block's full origin, not a line or
 // inline-math text range. The ordinary navigation contract stays unchanged.
 export function paperBlockRangeForNode(node){

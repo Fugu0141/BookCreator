@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {installPaperNavigation,preparePaperNavigationTransfer} from '../paper-navigation.mjs';
+import {installPaperNavigation,preparePaperNavigationTransfer,paperBindingAtPoint} from '../paper-navigation.mjs';
 
 test('root navigation chooses the closest binding and supports click and keyboard',()=>{
   const listeners={},root={host:{inert:false},addEventListener:(name,fn)=>{assert.equal(listeners[name],undefined);listeners[name]=fn;}};
@@ -46,4 +46,20 @@ test('transfer uses fresh ranges on reused nodes and new nodes, not stale callba
   for(const target of [oldBlock,replacement,newBlock])oldRoot.listeners.click({composedPath:()=>[target,oldRoot],stopPropagation(){}});
   assert.deepEqual(calls,[['new',latest,oldBlock],['new',added,replacement]]);
   assert.equal(preparePaperNavigationTransfer(oldRoot,nextRoot,{pages:[{previous:node(),next:newPage,reuse:true}]}),null);
+});
+
+test('pointer hit uses current closest binding without invoking navigation',()=>{
+  const root={host:{inert:false},addEventListener(){},elementFromPoint:()=>child};
+  const block={parentNode:root},child={parentNode:block};
+  let calls=0;
+  const range={start:2,end:5};
+  installPaperNavigation(root,new WeakMap([[block,{documentId:'a',range}]]),()=>calls++);
+  assert.deepEqual(paperBindingAtPoint(root,12,34),{documentId:'a',range,node:block});
+  const updated={start:30,end:35};
+  installPaperNavigation(root,new WeakMap([[block,{documentId:'b',range:updated}]]),()=>calls++);
+  assert.deepEqual(paperBindingAtPoint(root,12,34),{documentId:'b',range:updated,node:block});
+  assert.equal(paperBindingAtPoint(root,NaN,34),null);
+  root.host.inert=true;
+  assert.equal(paperBindingAtPoint(root,12,34),null);
+  assert.equal(calls,0);
 });

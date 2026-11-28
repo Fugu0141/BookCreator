@@ -5,3 +5,11 @@ export function resolvePaperBlock(rows,range){
   const matches=rows.map((row,index)=>({row,index})).filter(({row})=>row.range.start<=range.start&&range.end<=row.range.end);
   return matches.length===1?matches[0]:null;
 }
+
+/** Resolve a target index inside the prevalidated reachable interval. */
+export function resolvePaperDrop(selection,binding){
+  if(!selection?.bounds||!binding||binding.documentId!==selection.command.file.id)return null;
+  const target=resolvePaperBlock(selection.rows,binding.range);
+  if(!target||target.index===selection.index||target.index<selection.bounds.min||target.index>selection.bounds.max)return null;
+  return target.index;
+}

@@ -1470,6 +1470,34 @@ async function packageSmoke(){
   await exec("document.querySelector('#paper-edit-mode').click()");
   if(await readFile(join(smokeRoot,'manuscript','chapter.md'),'utf8')!==sample)throw Error('Paper editing changed saved manuscript');
   console.log('PASS paper block selection, reorder, undo/redo and disk safety');
+  // Exercise the real pointer path across more than one source paragraph.
+  const dragSample='第一段落。\n\n第二段落。\n\n第三段落。\n';
+  const dragMoved='第二段落。\n\n第三段落。\n\n第一段落。\n';
+  await setNavigationSource(dragSample);
+  await exec("document.querySelector('#preview-button').click()");
+  await until("document.querySelector('#workspace-layout-state').dataset.phase==='ready'&&document.querySelector('#workspace-layout-state').dataset.scope==='manuscript'&&!document.querySelector('#preview > div').inert&&document.querySelector('#preview > div').shadowRoot.textContent.includes('第三段落。')");
+  await exec("document.querySelector('#paper-edit-mode').click()");
+  await exec("(()=>{const v=document.querySelector('#preview');v.scrollTop=0;v.scrollLeft=0;const line=[...v.firstElementChild.shadowRoot.querySelectorAll('[data-block] [data-start][data-end]')].find(n=>Number(n.dataset.start)===0&&Number(n.dataset.end)>0);if(!line)throw Error('first measured line missing');line.click();})()");
+  await until("!!document.querySelector('#paper-block-drag')&&!document.querySelector('#paper-selection-frame').hidden");
+  await exec("new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))");
+  const dragPoints=await exec("(()=>{const h=document.querySelector('#paper-block-drag').getBoundingClientRect(),line=[...document.querySelector('#preview > div').shadowRoot.querySelectorAll('[data-block] [data-start][data-end]')].find(n=>Number(n.dataset.start)<=17&&Number(n.dataset.end)>17),r=line.getBoundingClientRect();return {from:{x:Math.round(h.left+h.width/2),y:Math.round(h.top+h.height/2)},to:{x:Math.round(r.left+Math.min(r.width/2,40)),y:Math.round(r.top+r.height/2)}};})()");
+  const dragStart=()=>{win.webContents.sendInputEvent({type:'mouseMove',...dragPoints.from});win.webContents.sendInputEvent({type:'mouseDown',...dragPoints.from,button:'left',clickCount:1});win.webContents.sendInputEvent({type:'mouseMove',...dragPoints.to,button:'left'});};
+  const dragRelease=()=>win.webContents.sendInputEvent({type:'mouseUp',...dragPoints.to,button:'left',clickCount:1});
+  dragStart();
+  await until("!!document.querySelector('#paper-drop-guide')&&!document.querySelector('#paper-drop-guide').hidden");
+  win.webContents.sendInputEvent({type:'keyDown',keyCode:'Escape'});
+  win.webContents.sendInputEvent({type:'keyUp',keyCode:'Escape'});
+  dragRelease();
+  await until("document.querySelector('#source').value==="+JSON.stringify(dragSample)+"&&document.querySelector('#paper-drop-guide')?.hidden");
+  dragStart();
+  await until("!!document.querySelector('#paper-drop-guide')&&!document.querySelector('#paper-drop-guide').hidden");
+  dragRelease();
+  await until("document.querySelector('#source').value==="+JSON.stringify(dragMoved));
+  await exec("document.querySelector('#paper-block-undo').click()");
+  await until("document.querySelector('#source').value==="+JSON.stringify(dragSample));
+  await exec("document.querySelector('#paper-edit-mode').click()");
+  if(await readFile(join(smokeRoot,'manuscript','chapter.md'),'utf8')!==sample)throw Error('Paper drag changed saved manuscript');
+  console.log('PASS actual mouse paper range drag, cancellation, one-step undo and disk safety');
   // Use a stable, explicit component identity. The IL test lab is isolated
   // from the normal paper and must not modify source or a saved project.
   const areaSample=':::component{name="example" #area-test}\n占有領域を調整する例題。\n:::\n\n後続の本文。\n';
