@@ -45,8 +45,8 @@ export function PerformancePanel({shortWarmWindow,onShortWarmWindow,workerPrepar
       <small>記録消去以降の各コンポーネントのコミット数（初回表示・組版・設定変更・非表示のソース欄も含む）。入力は直近200件のソース変更イベントから対応するlayout effectまで（IME中の変更を含む）。実際の画素表示や構造編集の入力遅延は含みません。</small>
     </div>
     <label><input id="performance-retained-preview" type="checkbox" checked={retainedPreview} disabled={cacheBlocked} onChange={e=>onRetainedPreview(e.target.checked)}/>保持型リアルタイム組版（選択原稿・既定ON）</label>
-    <small>保持型で再利用可能な選択原稿の紙面がある場合、執筆中の入力合流を100msから16ms（短縮試験ON時は8ms）へ短縮します。初回・全冊などは100msのままです。OFFにすると従来の組版方式へ戻ります。</small>
-    <label><input id="performance-short-warm-window" type="checkbox" checked={shortWarmWindow} disabled={cacheBlocked||!retainedPreview} onChange={e=>onShortWarmWindow(e.target.checked)}/>保持型の入力合流待ちを8msに短縮（比較試験・既定OFF）</label>
+    <small>保持型で再利用可能な選択原稿の紙面がある場合、執筆中の入力合流を100msから8msへ短縮します（下の設定をOFFにすると16ms）。初回・全冊などは100msのままです。OFFにすると従来の組版方式へ戻ります。</small>
+    <label><input id="performance-short-warm-window" type="checkbox" checked={shortWarmWindow} disabled={cacheBlocked||!retainedPreview} onChange={e=>onShortWarmWindow(e.target.checked)}/>保持型の入力合流待ちを8msに短縮（既定ON・OFFで16ms）</label>
     <label><input id="performance-worker-preparation" type="checkbox" checked={workerPreparation} disabled={cacheBlocked||!retainedPreview} onChange={e=>onWorkerPreparation(e.target.checked)}/>原稿準備をWorkerで実行（比較試験・既定OFF）</label>
     <label><input id="performance-direct-single-page" type="checkbox" checked={directSinglePage} disabled={cacheBlocked||!retainedPreview} onChange={e=>onDirectSinglePage(e.target.checked)}/>単一ページ更新は直接確定表示（比較試験・既定OFF）</label>
     <label><input id="performance-sparse-paper-pages" type="checkbox" checked={sparsePaperPages} disabled={cacheBlocked} onChange={e=>onSparsePaperPages(e.target.checked)}/>未変更ページのDOM生成を省略（試験機能）</label>

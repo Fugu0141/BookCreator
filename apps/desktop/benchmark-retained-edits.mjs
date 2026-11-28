@@ -255,7 +255,7 @@ export async function benchmarkRetainedEdits({raw,click,until,ready,paperSignatu
       }
     }
   }
-  await setShortWindow(false);await setRetained(false);
+  await setShortWindow(true);await setRetained(false);
   const windowComparison={text:summarizeCacheComparison(windowRows.filter(r=>r.case==='text').map(r=>({label:'cache-pair-'+r.pair+'-'+r.arm,scope:'manuscript',elapsedMs:r.finalMs})),'manuscript'),burst:summarizeBurstInputSamples(windowRows.filter(r=>r.case==='burst'))};
   console.log('BENCH short warm window '+JSON.stringify({version:1,arms:{uncached:'16ms',warm:'8ms'},comparison:windowComparison,samples:windowRows}));
   const summaries=cases.map(({id})=>summarizeRetainedEditSamples(id,samples.filter(s=>s.case===id)));

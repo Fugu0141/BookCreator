@@ -382,7 +382,17 @@ async function liveWritingSmoke(){
   if(await raw("!!document.querySelector('.hub-project-row,#component-catalog .catalog-card')"))throw Error('Hidden workspace lists mounted during writing');
   await click('#performance-toggle');
   if(!await raw("document.querySelector('#performance-retained-preview').checked"))throw Error('Retained preview must start enabled');
-  await click('#performance-worker-preparation');
+  if(!await raw("document.querySelector('#performance-short-warm-window').checked"))throw Error('Short warm window must start enabled');
+  // Verify a default main-thread edit before exercising the optional worker.
+  await click('#performance-close');
+  const defaultEdit=saved+'\n\n既定の高速紙面確認。\n';
+  await setSource(defaultEdit);
+  await until('default short-window paper',scopeReady('manuscript')+"&&document.querySelector('#preview > div').shadowRoot.textContent.includes('既定の高速紙面確認。')");
+  if(!await raw("JSON.parse(document.querySelector('#preview > div').dataset.retainedWork).hostTiming.preparationMode==='main'"))throw Error('Default edit must use main preparation');
+  await setSource(saved);
+  await until('default short-window restore',scopeReady('manuscript')+"&&!document.querySelector('#preview > div').shadowRoot.textContent.includes('既定の高速紙面確認。')");
+  if(await readFile(path,'utf8')!==saved)throw Error('Default edit changed saved manuscript');
+  await click('#performance-toggle');await click('#performance-worker-preparation');
   await click('#performance-close');
   await raw("(()=>{const e=document.querySelector('#source');e.focus();e.setSelectionRange(0,0);e.dispatchEvent(new CompositionEvent('compositionstart',{bubbles:true,data:'あ'}));})()");
   const first=saved+'\nライブ組版途中。\n',latest=saved+'\nライブ組版最終確認。\n';
