@@ -95,3 +95,14 @@ test('whole-book placement rejects stale theme or settings without creating a la
   await writeFile(f.book,manifest+'# external\n');
   await assert.rejects(w.saveBookPaperArea('ch',l,null,area('ch')),{code:'CONFLICT'});
 });
+
+test('absolute page locks require full-book write verification including explicit release',async t=>{
+  const f=await bookLeaseFixture(t),w=f.workspace;
+  const fixed={schemaVersion:1,entries:[{documentId:'ch',persistentId:'q-1',bookFixed:{page:0,x:0,y:1000}}]};
+  await assert.rejects(w.savePaperArea('ch',f.revision,null,fixed),{code:'INPUT'});
+  const saved=await w.saveBookPaperArea('ch',f.lease,null,fixed);
+  await assert.rejects(w.savePaperArea('ch',f.revision,saved.revision,empty),{code:'INPUT'});
+  assert.deepEqual((await w.readBookPaperArea()).document,fixed);
+  const released=await w.saveBookPaperArea('ch',f.lease,saved.revision,empty);
+  assert.deepEqual(released.document,empty);
+});
