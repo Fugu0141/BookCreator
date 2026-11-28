@@ -32,7 +32,7 @@ export function collectLayoutDocuments(input,snapshot){
 export function prepareLayoutOptions(input,documents,prepareBookBrowserPreview,deps){
   const {whole,needsContext,file,theme,rev,fingerprint,geometry,typography}=input;
   for(const [id,message] of Object.entries(theme?.studyResourceErrors??{}))if(documents.some(d=>d.source.includes(id)))throw Error('登録部品の素材が利用できません: '+message);
-  const prepared=prepareBookBrowserPreview(documents,rev,fingerprint,geometry.content,deps,typography,theme?.headingDesign,theme?.headingLevels,theme?.paragraphDesign,theme?.studyDesigns,theme?.library);
+  const prepared=prepareBookBrowserPreview(documents,rev,fingerprint,geometry.content,deps,typography,theme?.headingDesign,theme?.headingLevels,theme?.paragraphDesign,theme?.studyDesigns,theme?.library,input.figureResources);
   const options=prepared.options&&!whole&&needsContext?{...prepared.options,sections:prepared.options.sections.filter(s=>s.id===file.id)}:prepared.options;
   return {options,diagnostics:prepared.diagnostics};
 }

@@ -690,6 +690,11 @@ function App(){
       if(!layoutScheduler.isCurrent(job))return;
       phase='prepare';const preparationStarted=performance.now();
       documents=collectLayoutDocuments(input,snapshot);
+      if(documents.some(d=>d.source.includes('::figure'))){
+        const assets=await retryPreviewRead(()=>unwrap(api.listImages()),{current,category:'image',signal});
+        if(!current())return;
+        input.figureResources={assets:assets.map(({id,width,height})=>({id,width,height})),documentPaths:Object.fromEntries(book.sections.filter(s=>s.editable).map(s=>[s.id,s.path]))};
+      }
       let prepared;
       if(retainedMode&&workerPreparation){
         phase='prepare-worker';

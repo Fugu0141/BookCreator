@@ -7,7 +7,7 @@ export function preparationPayload(input,documents){
     studyResourceErrors:theme.studyResourceErrors,headingDesign:theme.headingDesign,
     headingLevels:theme.headingLevels,paragraphDesign:theme.paragraphDesign,
     studyDesigns:theme.studyDesigns,library:theme.library
-  }:undefined,rev,fingerprint,geometry:{content:geometry.content},typography},
+  }:undefined,rev,fingerprint,geometry:{content:geometry.content},typography,...(input.figureResources?{figureResources:input.figureResources}:{})},
     documents:documents.map(({documentId,revision,source,startOn})=>({documentId,revision,source,startOn}))};
 }
 // The caller owns the worker/session lifetime. Each request uses current source
