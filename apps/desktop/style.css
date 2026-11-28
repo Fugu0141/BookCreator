@@ -758,3 +758,17 @@ body{font-family:BCFont_NotoSansJP,system-ui,sans-serif}.font-control,.typograph
 .paper-property-sliders label{display:grid;grid-template-columns:72px minmax(0,1fr);align-items:center;gap:4px;}
 .paper-property-sliders input{min-width:0;width:100%;}
 .paper-property-error{flex-basis:100%;color:#b42318;font-size:11px;overflow-wrap:anywhere;}
+
+
+/* Selection decorations belong to the editing viewport, not the paper. */
+.book-group-selection-layer{position:fixed;inset:0;pointer-events:none;z-index:20;}
+.book-group-selection-frame{position:fixed;box-sizing:border-box;border:2px solid #3478b7;background:#3478b709;border-radius:2px;pointer-events:none;}
+.book-group-selection-frame.is-anchor{border-color:#205a99;}
+.book-group-selection-frame.is-incomplete{border-style:dashed;}
+.book-group-selection-frame span{position:absolute;left:0;top:0;max-width:100%;height:18px;min-width:18px;padding:0 3px;box-sizing:border-box;border-radius:0 0 4px 0;background:#205a99;color:white;text-align:center;font-size:11px;line-height:18px;overflow:hidden;}
+.book-group-controls{flex-wrap:wrap;max-width:100%;min-width:0;}
+.book-group-controls .book-group-instruction{flex:1 1 100%;font-size:12px;}
+.book-group-controls .book-group-state{flex:0 1 auto;min-width:0;}
+.book-group-chips{display:flex;flex:1 1 100%;flex-wrap:wrap;gap:4px;max-height:100px;overflow:auto;min-width:0;}
+.book-group-controls .book-group-chip{display:inline-block;max-width:200px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;border:1px solid #a9c5e4;background:#edf4fc;color:#204f83;border-radius:4px;padding:3px 5px;font-size:11px;}
+.book-group-controls .book-group-chip.is-anchor{font-weight:600;}

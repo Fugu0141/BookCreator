@@ -39,3 +39,18 @@ export function paperPositionFromPagePointer(page,body,pointer,grab,bounds){
   if(!Number.isSafeInteger(x)||!Number.isSafeInteger(y)||x<0||y<0||x>bounds.maxX||y>bounds.maxY)return null;
   return {page:page.page,x,y};
 }
+
+
+// Selection is scoped to the current shadow root by the caller. Never pick
+// an arbitrary matching DOM fragment if a persistent block is split.
+export function resolvePaperSelectionNodes(nodes,documentId,blockKeys){
+  if(typeof documentId!=='string'||!documentId||!Array.isArray(blockKeys)||!blockKeys.length||new Set(blockKeys).size!==blockKeys.length)return [];
+  const wanted=new Set(blockKeys),matches=new Map(),duplicate=new Set();
+  for(const node of nodes){
+    const data=node?.dataset;
+    if(data?.document!==documentId||!wanted.has(data.block))continue;
+    if(matches.has(data.block))duplicate.add(data.block);
+    else matches.set(data.block,node);
+  }
+  return blockKeys.flatMap((key,index)=>matches.has(key)&&!duplicate.has(key)?[{key,index,node:matches.get(key)}]:[]);
+}
