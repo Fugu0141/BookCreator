@@ -500,6 +500,7 @@ async function benchmarkBookPositionDrag({win,raw,click,until,ready,paperSignatu
       await raw(target+".click()");
       await until('selected inspector',"document.querySelector('#book-paper-properties')?.dataset.placementMode==='automatic'");
       await click('#book-inspector-preferred');
+      await until('position editor docked',"!!document.querySelector('#book-inspector-area-editor #book-paper-coordinate-y')");
       if(!await raw("document.querySelector('.book-paper-toolbar')?.dataset.tool==='preferred'&&!document.querySelector('#book-paper-position-mode')&&!document.querySelector('#book-paper-fixed-toggle')&&!document.querySelector('#book-paper-group-mode')&&!document.querySelector('#book-paper-area-undo')&&!document.querySelector('#book-paper-block-up')"))throw Error('Unrelated tools exposed during preferred position editing');
       await until('drag handle',"document.querySelector('#book-paper-position-drag')?.dataset.geometryAvailable==='true'");
       await raw("new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))");
@@ -532,7 +533,7 @@ async function benchmarkBookPositionDrag({win,raw,click,until,ready,paperSignatu
     await raw(target+".scrollIntoView({block:'center',inline:'center'})");
     await raw("new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))");
     await raw(target+".click()");
-    await click('#book-paper-preferred-mode');
+    await click('#book-inspector-preferred');
     await until('coordinate fields',"!!document.querySelector('#book-paper-coordinate-y')");
     const field=(value)=>raw("(()=>{const e=document.querySelector('#book-paper-coordinate-y');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,"+JSON.stringify(value)+");e.dispatchEvent(new Event('input',{bubbles:true}));})()");
     const oldY=await raw("Number(document.querySelector('#book-paper-coordinate-y').value)");
@@ -547,6 +548,10 @@ async function benchmarkBookPositionDrag({win,raw,click,until,ready,paperSignatu
     await readTiming('paper-ready');
     const reflected=await raw("(()=>{const e=document.querySelector('[data-position-phase=paper-ready]');return {y:document.querySelector('#book-paper-coordinate-y').value,key:JSON.parse(e.dataset.proposalKey)};})()");
     if(reflected.y!==nextY||reflected.key[3]!==Math.round(Number(nextY)*1000))throw Error('Exact coordinate was not reflected: '+JSON.stringify({expected:nextY,reflected}));
+    await click('#book-position-dock-toggle');
+    await until('coordinate retained undocked',"!document.querySelector('#book-inspector-area-editor #book-paper-coordinate-y')&&document.querySelector('#book-paper-coordinate-y')?.value==="+JSON.stringify(nextY)+"&&!!document.querySelector('[data-position-phase=paper-ready]')");
+    await click('#book-position-dock-toggle');
+    await until('coordinate retained redocked',"document.querySelector('#book-inspector-area-editor #book-paper-coordinate-y')?.value==="+JSON.stringify(nextY)+"&&!!document.querySelector('[data-position-phase=paper-ready]')");
     await raw("window.dispatchEvent(new Event('resize'))");
     await until('coordinate retained on viewport resize',"document.querySelector('#book-paper-coordinate-y')?.value==="+JSON.stringify(nextY)+"&&!!document.querySelector('[data-position-phase=paper-ready]')");
     await click('#book-paper-preferred-mode');
