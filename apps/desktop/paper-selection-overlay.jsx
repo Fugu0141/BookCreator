@@ -1,5 +1,5 @@
 import React,{useLayoutEffect,useRef,useState} from 'react';
-import {clipPaperRect,placePaperPropertyPanel,paperPositionFromDrag,paperPositionFromPagePointer,resolvePaperSelectionNodes} from './paper-selection-geometry.mjs';
+import {clipPaperRect,placePaperPropertyPanel,paperPositionFromDrag,paperPositionFromPagePointer,resolvePaperSelectionNodes,preferredPositionEditStart} from './paper-selection-geometry.mjs';
 import {createIntelligentGeometryDraftSession,createFullRetainedTextPagePreview,createParagraphMeasurementCache,createMathCompilationCache,createDisplayMathGeometryCache,createInlineMathGeometryCache} from '../../../BookCreator_LayoutEngine/dist/index.js';
 import {measurementLane} from './measurement-lane.mjs';
 import {createPreviewCheckpoint} from './preview-checkpoint.mjs';
@@ -78,7 +78,11 @@ export function PaperSelectionOverlay({viewport,node,enabled,getDrop,onMove}){
 // Explicit move mode: overlays never enter the measured/printable tree.
 export function BookPositionOverlay({viewport,node,context,bounds,onCommit,onClose,preferredMode=false}){
   const [geometry,setGeometry]=useState(null),[proposal,setProposal]=useState(null),[ghost,setGhost]=useState(null),[invalid,setInvalid]=useState(false);
-  const [tx,setTx]=useState('5'),[ty,setTy]=useState('5');
+  const stored=preferredMode?context.areaPrepared.document.entries.find(e=>e.documentId===context.selection.documentId&&e.persistentId===context.persistentId)?.bookPreferred:null;
+  const initial=preferredMode?preferredPositionEditStart(context.position,bounds,context.options,stored):null;
+  const [tx,setTx]=useState(()=>String((initial?.tolerance.x??5000)/1000)),[ty,setTy]=useState(()=>String((initial?.tolerance.y??5000)/1000)),[rebased,setRebased]=useState(false);
+  const needsRebase=!!initial?.requiresRebase&&!rebased;
+  const basePosition=preferredMode&&!rebased?initial.position:context.position;
   const [live,setLive]=useState(null),[quick,setQuick]=useState(null),[dragging,setDragging]=useState(false),liveMount=useRef(null),draft=useRef(null);
   const gesture=useRef(null),latest=useRef(null);latest.current={context,proposal,onClose};
   useLayoutEffect(()=>{
@@ -119,7 +123,7 @@ export function BookPositionOverlay({viewport,node,context,bounds,onCommit,onClo
     return ()=>{const g=gesture.current;gesture.current=null;if(g?.node.hasPointerCapture(g.id))g.node.releasePointerCapture(g.id);observer.disconnect();window.removeEventListener('scroll',update,true);window.removeEventListener('resize',update);window.removeEventListener('blur',blur);window.removeEventListener('keydown',escape,true);};
   },[viewport,node,context.selection.revision,context.selection.fingerprint]);
   const body={width:context.options.width,height:context.options.height,pixelWidth:geometry?.body.width,pixelHeight:geometry?.body.height};
-  const position=proposal??context.position;
+  const position=proposal??basePosition;
   const get=e=>{
     const g=gesture.current;
     if(!g||g.id!==e.pointerId||!context.current())return null;
@@ -147,7 +151,8 @@ export function BookPositionOverlay({viewport,node,context,bounds,onCommit,onClo
   const displayChanged=display.page!==context.position.page||display.x!==context.position.x||display.y!==context.position.y;
   const action=preferredMode?'preferred':'move';
   const quickMode=dragging&&!!draft.current?.geometrySession;
-  const proposalKey=geometry&&!invalid&&context.current()&&(preferredMode?validTolerance:displayChanged)?JSON.stringify([action,display.page,display.x,display.y,preferredMode?tolerance.x:null,preferredMode?tolerance.y:null]):null;
+  const preferenceChanged=preferredMode&&(!stored||display.page!==stored.position.page||display.x!==stored.position.x||display.y!==stored.position.y||tolerance.x!==stored.tolerance.x||tolerance.y!==stored.tolerance.y);
+  const proposalKey=geometry&&!invalid&&!needsRebase&&context.current()&&(preferredMode?validTolerance&&preferenceChanged:displayChanged)?JSON.stringify([action,display.page,display.x,display.y,preferredMode?tolerance.x:null,preferredMode?tolerance.y:null]):null;
   const liveKey=quickMode?null:proposalKey;
   const quickKey=quickMode&&ghost?proposalKey:null;
   useLayoutEffect(()=>{
@@ -199,7 +204,7 @@ export function BookPositionOverlay({viewport,node,context,bounds,onCommit,onClo
   const placement=shown?.intelligentLayout?.fragments.find(f=>f.origin.documentId===context.selection.documentId&&f.origin.blockKey===context.selection.blockKey)?.placement;
   return <>
     {shown&&<div className="paper-inline-live" aria-hidden="true" inert={true} style={{left:visible.left,top:visible.top,width:visible.right-visible.left,height:visible.bottom-visible.top}}><div ref={liveMount} style={{position:'absolute',left:host.left,top:host.top,width:host.width,transformOrigin:'top left',transform:'scale('+host.sx+','+host.sy+')'}}/></div>}
-    {handleRect&&<div className="paper-selection-frame" style={handleRect}>
+    {handleRect&&!needsRebase&&<div className="paper-selection-frame" style={handleRect}>
       <button id="book-paper-position-drag" type="button" className="paper-block-drag" aria-label="位置をドラッグ（矢印キーでも移動）" title={preferredMode?'同一ページ内で希望位置を指定':'表示中の別ページへもドラッグ可能。矢印キーは1 mm、Shiftで5 mm'}
         onPointerDown={e=>{if(e.button!==0||!e.isPrimary||gesture.current||!context.current())return;e.preventDefault();e.currentTarget.focus({preventScroll:true});try{e.currentTarget.setPointerCapture(e.pointerId);}catch{return;}const page=preferredMode?geometry.body:geometry.pages.get(position.page);if(!page){e.currentTarget.releasePointerCapture(e.pointerId);return;}setDragging(true);gesture.current={id:e.pointerId,x:e.clientX,y:e.clientY,position,node:e.currentTarget,grab:{x:(e.clientX-page.left)/page.width*body.width-position.x,y:(e.clientY-page.top)/page.height*body.height-position.y}};}}
         onPointerMove={e=>{if(gesture.current?.id!==e.pointerId)return;const next=get(e);setGhost(next);setInvalid(!next);}}
@@ -207,15 +212,16 @@ export function BookPositionOverlay({viewport,node,context,bounds,onCommit,onClo
         onKeyDown={e=>{const dir={ArrowLeft:[-1,0],ArrowRight:[1,0],ArrowUp:[0,-1],ArrowDown:[0,1]}[e.key];if(!dir||!context.current()||gesture.current||e.ctrlKey||e.metaKey||e.altKey)return;e.preventDefault();e.stopPropagation();const step=e.shiftKey?5000:1000;const next={page:position.page,x:position.x+dir[0]*step,y:position.y+dir[1]*step};if(next.x>=0&&next.y>=0&&next.x<=bounds.maxX&&next.y<=bounds.maxY)setProposal(next);}}>✥</button>
     </div>}
     {quickFrames.map(f=><div key={f.key} className={'book-geometry-draft-frame'+(f.selected?' is-selected':'')} aria-hidden="true" style={f.rect}/>)}
-    {rect&&<div className="paper-drop-guide" aria-hidden="true" style={rect}/>}
+    {rect&&!needsRebase&&<div className="paper-drop-guide" aria-hidden="true" style={rect}/>}
     <div className="paper-inline-area-toolbar" style={panel} role="group" aria-label={preferredMode?'希望位置の移動案':'固定位置の移動案'}>
-      <small role="status">{invalid?'本文領域外には移動できません。':display.page+1+'ページ · X '+display.x/1000+' / Y '+display.y/1000+' mm（未確定）'}</small>
+      <small role="status">{needsRebase?'以前の希望位置は現在の本文領域では直接編集できません。':invalid?'本文領域外には移動できません。':display.page+1+'ページ · X '+display.x/1000+' / Y '+display.y/1000+' mm'+(preferredMode&&!preferenceChanged?'（保存済みの希望）':'（未確定）')}</small>
+      {needsRebase&&<><small>保存済み：{stored.position.page+1}ページ X {stored.position.x/1000} / Y {stored.position.y/1000} mm、許容 ±{stored.tolerance.x/1000} / ±{stored.tolerance.y/1000} mm</small><button type="button" id="book-paper-preferred-rebase" onClick={()=>{if(!context.current())return;setProposal(null);setRebased(true);}}>現在の紙面を基準に再指定</button></>}
       {quickMode&&<small className="paper-inline-live-status" role="status">{invalid?'':quick?.key===quickKey&&quick.error?'配置案が成立しません：'+quick.error:quickResult?'軽量配置案 · 移動 '+quickResult.changed.length+'件 · '+quickResult.pageCount+'ページ（未確定）':'配置ガイド（ドロップ後に実測）'}</small>}
       {liveKey&&<small className="paper-inline-live-status" role="status">{shown?(placement?.preference==='fallback'?'実測配置案：希望範囲外（未保存）':'実測配置案（未保存）'):live?.key===liveKey&&live.error?'配置できません：'+live.error:live?.key===liveKey?'配置変更なし':'配置を計算中…'}</small>}
       {crossPage&&<label>移動先ページ <select id="book-paper-position-page" value={position.page} disabled={!!gesture.current} onChange={e=>{if(!context.current()||gesture.current)return;const page=Number(e.target.value);if(Number.isSafeInteger(page)&&page>=0&&page<pageCount)setProposal({...position,page});}}>{Array.from({length:pageCount},(_,i)=><option key={i} value={i}>{i+1}ページ</option>)}</select></label>}
       {crossPage&&!handleRect&&<small>移動先が画面外です。ページ番号と座標を確認してください。</small>}
-      {preferredMode?<><small>許容範囲内を優先。成立しない場合は通常配置に戻ります。</small><div className="controls"><label>横 ± mm <input type="number" min="0" max={body.width/1000} step="0.001" value={tx} onChange={e=>setTx(e.target.value)}/></label><label>縦 ± mm <input type="number" min="0" max={body.height/1000} step="0.001" value={ty} onChange={e=>setTy(e.target.value)}/></label></div></>:<small>確定すると移動先を固定します。</small>}
-      <div className="controls"><button id="book-paper-position-apply" type="button" disabled={(!preferredMode&&!changed)||(preferredMode&&!validTolerance)||!!gesture.current||!context.current()||!!(liveKey&&live?.key===liveKey&&live.error)} onClick={()=>{if(!gesture.current&&context.current()){if(preferredMode&&validTolerance)onCommit({position,tolerance});else if(!preferredMode&&changed)onCommit(proposal);}}}>{preferredMode?'希望位置を保存':'移動先を固定して保存'}</button><button type="button" className="secondary-action" onClick={onClose}>取消</button></div>
+      {preferredMode&&!needsRebase?<><small>許容範囲内を優先。成立しない場合は通常配置に戻ります。</small><div className="controls"><label>横 ± mm <input type="number" min="0" max={body.width/1000} step="0.001" value={tx} onChange={e=>setTx(e.target.value)}/></label><label>縦 ± mm <input type="number" min="0" max={body.height/1000} step="0.001" value={ty} onChange={e=>setTy(e.target.value)}/></label></div></>:!preferredMode?<small>確定すると移動先を固定します。</small>:null}
+      <div className="controls"><button id="book-paper-position-apply" type="button" disabled={(!preferredMode&&!changed)||(preferredMode&&(!validTolerance||!preferenceChanged||needsRebase))||!!gesture.current||!context.current()||!!(liveKey&&live?.key===liveKey&&live.error)} onClick={()=>{if(!gesture.current&&context.current()){if(preferredMode&&validTolerance&&preferenceChanged&&!needsRebase)onCommit({position,tolerance});else if(!preferredMode&&changed)onCommit(proposal);}}}>{preferredMode?'希望位置を保存':'移動先を固定して保存'}</button><button type="button" className="secondary-action" onClick={onClose}>取消</button></div>
     </div>
   </>;
 }
