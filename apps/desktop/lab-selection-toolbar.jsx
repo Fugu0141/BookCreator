@@ -2,7 +2,7 @@ import React from 'react';
 
 // All mutations go through the caller's existing draft history and validation.
 // This toolbar is a view of the selected node, not an independent style store.
-export function LabSelectionToolbar({node,draft,fontOptions,disabled,canDuplicate,canRemove,canMoveBack,canMoveForward,locked,inheritedLock,onLock,onDuplicate,onRemove,onMove,onStyle,onFont,onEditText,onPrecision,canEditText,alignmentCount,onAlign}){
+export function LabSelectionToolbar({node,draft,fontOptions,disabled,canDuplicate,canRemove,canMoveBack,canMoveForward,locked,inheritedLock,onLock,onDuplicate,onRemove,onMove,onStyle,onFont,onEditText,onPrecision,canEditText,alignmentCount,onAlign,precisionOpen}){
   const type=node?.type;
   const text=['content','label','dynamic','slot'].includes(type);
   const style=type==='content'?draft:node;
@@ -36,6 +36,6 @@ export function LabSelectionToolbar({node,draft,fontOptions,disabled,canDuplicat
     <button type="button" id="lab-quick-duplicate" disabled={styleDisabled||!canDuplicate} onClick={onDuplicate}>複製</button>
     <button type="button" id="lab-quick-remove" disabled={styleDisabled||!canRemove} onClick={onRemove}>削除</button>
     <button type="button" id="lab-quick-lock" disabled={disabled||!node||inheritedLock} aria-pressed={locked} onClick={onLock}>{locked?'ロック解除':'ロック'}</button>
-    <button type="button" id="lab-quick-precision" disabled={disabled} onClick={onPrecision}>精密調整</button>
+    <button type="button" id="lab-quick-precision" aria-expanded={precisionOpen} aria-controls="lab-precision-panel" disabled={disabled} onClick={onPrecision}>{precisionOpen?'精密調整を閉じる':'精密調整'}</button>
   </div>;
 }
