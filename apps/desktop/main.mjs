@@ -1441,6 +1441,24 @@ async function packageSmoke(){
   await until("document.querySelector('.workspace-shell').dataset.workspaceMode==='writing'");
   const navigationSample=sample+'\n'+Array.from({length:10},()=>('ページ移動のための日本語本文を確認します。'.repeat(22))).join('\n\n')+'\n';
   const setNavigationSource=value=>exec("(()=>{const e=document.querySelector('#source');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(e,"+JSON.stringify(value)+");e.dispatchEvent(new Event('input',{bubbles:true}));})()");
+  // Direct paper editing must use the same source transaction and history.
+  const paperEditSample='最初の本文。\n\n次の本文。\n';
+  const paperEditMoved='次の本文。\n\n最初の本文。\n';
+  await setNavigationSource(paperEditSample);
+  await exec("document.querySelector('#preview-button').click()");
+  await until("document.querySelector('#workspace-layout-state').dataset.phase==='ready'&&document.querySelector('#workspace-layout-state').dataset.scope==='manuscript'&&!document.querySelector('#preview > div').inert");
+  await exec("document.querySelector('#paper-edit-mode').click()");
+  await exec("(()=>{const v=document.querySelector('#preview');v.scrollTop=0;v.scrollLeft=0;v.firstElementChild.shadowRoot.querySelector('[data-block][tabindex] [data-start][data-end]').click();})()");
+  await until("!document.querySelector('#paper-block-down').disabled&&!!document.querySelector('#paper-selection-frame')&&!document.querySelector('#paper-selection-frame').hidden");
+  await exec("document.querySelector('#paper-block-down').click()");
+  await until("document.querySelector('#source').value==="+JSON.stringify(paperEditMoved)+"&&!document.querySelector('#paper-block-undo').disabled&&!document.querySelector('#paper-selection-frame')");
+  await exec("document.querySelector('#paper-block-undo').click()");
+  await until("document.querySelector('#source').value==="+JSON.stringify(paperEditSample)+"&&!document.querySelector('#paper-block-redo').disabled");
+  await exec("document.querySelector('#paper-block-redo').click()");
+  await until("document.querySelector('#source').value==="+JSON.stringify(paperEditMoved));
+  await exec("document.querySelector('#paper-edit-mode').click()");
+  if(await readFile(join(smokeRoot,'manuscript','chapter.md'),'utf8')!==sample)throw Error('Paper editing changed saved manuscript');
+  console.log('PASS paper block selection, reorder, undo/redo and disk safety');
   await setNavigationSource(navigationSample);
   await exec("document.querySelector('#mode-publication').click()");
   await until("document.querySelector('#publication-save').dataset.state==='required'&&document.querySelector('#publication-layout').dataset.state==='required'");

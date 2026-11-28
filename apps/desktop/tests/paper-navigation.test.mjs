@@ -16,7 +16,7 @@ test('root navigation chooses the closest binding and supports click and keyboar
   listeners.click(event([child]));
   root.host.inert=true;
   listeners.click(event([block]));
-  assert.deepEqual(calls,[['a',inner],['a',range],['a',inner]]);
+  assert.deepEqual(calls,[['a',inner,math],['a',range,block],['a',inner,math]]);
   assert.equal(stopped,3);assert.equal(prevented,2);
 });
 
@@ -29,7 +29,7 @@ test('reinstall on retained root replaces ranges and callbacks without adding li
   const event=node=>({composedPath:()=>[node,root],stopPropagation(){}});
   listeners.click(event(removed));
   listeners.click(event(retained));
-  assert.deepEqual(calls,[['new',range]]);
+  assert.deepEqual(calls,[['new',range,retained]]);
 });
 
 test('transfer uses fresh ranges on reused nodes and new nodes, not stale callbacks',()=>{
@@ -44,6 +44,6 @@ test('transfer uses fresh ranges on reused nodes and new nodes, not stale callba
   assert.equal(typeof commit,'function');
   commit();
   for(const target of [oldBlock,replacement,newBlock])oldRoot.listeners.click({composedPath:()=>[target,oldRoot],stopPropagation(){}});
-  assert.deepEqual(calls,[['new',latest],['new',added]]);
+  assert.deepEqual(calls,[['new',latest,oldBlock],['new',added,replacement]]);
   assert.equal(preparePaperNavigationTransfer(oldRoot,nextRoot,{pages:[{previous:node(),next:newPage,reuse:true}]}),null);
 });
