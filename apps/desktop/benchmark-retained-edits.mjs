@@ -145,10 +145,49 @@ export async function benchmarkRetainedEdits({raw,click,until,ready,paperSignatu
   if(await paperSignature()!==original||await readFile(join(root,'manuscript',large.id+'.md'),'utf8')!==large.source)throw Error('Embedded equation benchmark restore failed');
   console.log('BENCH embedded equation retained '+JSON.stringify({identity:componentRetained.identity,pages:componentRetained.embeddedEquationPages}));
   await setRetained(false);
+  // Compare two retained arms on the same input sequence. Keep the historical
+  // full/retained benchmark and provisional smoke path unchanged.
+  const directRows=[];
+  const burstCase=cases.find(c=>c.id==='burst'),burstEdit=large.source.replace(burstCase.from,burstCase.to);
+  const burstValues=burstCase.steps.map(to=>large.source.replace(burstCase.from,to));
+  async function setDirect(enabled){
+    await click('#performance-toggle');
+    const query="document.querySelector('#performance-direct-single-page').checked";
+    if(await raw(query)!==enabled)await click('#performance-direct-single-page');
+    if(await raw(query)!==enabled)throw Error('Direct single-page comparison setting mismatch');
+    await click('#performance-close');
+  }
+  const expectedBurstSignature=await (async()=>{
+    await edit(burstEdit);
+    const signature=await paperSignature();
+    await edit(large.source);
+    if(await paperSignature()!==original)throw Error('Direct comparison baseline restore failed');
+    return signature;
+  })();
+  for(const {pair,order} of cacheComparisonPlan()){
+    for(const arm of order){
+      const direct=arm==='warm';
+      await setRetained(false);await setRetained(true);await setDirect(direct);
+      await raw("document.querySelector('#preview > div').dataset.paperProbe='old'");
+      await click('#preview-button');
+      await until('direct comparison prime',ready('manuscript')+"&&document.querySelector('#preview > div').dataset.paperProbe!=='old'&&!!document.querySelector('#preview > div').dataset.retainedWork");
+      if(await paperSignature()!==original)throw Error('Direct comparison prime mismatch');
+      const s=await edit(burstEdit,burstValues);
+      if(await paperSignature()!==expectedBurstSignature||!s.focus||!s.clean||!s.identity.sameHost||s.identity.reusedFromInitial!==s.pages-1||s.work?.directSinglePage!==direct)throw Error('Direct comparison paper parity or retained identity failed');
+      if(direct&&(s.provisionalMs!==null||s.work.provisionalCount!==0))throw Error('Single-page direct mode produced provisional copy');
+      if(!direct&&(s.provisionalMs===null||s.work.provisionalCount<1))throw Error('Streaming comparison did not deliver provisional copy');
+      directRows.push({pair,arm,finalMs:s.finalMs,provisionalMs:s.provisionalMs,identity:s.identity,burst:{dispatchOffsetsMs:s.dispatchOffsetsMs,timerLagMs:s.timerLagMs,dispatchWorkMs:s.dispatchWorkMs,intermediatePublications:s.intermediatePublications,totalMs:s.totalMs}});
+      await edit(large.source);
+      if(await paperSignature()!==original||await readFile(join(root,'manuscript',large.id+'.md'),'utf8')!==large.source)throw Error('Direct comparison restore failed');
+    }
+  }
+  await setDirect(false);await setRetained(false);
+  const directComparison=summarizeBurstInputSamples(directRows);
+  console.log('BENCH direct single page '+JSON.stringify({version:1,arms:{uncached:'streaming',warm:'direct'},comparison:directComparison,samples:directRows}));
   const summaries=cases.map(({id})=>summarizeRetainedEditSamples(id,samples.filter(s=>s.case===id)));
   const burst=summarizeBurstInputSamples(samples.filter(s=>s.case==='burst'));
   console.log('BENCH retained '+JSON.stringify({version:2,summaries,samples,burst}));
-  return {summaries,samples,burst};
+  return {summaries,samples,burst,directComparison};
 }
 
 export function summarizeRetainedEditSamples(id,rows){
