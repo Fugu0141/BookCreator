@@ -674,3 +674,16 @@ body{font-family:BCFont_NotoSansJP,system-ui,sans-serif}.font-control,.typograph
 .lab-gui-first .lab-area-controls label select,.lab-gui-first .lab-area-controls label input{width:auto;max-width:112px;margin:0;font-size:12px}
 .lab-gui-first .lab-area-controls input[type=number]{width:65px}
 .lab-gui-first #lab-area-measured-height{font-size:12px;color:#475569;font-variant-numeric:tabular-nums}
+
+.lab-gui-first #lab-occupancy-panel[hidden]{display:none!important}
+.lab-occupancy-controls{display:flex;align-items:center;gap:12px;background:#f0f5fa;border-radius:6px;margin-top:6px;padding:8px}
+.lab-occupancy-figure{flex:0 0 48px;display:flex;justify-content:center}
+.lab-occupancy-paper{position:relative;width:42px;height:62px;border:1px solid #aab8c5;background:#fff;padding:5px;display:flex;align-items:flex-start}
+.lab-occupancy-paper>div{width:100%;background:#c5def4;border:1px solid #5490c2}
+.lab-occupancy-fields{min-width:0;flex:1}
+.lab-occupancy-fields>label{display:flex;justify-content:space-between;gap:6px;font-size:12px;margin:0}
+.lab-occupancy-fields input[type=range]{width:100%;accent-color:#315b86;margin:4px 0}
+.lab-occupancy-presets{display:flex;gap:4px;flex-wrap:wrap}
+.lab-occupancy-presets button{background:#fff;color:#334155;border:1px solid #ccd7e1;padding:4px 7px;font-size:12px;border-radius:4px}
+.lab-occupancy-presets button[aria-pressed=true]{background:#e0eefb;color:#235b91;border-color:#b8d5ef}
+.lab-occupancy-fields small{font-size:11px;color:#526579;margin-top:4px}
