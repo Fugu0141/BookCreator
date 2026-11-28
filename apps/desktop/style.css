@@ -713,3 +713,10 @@ body{font-family:BCFont_NotoSansJP,system-ui,sans-serif}.font-control,.typograph
 .paper-area-handle{position:absolute;box-sizing:border-box;pointer-events:auto;touch-action:none;border:2px solid #3478b7;background:white;padding:0;min-height:0;border-radius:3px;}
 .paper-area-handle.width{right:0;top:50%;width:12px;height:24px;transform:translate(50%,-50%);cursor:ew-resize;}
 .paper-area-handle.height{bottom:0;left:50%;width:24px;height:12px;transform:translate(-50%,50%);cursor:ns-resize;}
+
+/* Ordinary paper resize overlay: never a child of the measured DOM. */
+.paper-inline-area-frame,.paper-inline-area-guide{position:fixed;pointer-events:none;box-sizing:border-box;z-index:21;border:1px solid #3478b7;}
+.paper-inline-area-guide{z-index:20;border:2px dashed #3478b7;background:#3478b71a;}
+.paper-inline-area-toolbar{position:fixed;z-index:22;display:flex;align-items:center;flex-wrap:wrap;gap:4px;max-width:260px;padding:5px;background:var(--panel,#fff);color:#1e3a5f;border:1px solid #c1ccda;border-radius:5px;box-shadow:0 2px 8px #0002;}
+.paper-inline-area-toolbar button{font-size:12px;min-height:25px;padding:3px 6px;}
+.paper-inline-area-frame .paper-area-handle:disabled{opacity:.45;}
