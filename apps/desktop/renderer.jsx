@@ -29,7 +29,7 @@ import {planStudyEdit} from './structured-study.mjs';
 import {inspectStudyLinks,planStudyLinks} from './structured-study-links.mjs';
 import {planStudyInstanceOperation} from './study-instance-operation.mjs';
 import {planStructuredEquation,structuredReferenceOffset} from './structured-equation.mjs';
-import {planBlockOperation,canBlockOperation,paperMoveBounds,planPaperRangeMove} from './structured-operations.mjs';
+import {planBlockOperation,canBlockOperation,paperMoveBounds,planPaperRangeMove,resolveBookPaperMove,planBookPaperMove} from './structured-operations.mjs';
 import {projectStructuredEditor} from './structured-projection.mjs';
 import {resolvePaperBlock,resolvePaperDrop} from './paper-block-selection.mjs';
 import {paperBindingAtPoint,paperBlockRangeForNode} from './paper-navigation.mjs';
@@ -815,7 +815,7 @@ function App(){
       }
       const {pages,retained}=publication;
       const bookLease=whole&&areaPrepared?captureBookAreaLease({snapshot,file,raw,dirty:manuscriptStore.getMetadata().dirty,themeDirty,settingsDirty,themeRevision:theme?.revision,settingsRevision:savedSettings?.revision}):null;
-      paperAreaContext.current=(scope==='manuscript'||whole&&!!areaPrepared)&&result.plan.completeness==='full'&&!result.plan.diagnostics.some(d=>d.severity==='error')?{job,scope,bookLease,options:previewOptions,plan:{revision:options.revision,fingerprint:options.fingerprint,fragments:result.intelligentLayout?.fragments??result.slices.map(slice=>({origin:slice.origin}))},areaPrepared,areaSnapshot,current}:null;
+      paperAreaContext.current=(scope==='manuscript'||whole&&!!areaPrepared)&&result.plan.completeness==='full'&&!result.plan.diagnostics.some(d=>d.severity==='error')?{job,scope,bookLease,bookSources:bookLease?snapshot:null,options:previewOptions,plan:{revision:options.revision,fingerprint:options.fingerprint,fragments:result.intelligentLayout?.fragments??result.slices.map(slice=>({origin:slice.origin}))},areaPrepared,areaSnapshot,current}:null;
       const pageNumber=retained?Math.max(1,Math.min(activePage,pages.length)):1;
       trialPdfSnapshot.current=!applySavedAreas&&whole&&snapshot&&result.plan.completeness==='full'&&!result.plan.diagnostics.some(d=>d.severity==='error')&&!manuscriptStore.getMetadata().dirty&&!themeDirty&&!settingsDirty&&
         (!file||snapshot.some(d=>d.documentId===file.id&&d.revision===file.revision&&d.source===raw))?
@@ -869,7 +869,10 @@ function App(){
       }
       const selected=resolvePaperAreaSelection(context.plan,documentId,block.dataset.block);
       if(!selected){setStatus('このブロックは配置編集に必要な単一の永続IDを特定できません。');return true;}
-      setPaperBlock({job,node:block,label:documentId+' · '+(block.textContent??'').trim().slice(0,60),up:false,down:false,whole:true});
+      const persisted=context.bookSources?.find(d=>d.documentId===documentId);
+      const moveRange=paperBlockRangeForNode(node);
+      const move=persisted&&moveRange?resolveBookPaperMove(persisted.source,moveRange,{scan:scanDocument,parseInline:parseStructuredInline}):null;
+      setPaperBlock({job,node:block,label:documentId+' · '+(block.textContent??'').trim().slice(0,60),up:!!move?.up,down:!!move?.down,whole:true,documentId,moveRange});
       return true;
     }
     if(layoutState.phase!=='ready'||navigationBlocked()||!layoutScheduler.isCurrent(job)||documentId!==file?.id){
@@ -912,6 +915,35 @@ function App(){
       const next=planPaperRangeMove(command.text,{source:command.text,index,target},{scan:scanDocument,parseInline:parseStructuredInline,applyPatches});
       if(commitStructured(next,command)){setPaperBlock(null);setStatus('紙面から原稿ブロックの順序を変更しました（未保存）。');}
     }catch(e){setPaperBlock(null);setStatus(String(e.message??e));}
+  }
+  function moveBookPaperBlock(action){
+    const host=paperAreaContext.current,selected=paperBlock;
+    if(mode!=='layout'||!paperEditMode||!applySavedAreas||!selected?.whole||!['up','down'].includes(action)||!selected[action]||bookAreaPending||navigationBlocked()||recoveryCandidate||dirty||themeDirty||settingsDirty||measuring||layoutState.phase!=='ready'||host?.scope!=='book'||!host.bookLease||host.job!==selected.job||!host.current())return;
+    const persisted=host.bookSources?.find(d=>d.documentId===selected.documentId);
+    if(!persisted)return;
+    const current=()=>paperAreaContext.current===host&&host.current()&&!manuscriptStore.getMetadata().dirty;
+    void io(async()=>{
+      const next=planBookPaperMove(persisted.source,{expectedSource:persisted.source,range:selected.moveRange,action},{scan:scanDocument,parseInline:parseStructuredInline,applyPatches});
+      const fresh=await unwrap(api.readBook());
+      if(!current()||fresh.length!==host.bookSources.length||fresh.some((d,i)=>d.documentId!==host.bookSources[i].documentId||d.revision!==host.bookSources[i].revision||d.source!==host.bookSources[i].source))throw Error('全冊紙面の計測後に原稿が変更されました。');
+      const open=manuscriptStore.getPreviewInput();
+      if(open.file?.id===persisted.documentId){
+        if(open.file.revision!==persisted.revision||open.text!==persisted.source||!open.file.editable)throw Error('原稿が変更されました。');
+        // readBook checked the source without rotating the active recovery token.
+      }else{
+        await withDiscard(async()=>{
+          const disk=await unwrap(api.read(persisted.documentId));
+          if(!current()||disk.revision!==persisted.revision||disk.text!==persisted.source||!disk.editable||disk.recovery?.candidate||disk.recoveryError)throw Error('対象原稿が変更されたか復旧確認が必要です。');
+          invalidate(true);dispatchManuscript({type:'clear-history'});installRead(disk);
+        });
+      }
+      const command=captureStructuredCommand(structuredCommandDeps(),persisted.source,null);
+      if(!command||command.file.id!==persisted.documentId||command.file.revision!==persisted.revision)throw Error('原稿編集を開始できません。');
+      if(!commitStructured(next,command))return;
+      bookAreaHistory.clear();savedAreaHistory.clear();
+      setMode('writing');setEditorView('structured');setWritingPanel(null);setShowSettings(false);setCompactPane('editor');
+      setStatus('全冊紙面から原稿内の順序を変更しました（未保存）。確認して原稿を保存してください。');
+    });
   }
   function paperAreaCandidate(){
     const context=paperAreaContext.current,node=paperBlock?.node?.closest('[data-block]');
@@ -1416,7 +1448,7 @@ function App(){
       {(mode==='writing'||mode==='layout')&&<button id="paper-edit-mode" type="button" aria-pressed={paperEditMode} disabled={routeBlocked||(mode==='writing'?!file?.editable:!paperEditMode&&(!applySavedAreas||dirty||themeDirty||settingsDirty||layoutState.phase!=='ready'||layoutState.scope!=='book'))} onClick={()=>{setPaperBlock(null);setAreaLab(null);setPaperEditMode(v=>!v);}}>{paperEditMode?'編集を終了':mode==='layout'?'全冊の配置を編集':'紙面を編集'}</button>}
       <label className="paper-il-toggle"><input id="paper-area-apply-saved" type="checkbox" checked={applySavedAreas} disabled={routeBlocked||measuring||!!areaLab} onChange={e=>changeSavedAreaPreview(e.target.checked)}/>配置案を反映 <small>（試験・PDF不可）</small></label>
     </div>}
-    {mode==='layout'&&paperEditMode&&<div className="paper-block-toolbar"><small role="status">{paperBlock?'選択：'+paperBlock.label:'全冊紙面から部品を選択してください。'} · {inlineArea?.bookLease?'配置保存可（試験・PDF不可）':'保存には最新の保存済み原稿・テーマ・設定が必要です。'}</small><div className="paper-context-actions" role="group" aria-label="全冊配置の変更履歴"><span>全冊配置</span><button id="book-paper-area-undo" type="button" aria-label="全冊配置を元に戻す" title="全冊配置を元に戻す" disabled={bookAreaPending||!wholeAreaHistory?.canUndo} onClick={()=>void saveBookAreaProposal(null,null,'undo')}>↶</button><button id="book-paper-area-redo" type="button" aria-label="全冊配置をやり直す" title="全冊配置をやり直す" disabled={bookAreaPending||!wholeAreaHistory?.canRedo} onClick={()=>void saveBookAreaProposal(null,null,'redo')}>↷</button></div></div>}
+    {mode==='layout'&&paperEditMode&&<div className="paper-block-toolbar"><small role="status">{paperBlock?'選択：'+paperBlock.label:'全冊紙面から部品を選択してください。'} · {inlineArea?.bookLease?'配置保存可（試験・PDF不可）':'保存には最新の保存済み原稿・テーマ・設定が必要です。'}</small>{paperBlock?.whole&&<div className="paper-context-actions" role="group" aria-label="原稿内の順序（未保存編集）"><span>原稿順</span><button id="book-paper-block-up" type="button" title="原稿を開いて前へ移動（未保存）" disabled={bookAreaPending||routeBlocked||!paperBlock.up||!wholeAreaHistory||!!recoveryCandidate} onClick={()=>moveBookPaperBlock('up')}>↑ 前へ</button><button id="book-paper-block-down" type="button" title="原稿を開いて次へ移動（未保存）" disabled={bookAreaPending||routeBlocked||!paperBlock.down||!wholeAreaHistory||!!recoveryCandidate} onClick={()=>moveBookPaperBlock('down')}>↓ 次へ</button></div>}<div className="paper-context-actions" role="group" aria-label="全冊配置の変更履歴"><span>全冊配置</span><button id="book-paper-area-undo" type="button" aria-label="全冊配置を元に戻す" title="全冊配置を元に戻す" disabled={bookAreaPending||!wholeAreaHistory?.canUndo} onClick={()=>void saveBookAreaProposal(null,null,'undo')}>↶</button><button id="book-paper-area-redo" type="button" aria-label="全冊配置をやり直す" title="全冊配置をやり直す" disabled={bookAreaPending||!wholeAreaHistory?.canRedo} onClick={()=>void saveBookAreaProposal(null,null,'redo')}>↷</button></div></div>}
     {mode==='writing'&&paperEditMode&&<div className="paper-block-toolbar">
       <small className="paper-context-selection" role="status">{paperBlock?'選択：'+paperBlock.label:layoutState.phase==='ready'?'紙面のブロックを選択してください。':'最新の紙面を待っています。'}</small>
       <div className="paper-context-actions" role="group" aria-label="選択ブロックの順序" hidden={!paperBlock}>

@@ -4,7 +4,7 @@ import {scanDocument,applyPatches} from '../../../../BookCreator_Markdown/dist/i
 import {parsePreviewInline} from '../../../dist/index.js';
 import {parsePreviewMath,parseDisplayMath} from '../../../../BookCreator_LayoutEngine/dist/index.js';
 import {projectStructuredEditor} from '../structured-projection.mjs';
-import {canBlockOperation,planBlockOperation,paperMoveBounds,planPaperRangeMove} from '../structured-operations.mjs';
+import {canBlockOperation,planBlockOperation,paperMoveBounds,planPaperRangeMove,resolveBookPaperMove,planBookPaperMove} from '../structured-operations.mjs';
 const parseInline=value=>parsePreviewInline(value,0,parsePreviewMath);
 const deps={scan:scanDocument,parseInline,applyPatches,validateMath:parseDisplayMath};
 const project=source=>projectStructuredEditor(source,scanDocument,parseInline).rows;
@@ -67,4 +67,17 @@ test('range move rejects stale inputs and noninteger targets',()=>{
   const source='A\n\nB\n\nC';
   assert.throws(()=>planPaperRangeMove(source,{source:source+'変更',index:0,target:2},deps),/原稿が変化/);
   for(const target of [-1,1.5,3,NaN])assert.throws(()=>rangeMove(source,0,target),/操作できません/);
+});
+
+test('book-paper reorder uses exact source range and retains protected boundaries',()=>{
+  const source='# 章\n\n本文です。\n\n'+question+'\n'+answer;
+  const range=project(source)[2].range;
+  const selection=resolveBookPaperMove(source,range,deps);
+  assert.equal(selection.up,true);
+  assert.equal(selection.down,false);
+  assert.equal(planBookPaperMove(source,{expectedSource:source,range,action:'up'},deps),move(source,2,'up'));
+  assert.throws(()=>planBookPaperMove(source,{expectedSource:source,range,action:'down'},deps));
+  assert.throws(()=>planBookPaperMove(source+'変更',{expectedSource:source,range,action:'up'},deps));
+  assert.equal(resolveBookPaperMove(source,{start:range.start+1,end:range.end},deps),null);
+  assert.equal(resolveBookPaperMove(source,project(source)[0].range,deps),null);
 });
