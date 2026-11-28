@@ -552,7 +552,17 @@ async function benchmarkBookPositionDrag({win,raw,click,until,ready,paperSignatu
     await click('#book-paper-preferred-mode');
     await until('coordinate draft closed',"!document.querySelector('#book-paper-coordinate-y')&&!document.querySelector('.paper-inline-live')");
     await click('#book-inspector-area');
-    await until('inspector opens existing size controls',"document.querySelector('#paper-inline-details')?.getAttribute('aria-expanded')==='true'&&!document.querySelector('#paper-inline-properties')?.hidden");
+    await until('inspector opens existing size controls',"document.querySelector('#book-inspector-area-editor #paper-inline-details')?.getAttribute('aria-expanded')==='true'&&!document.querySelector('#paper-inline-properties')?.hidden");
+    const sizeField=value=>raw("(()=>{const e=document.querySelector('#paper-property-height');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,"+JSON.stringify(value)+");e.dispatchEvent(new Event('input',{bubbles:true}));})()");
+    await sizeField('101');
+    await until('docked invalid size rejected',"document.querySelector('#paper-property-height')?.getAttribute('aria-invalid')==='true'&&document.querySelector('#paper-inline-area-commit').disabled");
+    await sizeField('35');
+    await until('docked size proposal',"document.querySelector('#paper-property-height')?.value==='35'&&!document.querySelector('#paper-inline-area-commit')?.disabled&&!!document.querySelector('.paper-inline-live')");
+    await click('#paper-inline-undock');
+    await until('same size proposal undocked',"!document.querySelector('#book-inspector-area-editor #paper-property-height')&&document.querySelector('#paper-property-height')?.value==='35'&&!document.querySelector('#paper-inline-area-commit')?.disabled");
+    await raw("[...document.querySelectorAll('.paper-inline-area-toolbar button')].find(e=>e.textContent==='取消').click()");
+    await until('docked size cancelled',"!document.querySelector('#paper-inline-area-commit')&&!document.querySelector('.paper-inline-live')");
+    if(await paperSignature()!==baseline||await readFile(path,'utf8')!==source)throw Error('Cancelled docked size edit changed published paper or manuscript');
     if(await paperSignature()!==baseline||await readFile(path,'utf8')!==source)throw Error('Cancelled coordinate edit changed published paper or manuscript');
     await readFile(join(root,'layouts','paper-area.json')).then(()=>{throw Error('Unsaved drag persisted paper intent');},e=>{if(e.code!=='ENOENT')throw e;});
     const median=values=>{const v=[...values].sort((a,b)=>a-b);return (v[1]+v[2])/2;};
