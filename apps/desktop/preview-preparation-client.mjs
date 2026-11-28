@@ -18,11 +18,14 @@ function validResponse(response,job){
 }
 export function createPreparationClient({spawn=()=>new Worker('/preview-preparation-worker.js'),timeoutMs=10000,schedule=setTimeout,unschedule=clearTimeout}={}){
   let worker=null,pending=null,sequence=0;
+  function release(job){
+    unschedule(job.timer);job.signal?.removeEventListener('abort',job.abort);
+  }
   function dispose(error){
     const old=worker;worker=null;
     if(old){old.onmessage=old.onerror=old.onmessageerror=null;old.terminate();}
     const job=pending;pending=null;
-    if(job){unschedule(job.timer);if(error)job.reject(error);else job.resolve(undefined);}
+    if(job){release(job);if(error)job.reject(error);else job.resolve(undefined);}
   }
   function ensure(){
     if(worker)return worker;
@@ -34,21 +37,27 @@ export function createPreparationClient({spawn=()=>new Worker('/preview-preparat
       if(!validResponse(response,job)){
         dispose(Error('Invalid preparation worker response'));return;
       }
-      pending=null;unschedule(job.timer);job.resolve(response);
+      pending=null;release(job);job.resolve(response);
     };
     instance.onerror=()=>{if(worker===instance)dispose(Error('Preparation worker failed'));};
     instance.onmessageerror=()=>{if(worker===instance)dispose(Error('Preparation worker message failed'));};
     return instance;
   }
   return {
-    prepare(payload,retained){
+    prepare(payload,retained,signal){
+      if(signal?.aborted)return Promise.resolve(undefined);
       if(pending)return Promise.reject(Error('Preparation worker already busy'));
       return new Promise((resolve,reject)=>{
         let instance;
         try{instance=ensure();}catch(e){reject(e);return;}
         const id=++sequence;
-        const job={id,resolve,reject,timer:null,retained,rev:payload.input?.rev,fingerprint:payload.input?.fingerprint};pending=job;
+        const job={id,resolve,reject,timer:null,retained,signal,rev:payload.input?.rev,fingerprint:payload.input?.fingerprint};pending=job;
+        // The synchronous worker parser cannot process an in-band cancel while busy.
+        // Terminate only an in-flight obsolete job; idle workers retain their caches.
+        job.abort=()=>{if(pending===job)dispose();};
         try{
+          signal?.addEventListener('abort',job.abort,{once:true});
+          if(signal?.aborted){job.abort();return;}
           job.timer=schedule(()=>{if(pending===job)dispose(Error('Preparation worker timed out'));},timeoutMs);
           instance.postMessage({...payload,type:'prepare',id,retained});
         }catch(e){dispose(e);}
