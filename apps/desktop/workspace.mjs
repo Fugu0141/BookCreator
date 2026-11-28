@@ -244,6 +244,31 @@ export async function openWorkspace(manifestPath){
   }
   function publicTheme(t){return {editable:t.editable,roles:t.roles,revision:t.revision,studyResourceErrors:t.studyResourceErrors??{},studyDesigns:t.studyDesigns??{},studyBindings:t.studyBindings??{},studyEditable:t.studyEditable===true,studyMessage:t.studyMessage,paragraphDesign:t.paragraphDesign??null,paragraphBinding:t.paragraphBinding??null,paragraphEditable:t.paragraphEditable===true,paragraphMessage:t.paragraphMessage,headingDesign:t.headingDesign??null,headingLevels:t.headingLevels??{},componentMessage:t.componentMessage,componentEditable:t.componentEditable===true,bindings:t.bindings??{},library:t.library??emptyComponentLibrary(),libraryEditable:t.libraryEditable===true,libraryMessage:t.libraryMessage,...(t.message?{message:t.message}:{})};}
   const areaPersistence=paperAreaPersistence(root,{checkManifest,readManuscript:current});
+  // The renderer supplies the exact persisted revisions underlying its full
+  // measured plan. Validate the complete ordered manifest, never a subset.
+  const revisionHash=v=>typeof v==='string'&&/^[a-f0-9]{64}$/.test(v);
+  function validateBookAreaLease(lease,id){
+    if(!record(lease)||Object.keys(lease).length!==3||!revisionHash(lease.settingsRevision)||!revisionHash(lease.themeRevision)||!Array.isArray(lease.documents)||lease.documents.length!==summary.sections.length||lease.documents.length>128)fail('INPUT','Invalid full-book placement lease');
+    const documents=lease.documents.map((d,i)=>{
+      const section=summary.sections[i];
+      if(!record(d)||Object.keys(d).length!==2||d.documentId!==section.id||!revisionHash(d.revision)||!section.editable||!['page','continuous'].includes(section.startOn))fail('INPUT','Full-book placement lease does not cover all ordered manuscripts');
+      return {documentId:d.documentId,revision:d.revision};
+    });
+    const selected=documents.find(d=>d.documentId===id);
+    if(!selected)fail('INPUT','Selected manuscript missing from full-book placement lease');
+    return {settingsRevision:lease.settingsRevision,themeRevision:lease.themeRevision,documents,selected};
+  }
+  async function verifyBookAreaLease(lease){
+    await checkManifest();
+    if(lease.settingsRevision!==manifestHash)fail('CONFLICT','Book settings changed since placement measurement');
+    const theme=await readTheme();
+    if(!theme.editable||theme.revision!==lease.themeRevision||theme.componentMessage||theme.paragraphMessage||theme.studyMessage||Object.keys(theme.studyResourceErrors??{}).length)fail('CONFLICT','Theme changed or is unsupported');
+    for(const d of lease.documents){
+      const source=await current(d.documentId);
+      if(source.revision!==d.revision||!source.info.editable)fail('CONFLICT','Manuscript changed or is read-only: '+d.documentId);
+    }
+    await checkManifest();
+  }
   function settingsView(){return {revision:manifestHash,page:summary.pageSettings,sections:structuredClone(summary.sections),message:summary.pageMessage};}
   function validateSettingsValue(value){
     if(!record(value)||Object.keys(value).some(k=>!['page','sections'].includes(k))||!record(value.page)||Object.keys(value.page).some(k=>!['size','firstSide','margin'].includes(k))||!Array.isArray(value.sections))fail('PAGE','Invalid book settings');
@@ -264,6 +289,16 @@ export async function openWorkspace(manifestPath){
     async savePaperArea(id,sourceRevision,expectedRevision,value){
       if(busy)fail('BUSY','Another write is in progress');
       busy=true;try{return await areaPersistence.save(id,sourceRevision,expectedRevision,value);}finally{busy=false;}
+    },
+    // A full-book edit still writes exactly one manuscript's intent slice.
+    // All other stored entries are preserved by the existing atomic writer.
+    async saveBookPaperArea(id,lease,expectedRevision,value){
+      if(busy)fail('BUSY','Another write is in progress');
+      busy=true;
+      try{
+        const checked=validateBookAreaLease(lease,id);
+        return await areaPersistence.save(id,checked.selected.revision,expectedRevision,value,()=>verifyBookAreaLease(checked));
+      }finally{busy=false;}
     },
     // Only the main process uses these typed recovery snapshots. No disk writes.
     // Recovery is never a theme save. Resolve the editor target and resources
