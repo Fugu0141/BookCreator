@@ -25,7 +25,7 @@ export async function benchmarkRetainedEdits({raw,click,until,ready,paperSignatu
     await raw("("+installInputProbe.toString()+")("+JSON.stringify({values,intervalMs:35})+")");
     try{
       await until('retained benchmark input committed',ready('manuscript')+"&&window.__bcRetainedEditBenchmark.probe.finalMs!==null&&document.querySelector('#source').value==="+JSON.stringify(value));
-      return await raw("(()=>{const h=document.querySelector('#preview > div'),{probe:p,initialHost,initialPages}=window.__bcRetainedEditBenchmark,nodes=Array.from(h.shadowRoot.children);return {...p,pages:nodes.length,identity:{sameHost:h===initialHost,reusedFromInitial:nodes.filter((n,i)=>n===initialPages[i]).length,reported:Number(h.dataset.reusedPages),generated:h.dataset.generatedPages===undefined?null:Number(h.dataset.generatedPages)},work:h.dataset.retainedWork?JSON.parse(h.dataset.retainedWork):null,focus:document.activeElement.id==='source',scrollTop:h.parentNode.scrollTop,scrollLeft:h.parentNode.scrollLeft,clean:!h.dataset.provisionalPages&&!h.shadowRoot.querySelector('[data-provisional-layer]')};})()");
+      return await raw("(()=>{const h=document.querySelector('#preview > div'),{probe:p,initialHost,initialPages}=window.__bcRetainedEditBenchmark,nodes=Array.from(h.shadowRoot.children);return {...p,pages:nodes.length,identity:{sameHost:h===initialHost,reusedFromInitial:nodes.filter((n,i)=>n===initialPages[i]).length,reported:Number(h.dataset.reusedPages),generated:h.dataset.generatedPages===undefined?null:Number(h.dataset.generatedPages)},equationPages:nodes.flatMap((node,index)=>node.querySelector('[data-display-math]')?[{index,labels:Array.from(node.querySelectorAll('[data-equation-number]'),e=>e.textContent),retained:node===initialPages[index]}]:[]),work:h.dataset.retainedWork?JSON.parse(h.dataset.retainedWork):null,focus:document.activeElement.id==='source',scrollTop:h.parentNode.scrollTop,scrollLeft:h.parentNode.scrollLeft,clean:!h.dataset.provisionalPages&&!h.shadowRoot.querySelector('[data-provisional-layer]')};})()");
     }finally{await raw("(()=>{const p=window.__bcRetainedEditBenchmark;if(p){p.observer.disconnect();p.timers.forEach(t=>clearTimeout(t));}delete window.__bcRetainedEditBenchmark;})()");}
   }
   const samples=[];
@@ -77,6 +77,33 @@ export async function benchmarkRetainedEdits({raw,click,until,ready,paperSignatu
       }
     }
   }
+  // A separate numbered-equation workload leaves the historical latency
+  // fixture untouched. Compare the actual retained DOM with full composition.
+  await setRetained(false);
+  const eq=(id,formula,numbered='true')=>'\n::pagebreak{side="any"}\n\n:::layout{#'+id+' numbered="'+numbered+'"}\n$\n'+formula+'\n$\n:::\n';
+  const equationSource=(formula='x^2',numbered='true')=>large.source+eq('retained-eq-a',formula,numbered)+eq('retained-eq-b','y^2');
+  const equationBase=equationSource(),equationEdit=equationSource('x^3'),equationRenumber=equationSource('x^2','false');
+  const baseSample=await edit(equationBase),baseSignature=await paperSignature();
+  if(baseSample.equationPages.length!==2||baseSample.equationPages.some(p=>p.labels.length!==1)||baseSample.equationPages[0].labels[0]===baseSample.equationPages[1].labels[0])throw Error('Numbered equation fixture did not produce two independently numbered pages: '+JSON.stringify(baseSample.equationPages));
+  const fullEdit=await edit(equationEdit),editSignature=await paperSignature();
+  if(JSON.stringify(fullEdit.equationPages.map(p=>p.labels))!==JSON.stringify(baseSample.equationPages.map(p=>p.labels))||editSignature===baseSignature)throw Error('Standalone equation fixture edit invalid');
+  await edit(equationBase);
+  const fullRenumber=await edit(equationRenumber),renumberSignature=await paperSignature();
+  if(fullRenumber.equationPages.length!==2||fullRenumber.equationPages[0].labels.length!==0||fullRenumber.equationPages[1].labels[0]!==baseSample.equationPages[0].labels[0])throw Error('Standalone equation renumber fixture invalid: '+JSON.stringify(fullRenumber.equationPages));
+  await edit(equationBase);
+  await setRetained(true);
+  await raw("document.querySelector('#preview > div').dataset.paperProbe='old'");
+  await click('#preview-button');
+  await until('numbered equation retained prime',ready('manuscript')+"&&document.querySelector('#preview > div').dataset.paperProbe!=='old'&&!!document.querySelector('#preview > div').dataset.retainedWork");
+  if(await paperSignature()!==baseSignature)throw Error('Numbered retained prime mismatch');
+  const retainedEdit=await edit(equationEdit);
+  if(await paperSignature()!==editSignature||!retainedEdit.identity.sameHost||retainedEdit.equationPages.length!==2||retainedEdit.equationPages[0].retained||!retainedEdit.equationPages[1].retained)throw Error('Standalone equation edit did not retain only the unaffected equation page: '+JSON.stringify(retainedEdit.equationPages));
+  await edit(equationBase);
+  const retainedRenumber=await edit(equationRenumber);
+  if(await paperSignature()!==renumberSignature||!retainedRenumber.identity.sameHost||retainedRenumber.equationPages.length!==2||retainedRenumber.equationPages.some(p=>p.retained))throw Error('Renumbered equation pages were not regenerated: '+JSON.stringify(retainedRenumber.equationPages));
+  await edit(large.source);
+  if(await paperSignature()!==original||await readFile(join(root,'manuscript',large.id+'.md'),'utf8')!==large.source)throw Error('Standalone equation benchmark restore failed');
+  console.log('BENCH numbered retained '+JSON.stringify({edit:{identity:retainedEdit.identity,pages:retainedEdit.equationPages},renumber:{identity:retainedRenumber.identity,pages:retainedRenumber.equationPages}}));
   await setRetained(false);
   const summaries=cases.map(({id})=>summarizeRetainedEditSamples(id,samples.filter(s=>s.case===id)));
   const burst=summarizeBurstInputSamples(samples.filter(s=>s.case==='burst'));
