@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {prepareSavedAreaPreview,verifySavedAreaPreview,measureInlineAreaProposal,resolvePaperAreaSelection,captureBookAreaLease,prepareBookAreaCommit} from '../paper-area-preview.mjs';
+import {prepareSavedAreaPreview,verifySavedAreaPreview,measureInlineAreaProposal,resolvePaperAreaSelection,captureBookAreaLease,prepareBookAreaCommit,prepareBookAreaRestore,acknowledgeBookAreaCommit} from '../paper-area-preview.mjs';
 const origin=(documentId,blockKey,persistentId)=>({documentId,blockKey,persistentId});
 const options={revision:'r1',fingerprint:'f1',width:1000,height:2000,sections:[{id:'a',blocks:[{origin:origin('a','40','q')}]},{id:'b',blocks:[{origin:origin('b','70','q')}]}]};
 const snapshot={revision:'saved',document:{schemaVersion:1,entries:[{documentId:'a',persistentId:'q',minHeightPercent:30},{documentId:'b',persistentId:'q',minWidthPercent:50}]}};
@@ -121,4 +121,37 @@ test('whole book save prepares every chapter but persists only the selected slic
   assert.throws(()=>prepareBookAreaCommit({...context,selection:{...context.selection,revision:'old'}},{width:75}));
   assert.throws(()=>prepareBookAreaCommit({...context,bookLease:{documents:[{documentId:'a'}]}},{width:75}));
   assert.equal(snapshot.document.entries[1].minWidthPercent,50);
+});
+
+import {createSavedPaperAreaHistory,setPaperAreaValues} from '../paper-area-store.mjs';
+
+test('book history restores two different chapters in reverse order without overwriting other entries',()=>{
+  const history=createSavedPaperAreaHistory(),scope='book-session';
+  let current=snapshot,seq=0;
+  const context=()=>({scope:'book',bookLease:{documents:[{documentId:'a'},{documentId:'b'}]},areaPrepared:prepareSavedAreaPreview(options,current,{whole:true}),areaSnapshot:current,options});
+  function step(action,id,values){
+    const next=action==='edit'?setPaperAreaValues(current.document,{documentId:id,persistentId:'q',values}):undefined;
+    const ticket=history.plan(scope,current,action,next);
+    const commit=prepareBookAreaRestore(context(),ticket);
+    assert.equal(commit.documentId,id);
+    assert.equal(commit.prepared.intents.length,2);
+    const saved={revision:'saved-'+(++seq),document:commit.value};
+    current=acknowledgeBookAreaCommit(commit,saved);
+    history.accept(ticket,current);
+    return current.document.entries.map(e=>e.minHeightPercent??e.minWidthPercent);
+  }
+  assert.deepEqual(step('edit','a',{height:40}),[40,50]);
+  assert.deepEqual(step('edit','b',{width:70}),[40,70]);
+  assert.deepEqual(step('undo','b'),[40,50]);
+  assert.deepEqual(step('undo','a'),[30,50]);
+  assert.deepEqual(step('redo','a'),[40,50]);
+  assert.deepEqual(step('redo','b'),[40,70]);
+  assert.equal(history.availability('other-session',current).canUndo,false);
+  assert.equal(history.availability(scope,{...current,revision:'external'}).canUndo,false);
+  const ticket=history.plan(scope,current,'undo');
+  const commit=prepareBookAreaRestore(context(),ticket);
+  assert.throws(()=>acknowledgeBookAreaCommit(commit,{revision:'bad',document:current.document}));
+  assert.equal(history.availability(scope,current).canUndo,true);
+  assert.throws(()=>prepareBookAreaRestore(context(),{...ticket,next:snapshot.document}),/復元対象/);
+  assert.throws(()=>prepareBookAreaRestore(context(),{...ticket,revision:'old'}));
 });
