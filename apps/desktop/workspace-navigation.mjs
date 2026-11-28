@@ -22,11 +22,13 @@ export function canSaveBeforeClose(store,{themeDirty,themeEditable,settingsDirty
 export async function withManuscriptDiscard({store,getController,candidate},run){
   const controller=getController();
   if(!controller||candidate)return run();
+  const snapshot=store.getPreviewInput();
+  const assertCurrent=()=>{if(getController()!==controller||store.getPreviewInput()!==snapshot)throw Error('原稿の復旧状態が変更されました。');};
   try{
     await controller.pause();
-    if(getController()!==controller)throw Error('原稿の復旧状態が変更されました。');
+    assertCurrent();
     await controller.discard();
-    if(getController()!==controller)throw Error('原稿の復旧状態が変更されました。');
+    assertCurrent();
     return await run();
   }finally{
     if(getController()===controller)controller.resume(store.getSnapshot().text);
