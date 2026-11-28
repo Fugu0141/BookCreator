@@ -1633,7 +1633,8 @@ async function writingJourneySmoke(){
   await until('initial custom live preview',"document.querySelector('#lab-preview').dataset.previewPhase==='ready'&&!!document.querySelector('#lab-preview > div')?.shadowRoot?.querySelector('[data-content-slot]')&&document.querySelector('#lab-preview').dataset.previewConfirmed==='true'");
   if(await raw("document.querySelector('#lab-library-fields')?.hidden===true"))await click('#lab-library-toggle');
   await input('#lab-library-name',customName);
-  if(await raw("document.querySelector('#lab-precision-panel')?.hidden===true"))await click('#lab-precision-toggle');
+  await until('component editor mounted',"!!document.querySelector('#lab-precision-panel')");
+  if(await raw("document.querySelector('#lab-precision-panel').hidden"))await click('#lab-precision-toggle');
   await click('[data-property-choice=layout]');
   const padding=await raw("Number(document.querySelector('#lab-padding').value)===5?6:5");
   await input('#lab-padding',String(padding));
@@ -1645,20 +1646,23 @@ async function writingJourneySmoke(){
   await click('#lab-add-menu');
   if(await raw("document.querySelector('#lab-layer-fields')?.hidden===true"))await click('#lab-layers-toggle');
   await click('#lab-add-slot');
-  if(await raw("document.querySelector('#lab-precision-panel')?.hidden===true"))await click('#lab-precision-toggle');
+  await until('component editor mounted',"!!document.querySelector('#lab-precision-panel')");
+  if(await raw("document.querySelector('#lab-precision-panel').hidden"))await click('#lab-precision-toggle');
   await click('[data-property-choice=details]');
   await input('#lab-slot-name','strategy');
   if(await raw("document.querySelector('#lab-layer-fields')?.hidden===true"))await click('#lab-layers-toggle');
   await click('#lab-add-menu');
   if(await raw("document.querySelector('#lab-layer-fields')?.hidden===true"))await click('#lab-layers-toggle');
   await click('#lab-add-slot');
-  if(await raw("document.querySelector('#lab-precision-panel')?.hidden===true"))await click('#lab-precision-toggle');
+  await until('component editor mounted',"!!document.querySelector('#lab-precision-panel')");
+  if(await raw("document.querySelector('#lab-precision-panel').hidden"))await click('#lab-precision-toggle');
   await click('[data-property-choice=details]');
   await input('#lab-slot-name','extension');
   await click('#lab-slot-optional');
   if(await raw("document.querySelector('#lab-layer-fields')?.hidden===true"))await click('#lab-layers-toggle');
   await click('#lab-group');
-  if(await raw("document.querySelector('#lab-precision-panel')?.hidden===true"))await click('#lab-precision-toggle');
+  await until('component editor mounted',"!!document.querySelector('#lab-precision-panel')");
+  if(await raw("document.querySelector('#lab-precision-panel').hidden"))await click('#lab-precision-toggle');
   await click('[data-property-choice=details]');
   await click('#lab-group-optional');
   await click('#lab-sample-toggle');
@@ -1746,7 +1750,8 @@ async function writingJourneySmoke(){
   await click('#mode-design');
   await click('#design-tab-components');
   await click('[data-catalog-edit=registered-'+customId+']');
-  if(await raw("document.querySelector('#lab-precision-panel')?.hidden===true"))await click('#lab-precision-toggle');
+  await until('component editor mounted',"!!document.querySelector('#lab-precision-panel')");
+  if(await raw("document.querySelector('#lab-precision-panel').hidden"))await click('#lab-precision-toggle');
   await click('[data-property-choice=layout]');
   await until('reloaded component geometry',"Number(document.querySelector('#lab-padding').value)==="+padding+"&&document.querySelector('#lab-library-name').value==="+JSON.stringify(customName));
   await until('reloaded slot definitions',"[...document.querySelectorAll('[data-lab-node]')].some(e=>e.textContent.includes('原稿スロット strategy'))&&[...document.querySelectorAll('[data-lab-node]')].some(e=>e.textContent.includes('原稿スロット extension'))");
@@ -1793,7 +1798,8 @@ async function packageRestartSmoke(){
   await click('#mode-design');
   await click('#design-tab-components');
   await click('[data-catalog-edit=registered-'+oracle.customId+']');
-  if(await raw("document.querySelector('#lab-precision-panel')?.hidden===true"))await click('#lab-precision-toggle');
+  await until('component editor mounted',"!!document.querySelector('#lab-precision-panel')");
+  if(await raw("document.querySelector('#lab-precision-panel').hidden"))await click('#lab-precision-toggle');
   await click('[data-property-choice=layout]');
   await until('restored component definition',"Number(document.querySelector('#lab-padding').value)==="+oracle.padding+"&&document.querySelector('#lab-library-name').value==="+JSON.stringify(oracle.customName));
   await click('#lab-cancel');
@@ -1855,7 +1861,8 @@ async function productionDataCrashSmoke(mode){
     }else{
       await click('#mode-design');await click('#design-tab-components');
       await click('[data-catalog-edit=registered-'+restart.customId+']');
-      if(await raw("document.querySelector('#lab-precision-panel')?.hidden===true"))await click('#lab-precision-toggle');
+      await until('component editor mounted',"!!document.querySelector('#lab-precision-panel')");
+      if(await raw("document.querySelector('#lab-precision-panel').hidden"))await click('#lab-precision-toggle');
       await click('[data-property-choice=layout]');
       await until('component ready',"!document.querySelector('#lab-padding').disabled");
       const padding=await raw("Number(document.querySelector('#lab-padding').value)===7?8:7");
@@ -1899,7 +1906,8 @@ async function productionDataCrashSmoke(mode){
   }else{
     await hub(1);
     await click('[data-recovery-entry='+oracle.values.id+'] .hub-recovery-open');
-    if(await raw("document.querySelector('#lab-precision-panel')?.hidden===true"))await click('#lab-precision-toggle');
+    await until('component editor mounted',"!!document.querySelector('#lab-precision-panel')");
+    if(await raw("document.querySelector('#lab-precision-panel').hidden"))await click('#lab-precision-toggle');
     await click('[data-property-choice=layout]');
     await until('registered candidate locked',"!!document.querySelector('#component-recovery-restore')&&document.querySelector('#lab-padding').disabled");
     await click('#component-recovery-restore');
