@@ -24,7 +24,7 @@ try{
   await mkdir(desktop,{recursive:true});
   const pkg=JSON.parse(await readFile(join(here,'package.json'),'utf8'));
   await writeFile(join(appDir,'package.json'),JSON.stringify({name:'bookcreator-desktop',productName:'BookCreator',version:pkg.version,private:true,type:'module',main:'apps/desktop/main.mjs'},null,2));
-  for(const file of ['main.mjs','workspace.mjs','project-catalog.mjs','manuscript-recovery.mjs','settings-recovery.mjs','component-recovery.mjs','preview-read-lane.mjs','benchmark-fixture.mjs','benchmark-runner.mjs','recovery-hub.mjs','book-settings.mjs','project-fonts.mjs','project-images.mjs','bundled-math-font.mjs','preload.cjs','index.html','print.html','trial-print-plan.mjs','trial-print-window.mjs','style.css']){
+  for(const file of ['main.mjs','workspace.mjs','project-catalog.mjs','manuscript-recovery.mjs','settings-recovery.mjs','component-recovery.mjs','preview-read-lane.mjs','benchmark-fixture.mjs','benchmark-runner.mjs','recovery-hub.mjs','book-settings.mjs','project-fonts.mjs','project-images.mjs','bundled-math-font.mjs','preload.cjs','index.html','trial-pdf-output.mjs','trial-pdf-inspection.mjs','trial-pdf-export.mjs','print.html','trial-print-plan.mjs','trial-print-window.mjs','style.css']){
     await cp(join(here,file),join(desktop,file));
   }
   await mkdir(join(desktop,'tests'));
@@ -37,6 +37,22 @@ try{
   const yamlDir=dirname(require.resolve('yaml/package.json'));
   await mkdir(join(appDir,'node_modules'));
   await cp(yamlDir,join(appDir,'node_modules','yaml'),{recursive:true});
+  // pdf-lib and its pure-JavaScript runtime dependencies, including their license files.
+  for(const name of ['pdf-lib','@pdf-lib/standard-fonts','@pdf-lib/upng','pako','tslib']){
+    // Some dependencies (tslib) do not export package.json. Walk up
+    // from the resolved entry point and validate the package name.
+    let from=dirname(require.resolve(name));
+    for(;;){
+      let manifest;
+      try{manifest=JSON.parse(await readFile(join(from,'package.json'),'utf8'));}catch(e){if(e.code!=='ENOENT')throw e;}
+      if(manifest?.name===name)break;
+      const parent=dirname(from);if(parent===from)throw Error('Cannot locate dependency '+name);
+      from=parent;
+    }
+    const to=join(appDir,'node_modules',name);
+    await mkdir(dirname(to),{recursive:true});
+    await cp(from,to,{recursive:true});
+  }
   for(const file of ['BookCreator.exe','resources/app/apps/desktop/build/renderer.js','resources/app/apps/desktop/print.html','resources/app/apps/desktop/build/print-renderer.js','resources/app/apps/desktop/build/fonts/STIXTwoMath-Regular.ttf','resources/app/apps/desktop/build/NotoSansJP-LICENSE.txt','resources/app/apps/desktop/build/STIXTwoMath-LICENSE.txt','resources/app/dist/preview-component.js']){
     if(!(await lstat(join(output,file))).isFile())throw Error('Missing package file: '+file);
   }

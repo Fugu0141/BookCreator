@@ -24,6 +24,7 @@ contextBridge.exposeInMainWorld('bookcreator',Object.freeze({
   saveHeadingDesign:(revision,design,level)=>ipcRenderer.invoke('bookcreator:saveHeadingDesign',revision,design,level),
   saveTypography:(revision,roles)=>ipcRenderer.invoke('bookcreator:saveTypography',revision,roles),
   readBook:()=>ipcRenderer.invoke('bookcreator:readBook'),
+  exportTrialPdf:(token,request)=>ipcRenderer.invoke('bookcreator:exportTrialPdf',token,request),
   readPreviewBook:token=>ipcRenderer.invoke('bookcreator:readPreviewBook',token),
   performanceMemory:()=>ipcRenderer.invoke('bookcreator:performanceMemory'),
   readPreviewImage:(token,id)=>ipcRenderer.invoke('bookcreator:readPreviewImage',token,id),
