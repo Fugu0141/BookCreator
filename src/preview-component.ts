@@ -12,7 +12,7 @@ export type DynamicLabel=Omit<FixedLabel,'type'|'text'>&{type:'dynamic';field:Dy
 export interface ImageCrop {left:number;top:number;right:number;bottom:number}
 export type NamedSlot=Omit<FixedLabel,'type'|'text'>&{type:'slot';name:string;optional?:boolean;paragraphGap?:number};
 export const validNamedSlot=(v:unknown):v is string=>typeof v==='string'&&/^[a-z][a-z0-9-]{0,31}$/.test(v)&&v!=='content';
-export type HeadingChild=({id:string;type:'content';width?:number}|{id:string;type:'rect';width:number|'fill';height:number;color:string}|FixedLabel|DynamicLabel|NamedSlot|{id:string;type:'image';width:number|'fill';height:number;assetId:string;fit:'contain'|'cover';alt:string;crop?:ImageCrop}|{id:string;type:'group';width:number|'fill';direction:'row'|'column'|'canvas';height?:number;gap:number;padding:number;background:string;showWhenSlot?:string;children:HeadingChild[]}) & {x?:number;y?:number};
+export type HeadingChild=({id:string;type:'content';width?:number}|{id:string;type:'rect';width:number|'fill';height:number;color:string}|FixedLabel|DynamicLabel|NamedSlot|{id:string;type:'image';width:number|'fill';height:number;assetId:string;fit:'contain'|'cover';alt:string;crop?:ImageCrop}|{id:string;type:'group';width:number|'fill';direction:'row'|'column'|'canvas';height?:number;heightMode?:'auto';gap:number;padding:number;background:string;showWhenSlot?:string;children:HeadingChild[]}) & {x?:number;y?:number};
 export interface HeadingDesign {
   schemaVersion:1;
   fontSize:number; lineHeight:number; font?:ComponentFont; paragraphGap?:number;
@@ -50,7 +50,7 @@ export function validateHeadingDesign(value:unknown,scope:'heading'|'study'|'par
     if(canvas&&(!len(child.x)||!len(child.y)||!len(child.width,1)))throw fail();
     if(child.type==='content'&&exact(child,['id','type',...pos,...(canvas?['width']:[])])){slots++;continue;}
     if(!(child.width==='fill'||len(child.width,1)))throw fail();
-    if(child.type==='group'&&exact(child,['id','type','width','direction','gap','padding','background','children',...pos,...(child.direction==='canvas'?['height']:[])],['showWhenSlot'])&&['row','column','canvas'].includes(String(child.direction))&&len(child.gap)&&len(child.padding)&&color(child.background)&&Array.isArray(child.children)){if(child.direction==='canvas'&&(!len(child.height,1)||child.height<=2*child.padding||child.gap!==0))throw fail();visit(child.children,depth+1,child.direction==='canvas');
+    if(child.type==='group'&&exact(child,['id','type','width','direction','gap','padding','background','children',...pos,...(child.direction==='canvas'?['height']:[])],['showWhenSlot',...(child.direction==='canvas'?['heightMode']:[])])&&['row','column','canvas'].includes(String(child.direction))&&len(child.gap)&&len(child.padding)&&color(child.background)&&Array.isArray(child.children)){if(child.direction==='canvas'&&(!len(child.height)||child.gap!==0||(Object.hasOwn(child,'heightMode')?child.heightMode!=='auto':child.height<=2*child.padding)))throw fail();visit(child.children,depth+1,child.direction==='canvas');
       if(Object.hasOwn(child,'showWhenSlot')){
         if(scope!=='study'||!validNamedSlot(child.showWhenSlot)||conditionalSlotName(child.children as HeadingChild[])!==child.showWhenSlot)throw fail();
       }
@@ -91,7 +91,7 @@ export function compileHeadingDesign(value:HeadingDesign,inherited:PreviewTextSt
   const {schemaVersion:_,fontSize,lineHeight,font,paragraphGap,children,...rest}=validateHeadingDesign(value,scope);
   const textStyle=resolveFont(font,inherited);
   const slotStyles:{name:string;fontSize:number;lineHeight:number;textStyle:PreviewTextStyle;optional?:boolean;paragraphGap?:number}[]=[],conditionalGroups:{id:string;name:string}[]=[];
-  type CompiledChild=Exclude<HeadingChild,FixedLabel|DynamicLabel|NamedSlot|{type:'group'}>|Omit<NamedSlot,'font'|'fontSize'|'lineHeight'|'optional'|'paragraphGap'>|(Omit<FixedLabel,'font'>&PreviewTextStyle)|{id:string;type:'group';width:number|'fill';x?:number;y?:number;direction:'row'|'column'|'canvas';height?:number;gap:number;padding:number;background:string;children:CompiledChild[]};
+  type CompiledChild=Exclude<HeadingChild,FixedLabel|DynamicLabel|NamedSlot|{type:'group'}>|Omit<NamedSlot,'font'|'fontSize'|'lineHeight'|'optional'|'paragraphGap'>|(Omit<FixedLabel,'font'>&PreviewTextStyle)|{id:string;type:'group';width:number|'fill';x?:number;y?:number;direction:'row'|'column'|'canvas';height?:number;heightMode?:'auto';gap:number;padding:number;background:string;children:CompiledChild[]};
   function compile(child:HeadingChild):CompiledChild{
     if(child.type==='group'){
       const {showWhenSlot,...group}=child;if(showWhenSlot)conditionalGroups.push({id:child.id,name:showWhenSlot});
