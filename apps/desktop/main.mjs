@@ -2579,7 +2579,15 @@ async function smoke(){
   await exec("Array.from(document.querySelectorAll('[data-lab-node]')).find(e=>e.textContent.includes('グループ')).click()");
   await until("!!document.querySelector('#lab-group-direction')");
   await exec("(()=>{const e=document.querySelector('#lab-group-direction');e.value='canvas';e.dispatchEvent(new Event('change',{bubbles:true}));})()");
-  await until("!!document.querySelector('#lab-canvas-height')");
+  await until("!!document.querySelector('#lab-canvas-height')&&!document.querySelector('#lab-fit-canvas').disabled");
+  const initialAreaHeight=await exec("Number(document.querySelector('#lab-canvas-height').value)");
+  const fitAreaHeight=await exec("(()=>{const c=document.querySelector('#lab-preview > div').shadowRoot.querySelector('[data-component-canvas]'),pad=Number(document.querySelector('#lab-group-padding').value)*1000,um=v=>Math.round(parseFloat(v)*25400/96);return (pad+Math.max(...[...c.children].filter(e=>e.dataset.componentNode).map(e=>um(e.style.top)+um(e.style.height))))/1000;})()");
+  await exec("document.querySelector('#lab-fit-canvas').click()");
+  await until("Number(document.querySelector('#lab-canvas-height').value)==="+fitAreaHeight+"&&!document.querySelector('#lab-apply').disabled");
+  if(initialAreaHeight!==fitAreaHeight){
+    await exec("document.querySelector('#lab-undo').click()");
+    await until("Number(document.querySelector('#lab-canvas-height').value)==="+initialAreaHeight+"&&!document.querySelector('#lab-apply').disabled");
+  }
   await exec("document.querySelector('[data-lab-node=content]').click()");
   await until("!!document.querySelector('#lab-canvas-x')");
   await exec("(()=>{const e=document.querySelector('#lab-canvas-x');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,'3');e.dispatchEvent(new Event('input',{bubbles:true}));})()");
