@@ -60,10 +60,11 @@ export function PaperInlineArea({viewport,node,context,onCommit,previewOnly=fals
       const width=occupied?occupied.width/context.width*b.width:r.width,height=occupied?Math.max(r.height,(occupied.height-(placement.spaceAfter??0))/context.height*b.height):r.height;
       const full={left:r.left,top:r.top,right:r.left+width,bottom:r.top+height,width,height};
       const clipped=clipPaperRect(full,bounds);
-      if(!clipped||!b.width||!b.height){setGeometry(null);return;}
+      // The selected source and its measured body remain valid off-screen.
+      if(!b.width||!b.height){setGeometry(null);return;}
       const hr=host.getBoundingClientRect();
       setGeometry({full,clipped,bounds,host:{left:hr.left-left,top:hr.top-top,width:host.offsetWidth,sx,sy},bodyWidth:b.width,bodyHeight:b.height,contentWidth:r.width,contentHeight:r.height,
-        topVisible:Math.abs(clipped.top-full.top)<1,rightVisible:Math.abs(clipped.left+clipped.width-full.right)<1,bottomVisible:Math.abs(clipped.top+clipped.height-full.bottom)<1});
+        topVisible:!!clipped&&Math.abs(clipped.top-full.top)<1,rightVisible:!!clipped&&Math.abs(clipped.left+clipped.width-full.right)<1,bottomVisible:!!clipped&&Math.abs(clipped.top+clipped.height-full.bottom)<1});
     };
     const observer=new ResizeObserver(update);observer.observe(v);observer.observe(block);observer.observe(body);
     const escape=e=>{if(e.key==='Escape'){if(active.current){e.preventDefault();cancel();}else if(Object.keys(latest.current.proposal).length||Object.keys(latest.current.numberText).length){e.preventDefault();discardProposal();}}};
@@ -147,7 +148,7 @@ export function PaperInlineArea({viewport,node,context,onCommit,previewOnly=fals
     mount.replaceChildren(shown.element);
     return ()=>{if(shown.element.parentNode===mount)shown.element.remove();};
   },[shown]);
-  const panelVisible=!!geometry;
+  const panelVisible=!!geometry&&(docked||!!geometry.clipped);
   useLayoutEffect(()=>{
     const panel=panelRef.current;if(!panel)return;
     const update=()=>{const r=panel.getBoundingClientRect();setPanelSize(old=>Math.abs(old.width-r.width)<.5&&Math.abs(old.height-r.height)<.5?old:{width:r.width,height:r.height});};
@@ -156,7 +157,7 @@ export function PaperInlineArea({viewport,node,context,onCommit,previewOnly=fals
   },[panelVisible,docked]);
   if(!geometry)return null;
   const {full,clipped,bounds,host}=geometry;
-  const panelPosition=placePaperPropertyPanel(clipped,bounds,{width:260,height:panelSize.height});
+  const panelPosition=clipped?placePaperPropertyPanel(clipped,bounds,{width:260,height:panelSize.height}):undefined;
   const extent=(axis,body,content,actual)=>Object.hasOwn(preview,axis)?Math.max(content,preview[axis]*body/100):actual;
   const width=extent('width',geometry.bodyWidth,geometry.contentWidth,full.width);
   const height=extent('height',geometry.bodyHeight,geometry.contentHeight,full.height);
@@ -173,7 +174,9 @@ export function PaperInlineArea({viewport,node,context,onCommit,previewOnly=fals
   const label=axis=>{const value=preview[axis]??storedValue(axis);return value?value+'%':'自動';};
   const panel=<div ref={panelRef} className={'paper-inline-area-toolbar'+(docked?' paper-area-docked':'')} style={docked?undefined:panelPosition} role="group" aria-label="選択ブロックの配置プロパティ">
       <div className="paper-inline-summary"><small aria-live="polite">横 {label('width')} · 縦 {label('height')}<br/>余白 前 {before/1000} / 後 {gap/1000} mm{pending||ghost?'（未確定）':''}</small>
-        {docked&&<button id="paper-inline-undock" type="button" className="secondary-action" onClick={onUndock}>紙面上に戻す</button>}
+        {docked&&!clipped&&<small role="status">選択部品は画面外です。数値編集を続けられます。</small>}
+        {docked&&!clipped&&<button id="paper-inline-reveal" type="button" onClick={()=>{if(context.current())node.scrollIntoView({block:'center',inline:'center'});}}>選択部品へ戻る</button>}
+        {docked&&<button id="paper-inline-undock" type="button" className="secondary-action" disabled={!clipped} onClick={onUndock}>紙面上に戻す</button>}
         {!ghost&&<button id="paper-inline-details" type="button" className="secondary-action" aria-expanded={details} aria-controls="paper-inline-properties" onClick={()=>setDetails(v=>!v)}>{details?'閉じる':'調整'}</button>}
       </div>
       {canPreview&&<small className="paper-inline-live-status" role="status">{shown?'実測配置案（未保存）':live?.key===liveKey&&live.error?'配置できません：'+live.error:live?.key===liveKey?'配置変更なし':'配置を計算中…'}</small>}
@@ -199,10 +202,10 @@ export function PaperInlineArea({viewport,node,context,onCommit,previewOnly=fals
     {beforeRect&&<div className="paper-inline-area-guide" aria-hidden="true" style={{...style(beforeRect),borderStyle:'dotted',background:'#d99b2633'}}/>}
     {gapRect&&<div className="paper-inline-area-guide" aria-hidden="true" style={{...style(gapRect),borderStyle:'dotted',background:'#d99b2633'}}/>}
     {guide&&<div className="paper-inline-area-guide" aria-hidden="true" style={style(guide)}/>}
-    <div className="paper-inline-area-frame" style={style(clipped)}>
+    {clipped&&<div className="paper-inline-area-frame" style={style(clipped)}>
       {['width','height'].map(axis=>(axis==='width'?geometry.rightVisible:geometry.bottomVisible)&&<button key={axis} id={'paper-inline-area-'+axis} type="button" className={'paper-area-handle '+axis} aria-label={axis==='width'?'横の最小占有率を調整':'縦の最小占有率を調整'} disabled={context.disabled} onPointerDown={e=>begin(e,axis)} onPointerMove={move} onPointerUp={finish} onPointerCancel={e=>{if(active.current?.id===e.pointerId)cancel();}} onLostPointerCapture={e=>{if(active.current?.id===e.pointerId)cancel();}} onKeyDown={e=>keyAdjust(e,axis)}/>)}
-    </div>
+    </div>}
     {[['before',beforeHandleVisible,before,beforeStart,-9,'前'],['gap',gapHandleVisible,gap,gapEnd,9,'後']].map(([axis,visible,value,edge,offset,label])=>visible&&<button key={axis} id={axis==='before'?'paper-inline-gap-before-handle':'paper-inline-gap-handle'} type="button" className="paper-inline-gap-handle" style={{left:clipped.left+Math.min(18,clipped.width/4),top:Math.max(bounds.top+8,Math.min(edge+(value===0?offset:0),bounds.bottom-8))}} aria-label={label+'の余白を調整（'+value/1000+' mm）'} title={axis==='before'?'上にドラッグして前の余白を増やす':'下にドラッグして後ろの余白を増やす'} disabled={context.disabled} onPointerDown={e=>begin(e,axis)} onPointerMove={move} onPointerUp={finish} onPointerCancel={e=>{if(active.current?.id===e.pointerId)cancel();}} onLostPointerCapture={e=>{if(active.current?.id===e.pointerId)cancel();}} onKeyDown={e=>keyAdjust(e,axis)}>{label}↕</button>)}
-    {docked?createPortal(panel,dockTarget):panel}
+    {docked?createPortal(panel,dockTarget):clipped?panel:null}
   </>;
 }
