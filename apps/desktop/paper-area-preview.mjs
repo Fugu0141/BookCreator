@@ -82,3 +82,34 @@ export function resolvePaperAreaSelection(plan,documentId,blockKey){
   if(matches.length!==1||typeof persistentId!=='string'||!persistentId||matches[0].placement?.fixed||plan.fragments.filter(f=>f.origin?.documentId===documentId&&f.origin?.persistentId===persistentId).length!==1)return null;
   return {persistentId,selection:{documentId,blockKey,revision:plan.revision,fingerprint:plan.fingerprint}};
 }
+
+
+// Capture only persisted input revisions from the exact full-book read.
+// The selected editor document must match the bytes used by the preview.
+export function captureBookAreaLease({snapshot,file,raw,dirty,themeDirty,settingsDirty,themeRevision,settingsRevision}){
+  const hash=v=>typeof v==='string'&&/^[a-f0-9]{64}$/.test(v);
+  if(dirty||themeDirty||settingsDirty||!hash(themeRevision)||!hash(settingsRevision)||!Array.isArray(snapshot)||!snapshot.length||snapshot.length>128)return null;
+  const seen=new Set(),documents=[];
+  for(const d of snapshot){
+    if(!d||typeof d.documentId!=='string'||!d.documentId||seen.has(d.documentId)||!hash(d.revision))return null;
+    seen.add(d.documentId);documents.push(Object.freeze({documentId:d.documentId,revision:d.revision}));
+  }
+  if(file&&!snapshot.some(d=>d.documentId===file.id&&d.revision===file.revision&&d.source===raw))return null;
+  return Object.freeze({themeRevision,settingsRevision,documents:Object.freeze(documents)});
+}
+
+// Prepare the whole measured book but hand only the selected manuscript's
+// intent slice to the scoped persistence API.
+export function prepareBookAreaCommit(context,values){
+  if(context?.scope!=='book'||!context.bookLease||!context.areaSnapshot||!context.areaPrepared)throw Error('全冊紙面の保存情報がありません。');
+  const {documentId,blockKey}=context.selection;
+  const selected=resolvePaperAreaSelection(context.plan,documentId,blockKey);
+  if(!selected||selected.persistentId!==context.persistentId||selected.selection.revision!==context.selection.revision||selected.selection.fingerprint!==context.selection.fingerprint||!context.bookLease.documents.some(d=>d.documentId===documentId))throw Error('全冊紙面の編集対象が変わりました。');
+  const before=context.areaPrepared.document;
+  const next=setPaperAreaValues(before,{documentId,persistentId:context.persistentId,values});
+  if(encodePaperAreaDocument(before)===encodePaperAreaDocument(next))return null;
+  const {measurementCache,paragraphCache,pageCache,inlineMathCache,displayMathCache,mathCache,intelligentLayout,...options}=context.options;
+  const prepared=prepareSavedAreaPreview(options,{revision:context.areaSnapshot.revision,document:next},{whole:true});
+  const value=validatePaperAreaDocument({schemaVersion:1,entries:next.entries.filter(e=>e.documentId===documentId)});
+  return {prepared,value,documentId,lease:context.bookLease,expectedRevision:context.areaSnapshot.revision};
+}
