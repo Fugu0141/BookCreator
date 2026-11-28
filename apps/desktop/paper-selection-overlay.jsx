@@ -47,7 +47,7 @@ export function PaperSelectionOverlay({viewport,node,enabled,getDrop,onMove}){
   return <>
     <div ref={frame} id="paper-selection-frame" className="paper-selection-frame" hidden>
       {enabled&&<button ref={handle} id="paper-block-drag" className="paper-block-drag" type="button" aria-label="ブロックをドラッグして移動（上下矢印キーでも操作）" title="移動先のブロックへドラッグ"
-        onPointerDown={e=>{if(e.button!==0||!e.isPrimary||gesture.current)return;e.preventDefault();e.currentTarget.focus();e.currentTarget.setPointerCapture(e.pointerId);gesture.current={id:e.pointerId,x:e.clientX,y:e.clientY};}}
+        onPointerDown={e=>{if(e.button!==0||!e.isPrimary||gesture.current)return;e.preventDefault();e.currentTarget.focus({preventScroll:true});try{e.currentTarget.setPointerCapture(e.pointerId);}catch{return;}gesture.current={id:e.pointerId,x:e.clientX,y:e.clientY};}}
         onPointerMove={e=>{if(gesture.current?.id!==e.pointerId)return;show(guide.current,targetAt(e)?.node);}}
         onPointerUp={e=>{if(gesture.current?.id!==e.pointerId)return;const target=targetAt(e);cancel();if(target)latest.current.onMove(target.target);}}
         onPointerCancel={e=>{if(gesture.current?.id===e.pointerId)cancel();}}
