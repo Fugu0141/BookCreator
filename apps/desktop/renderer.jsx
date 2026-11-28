@@ -88,7 +88,16 @@ function validPaper(page){try{return page?paperGeometry(page):null;}catch{return
 function App(){
   useLayoutEffect(()=>{editorCommitMetrics.commit('workspace');});
   const [manuscriptStore]=useState(createManuscriptStore);
-  const {file,dirty,undo,redo}=useSyncExternalStore(manuscriptStore.subscribeMetadata,manuscriptStore.getMetadata);
+  // Reproduce the old notification boundary only in isolated synthetic benchmarks.
+  const [fullSubscription,setFullSubscription]=useState(false);
+  const useFull=api.editorBenchmark===true&&fullSubscription;
+  useSyncExternalStore(useFull?manuscriptStore.subscribe:manuscriptStore.subscribeMetadata,useFull?manuscriptStore.getSnapshot:manuscriptStore.getMetadata);
+  const {file,dirty,undo,redo}=manuscriptStore.getMetadata();
+  useLayoutEffect(()=>{
+    if(api.editorBenchmark!==true)return;
+    window.__bcEditorBenchmark={mode:useFull?'full':'metadata',select:mode=>{if(mode==='full'||mode==='metadata')setFullSubscription(mode==='full');},clear:()=>editorCommitMetrics.clear(),snapshot:()=>editorCommitMetrics.snapshot()};
+    return ()=>{delete window.__bcEditorBenchmark;};
+  },[useFull]);
   const {dispatch:dispatchManuscript}=manuscriptStore;
   const [book,setBook]=useState(null),[status,setStatus]=useState('book.yaml を開いてください。'),[busy,setBusy]=useState(true);
   const resolveImage=(id,current)=>resolvePreviewImage(book?.settingRecovery?.token,id,current);
