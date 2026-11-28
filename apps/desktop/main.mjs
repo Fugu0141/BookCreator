@@ -2073,7 +2073,7 @@ async function componentRecoveryJourneySmoke(){
   const store=recoveryStore(smokeRoot,'components');
   const oracle=JSON.parse(await readFile(join(smokeRoot,'ux10-restart.json'),'utf8'));
   const selector='[data-catalog-edit=registered-'+oracle.customId+']';
-  async function openLab(){await click('#mode-design');await click('#design-tab-components');await click(selector);await click('[data-property-choice=layout]');}
+  async function openLab(){await click('#mode-design');await click('#design-tab-components');await click(selector);await click('#lab-precision-toggle');await click('[data-property-choice=layout]');}
   await openLab();
   const padding=oracle.padding===7?8:7;
   await input('#lab-padding',padding);
