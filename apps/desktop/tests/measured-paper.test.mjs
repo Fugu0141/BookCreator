@@ -62,3 +62,22 @@ test('reused paper thumbnail geometry is shared, but current navigation is rebui
   const other=describeMeasuredPaper({slices:[{origin,range:{start:10,end:11}}]},options,otherAdapter,{root,pages:[{node:page,reuse:true,fragments:[block]}]})[0];
   assert.equal(other.thumbnail,null);
 });
+
+test('reused fragments skip topology searches while rebinding math and named slot source ranges',()=>{
+  const listeners={},nav=[];let searches=0;
+  const root={addEventListener:(name,fn)=>{listeners[name]=fn;}};
+  const slot={dataset:{namedSlot:'answer'},style:{}};
+  const math={dataset:{mathStart:'2',mathEnd:'3'},style:{},closest:()=>slot};
+  const block={style:{},querySelectorAll(selector){
+    searches++;return selector==='[data-named-slot]'?[slot]:[math];
+  }};
+  const page={},origin={documentId:'a',blockKey:'b'},options={sections:[{blocks:[{origin}]}]};
+  let offset=10;
+  const adapter={previewSourceRange:(_,range)=>({start:offset+range.textStart,end:offset+range.textEnd}),paperThumbnail:()=>null,onNavigate:(...args)=>nav.push(args)};
+  const publish=reuse=>describeMeasuredPaper({slices:[{origin,textStart:0,textEnd:5,namedSlots:[{name:'answer',textStart:1,textEnd:4}]}]},options,adapter,{root,pages:[{node:page,reuse,fragments:[block]}]});
+  publish(false);assert.equal(searches,2);
+  offset=100;publish(true);assert.equal(searches,2);
+  for(const node of [block,math,slot])listeners.click({composedPath:()=>[node,root],stopPropagation(){}});
+  assert.deepEqual(nav,[['a',{start:100,end:105}],['a',{start:102,end:103}],['a',{start:101,end:104}]]);
+  publish(false);assert.equal(searches,4);
+});
