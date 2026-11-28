@@ -163,17 +163,34 @@ export function resolveBookFixedSelection(plan,documentId,blockKey){
 // A lock toggles only the currently measured origin. Arbitrary movement
 // will be a separate proposal API. The ordinary history/measurement gate
 // must verify all saved intents before the scoped write.
-export function prepareBookFixedCommit(context,action){
-  if(context?.scope!=='book'||!context.bookLease||!context.areaSnapshot||!context.areaPrepared||!['lock','unlock'].includes(action))throw Error('全冊紙面の固定操作情報がありません。');
+export function prepareBookFixedCommit(context,action,position){
+  if(context?.scope!=='book'||!context.bookLease||!context.areaSnapshot||!context.areaPrepared||!['lock','unlock','move'].includes(action))throw Error('全冊紙面の固定操作情報がありません。');
   const {documentId,blockKey}=context.selection??{};
   const target=resolveBookFixedSelection(context.plan,documentId,blockKey);
   if(!target||target.persistentId!==context.persistentId||target.selection.revision!==context.selection.revision||target.selection.fingerprint!==context.selection.fingerprint||!context.bookLease.documents.some(d=>d.documentId===documentId))throw Error('固定操作の対象が変更されました。');
   const before=context.areaPrepared.document;
   const stored=before.entries.find(e=>e.documentId===documentId&&e.persistentId===target.persistentId)?.bookFixed;
-  if(target.fixed!==!!stored||stored&&['page','x','y'].some(k=>stored[k]!==target.position[k])||(action==='lock')===target.fixed)throw Error('固定状態が現在の紙面と一致しません。');
-  const next=setBookPaperFixed(before,{documentId,persistentId:target.persistentId,position:action==='lock'?target.position:null});
+  if(target.fixed!==!!stored||stored&&['page','x','y'].some(k=>stored[k]!==target.position[k])||(action!=='move'&&(action==='lock')===target.fixed))throw Error('固定状態が現在の紙面と一致しません。');
+  if(action==='move'){
+    const bounds=resolveBookMoveBounds(context,target);
+    if(!bounds||!position||Object.keys(position).length!==3||position.page!==target.position.page||!Number.isSafeInteger(position.x)||!Number.isSafeInteger(position.y)||position.x<0||position.y<0||position.x>bounds.maxX||position.y>bounds.maxY)throw Error('移動先が現在の本文領域に収まりません。');
+    if(position.x===target.position.x&&position.y===target.position.y)return null;
+  }
+  const next=setBookPaperFixed(before,{documentId,persistentId:target.persistentId,position:action==='move'?position:action==='lock'?target.position:null});
   const {measurementCache,paragraphCache,pageCache,inlineMathCache,displayMathCache,mathCache,intelligentLayout,...options}=context.options;
   const prepared=prepareSavedAreaPreview(options,{revision:context.areaSnapshot.revision,document:next},{whole:true});
   const value=validatePaperAreaDocument({schemaVersion:1,entries:next.entries.filter(e=>e.documentId===documentId)});
   return {prepared,value,documentId,lease:context.bookLease,expectedRevision:context.areaSnapshot.revision};
+}
+
+
+// The occupied footprint, not the visible DOM dimensions, limits movement.
+export function resolveBookMoveBounds(context,target){
+  const fragment=context.plan.fragments.find(f=>f.origin.documentId===target.selection.documentId&&f.origin.blockKey===target.selection.blockKey);
+  const rect=fragment?.placement?.rect,occupied=fragment?.placement?.occupiedRect??rect;
+  const {width,height}=context.options;
+  if(![width,height,rect?.width,rect?.height,occupied?.width,occupied?.height].every(v=>Number.isSafeInteger(v)&&v>0)||occupied.width<rect.width||occupied.height<rect.height)return null;
+  const maxX=width-occupied.width,maxY=height-occupied.height;
+  if(maxX<0||maxY<0||target.position.x>maxX||target.position.y>maxY)return null;
+  return {maxX,maxY,width:occupied.width,height:occupied.height};
 }
