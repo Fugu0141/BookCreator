@@ -24,4 +24,10 @@ export function verifySavedAreaPreview(prepared,result){
   const bound=bindPaperAreaDocument(prepared.document,il.fragments);
   if(bound.status!=='ready')reject(bound.diagnostics);
   if(JSON.stringify(bound.intents)!==JSON.stringify(prepared.intents))throw Error('配置対象が組版中に変化しました。');
+  const byKey=new Map(il.fragments.map(f=>[JSON.stringify([f.origin.documentId,f.origin.blockKey]),f]));
+  for(const intent of bound.intents){
+    const placement=byKey.get(JSON.stringify([intent.documentId,intent.blockKey]))?.placement;
+    const rect=placement?.occupiedRect??placement?.rect,c=intent.placement.sizeConstraints;
+    if(!rect||!Number.isSafeInteger(rect.width)||!Number.isSafeInteger(rect.height)||rect.width<Math.ceil(prepared.options.width*(c.minWidthPercent??0)/100)||rect.height<Math.ceil(prepared.options.height*(c.minHeightPercent??0)/100))throw Error('指定した占有領域が組版結果に確保されていません。');
+  }
 }
