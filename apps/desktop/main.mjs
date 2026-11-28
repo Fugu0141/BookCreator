@@ -1496,6 +1496,27 @@ async function packageSmoke(){
   await exec("document.querySelector('#paper-edit-mode').click()");
   if(await readFile(join(smokeRoot,'manuscript','chapter.md'),'utf8')!==sample)throw Error('IL test lab changed saved manuscript');
   console.log('PASS isolated IL area drag, real re-layout and disk safety');
+  // A stored trial fixture must change the normal paper geometry only while
+  // explicitly enabled. Keep the original manuscript on disk untouched.
+  const positionAfterArea=()=>exec("(()=>{const root=document.querySelector('#preview > div')?.shadowRoot;if(!root)return null;const block=[...root.querySelectorAll('[data-block]')].find(n=>n.textContent.includes('後続の本文。'));if(!block)return null;const page=[...root.querySelectorAll('[data-page]')].indexOf(block.closest('[data-page]'));return page*100000+block.offsetTop;})()");
+  const originalPosition=await positionAfterArea();
+  if(!Number.isFinite(originalPosition))throw Error('Missing original paper position');
+  await mkdir(join(smokeRoot,'layouts'),{recursive:true});
+  const trialAreaPath=join(smokeRoot,'layouts','paper-area.json');
+  await writeFile(trialAreaPath,JSON.stringify({schemaVersion:1,entries:[{documentId:'chapter',persistentId:'area-test',minHeightPercent:50}]}),{flag:'wx'});
+  await exec("document.querySelector('#paper-area-apply-saved').click()");
+  await until("!document.querySelector('#preview-button').disabled");
+  await exec("document.querySelector('#preview-button').click()");
+  await until("document.querySelector('#workspace-layout-state').dataset.phase==='ready'&&document.querySelector('#workspace-layout-state').dataset.scope==='manuscript'&&document.querySelector('#preview > div')?.shadowRoot?.textContent.includes('後続の本文。')");
+  const occupiedPosition=await positionAfterArea();
+  if(!Number.isFinite(occupiedPosition)||occupiedPosition<=originalPosition+20)throw Error('Saved IL area did not move subsequent content: '+originalPosition+' -> '+occupiedPosition);
+  await exec("document.querySelector('#paper-area-apply-saved').click()");
+  await rm(trialAreaPath);
+  await until("!document.querySelector('#preview-button').disabled");
+  await exec("document.querySelector('#preview-button').click()");
+  await until("document.querySelector('#workspace-layout-state').dataset.phase==='ready'&&document.querySelector('#workspace-layout-state').dataset.scope==='manuscript'&&document.querySelector('#preview > div')?.shadowRoot?.textContent.includes('後続の本文。')");
+  if(await positionAfterArea()!==originalPosition)throw Error('Disabling stored areas did not restore the normal paper');
+  console.log('PASS opt-in saved IL area changes normal paper geometry, disable restores layout');
   await setNavigationSource(navigationSample);
   await exec("document.querySelector('#mode-publication').click()");
   await until("document.querySelector('#publication-save').dataset.state==='required'&&document.querySelector('#publication-layout').dataset.state==='required'");
