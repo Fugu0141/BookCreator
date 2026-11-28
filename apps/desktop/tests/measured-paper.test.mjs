@@ -19,7 +19,7 @@ test('measured paper builds page metadata and delegates source navigation',()=>{
   assert.equal(block.tabIndex,0);
   listeners.click({composedPath:()=>[block,root],stopPropagation(){}});
   listeners.keydown({key:'Enter',composedPath:()=>[block,root],preventDefault(){},stopPropagation(){}});
-  assert.deepEqual(navigated,[['a',{start:4,end:7}],['a',{start:4,end:7}]]);
+  assert.deepEqual(navigated,[['a',{start:4,end:7},block],['a',{start:4,end:7},block]]);
 });
 
 test('sparse publication consumes validated fragments and updates current source ranges without rescanning pages',()=>{
@@ -36,7 +36,7 @@ test('sparse publication consumes validated fragments and updates current source
   assert.deepEqual(calls,pages);
   listeners.click({composedPath:()=>[a,root],stopPropagation(){}});
   listeners.click({composedPath:()=>[b,root],stopPropagation(){}});
-  assert.deepEqual(nav,[['doc-a',{start:40,end:45}],['doc-b',{start:60,end:65}]]);
+  assert.deepEqual(nav,[['doc-a',{start:40,end:45},a],['doc-b',{start:60,end:65},b]]);
 });
 
 test('reused paper thumbnail geometry is shared, but current navigation is rebuilt',()=>{
@@ -56,7 +56,7 @@ test('reused paper thumbnail geometry is shared, but current navigation is rebui
   assert.equal(next.thumbnail,first.thumbnail);assert.equal(calls.length,1);
   assert.equal(next,first);assert.ok(Object.isFrozen(next));assert.ok(Object.isFrozen(next.documents));
   listeners.click({composedPath:()=>[block,root],stopPropagation(){}});
-  assert.deepEqual(nav,[['doc',{start:5,end:6}]]);
+  assert.deepEqual(nav,[['doc',{start:5,end:6},block]]);
   assert.notEqual(publish(false,9).thumbnail,first.thumbnail);
   assert.equal(calls.length,2);
   const otherAdapter={...adapter,paperThumbnail:()=>null};
@@ -79,7 +79,7 @@ test('reused fragments skip topology searches while rebinding math and named slo
   publish(false);assert.equal(searches,2);
   offset=100;publish(true);assert.equal(searches,2);
   for(const node of [block,math,slot])listeners.click({composedPath:()=>[node,root],stopPropagation(){}});
-  assert.deepEqual(nav,[['a',{start:100,end:105}],['a',{start:102,end:103}],['a',{start:101,end:104}]]);
+  assert.deepEqual(nav,[['a',{start:100,end:105},block],['a',{start:102,end:103},math],['a',{start:101,end:104},slot]]);
   publish(false);assert.equal(searches,4);
 });
 
