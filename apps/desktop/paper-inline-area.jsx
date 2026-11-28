@@ -1,5 +1,5 @@
 import React,{useLayoutEffect,useRef,useState} from 'react';
-import {beginPaperAreaDrag,previewPaperAreaDrag,finishPaperAreaDrag,beginPaperGapDrag,previewPaperGapDrag,finishPaperGapDrag} from './paper-area-intent.mjs';
+import {beginPaperAreaDrag,previewPaperAreaDrag,finishPaperAreaDrag,beginPaperGapDrag,previewPaperGapDrag,finishPaperGapDrag,parsePaperPropertyNumber} from './paper-area-intent.mjs';
 import {clipPaperRect,placePaperPropertyPanel} from './paper-selection-geometry.mjs';
 import {createPlainTextPagePreview,createParagraphMeasurementCache,createMathCompilationCache,createDisplayMathGeometryCache} from '../../../BookCreator_LayoutEngine/dist/index.js';
 import {measurementLane} from './measurement-lane.mjs';
@@ -13,6 +13,7 @@ export function PaperInlineArea({viewport,node,context,onCommit}){
   const active=useRef(null),liveMount=useRef(null);
   const isGap=axis=>axis==='before'||axis==='gap';
   const [live,setLive]=useState(null),[details,setDetails]=useState(false),[panelSize,setPanelSize]=useState({width:260,height:40});
+  const [numberText,setNumberText]=useState({});
   const panelRef=useRef(null);
   // Private to this mounted block / revision. No DOM page cache or
   // normal-paper cache is borrowed, even when the user cancels.
@@ -24,11 +25,20 @@ export function PaperInlineArea({viewport,node,context,onCommit}){
   },[node,context.target.revision,context.target.fingerprint]);
   const {target,placement}=context;
   const stored=placement.sizeConstraints??{};
-  const latest=useRef(null);latest.current={proposal,context};
+  const latest=useRef(null);latest.current={proposal,context,numberText};
   const storedValue=axis=>axis==='before'?(placement.spaceBefore??0):axis==='gap'?(placement.spaceAfter??0):(stored[axis==='width'?'minWidthPercent':'minHeightPercent']??0);
   function propose(axis,value){
+    setNumberText(previous=>{if(!Object.hasOwn(previous,axis))return previous;const next={...previous};delete next[axis];return next;});
     setProposal(previous=>{const next={...previous};if(value===storedValue(axis))delete next[axis];else next[axis]=value;return next;});
   }
+  function discardProposal(){setNumberText({});setProposal({});}
+  function editNumber(axis,raw){
+    if(context.disabled||!context.current()||active.current)return;
+    const value=parsePaperPropertyNumber(axis,raw,context.height);
+    if(value!==null)propose(axis,value);
+    setNumberText(previous=>({...previous,[axis]:raw}));
+  }
+  const invalidNumbers=Object.keys(numberText).filter(axis=>parsePaperPropertyNumber(axis,numberText[axis],context.height)===null);
   function cancel(){
     const g=active.current;active.current=null;setGhost(null);
     if(g?.node.hasPointerCapture(g.id))g.node.releasePointerCapture(g.id);
@@ -53,7 +63,7 @@ export function PaperInlineArea({viewport,node,context,onCommit}){
         topVisible:Math.abs(clipped.top-full.top)<1,rightVisible:Math.abs(clipped.left+clipped.width-full.right)<1,bottomVisible:Math.abs(clipped.top+clipped.height-full.bottom)<1});
     };
     const observer=new ResizeObserver(update);observer.observe(v);observer.observe(block);observer.observe(body);
-    const escape=e=>{if(e.key==='Escape'){if(active.current){e.preventDefault();cancel();}else if(Object.keys(latest.current.proposal).length){e.preventDefault();setProposal({});}}};
+    const escape=e=>{if(e.key==='Escape'){if(active.current){e.preventDefault();cancel();}else if(Object.keys(latest.current.proposal).length||Object.keys(latest.current.numberText).length){e.preventDefault();discardProposal();}}};
     window.addEventListener('scroll',update,true);window.addEventListener('resize',update);
     window.addEventListener('blur',cancel);window.addEventListener('keydown',escape,true);
     update();
@@ -105,9 +115,10 @@ export function PaperInlineArea({viewport,node,context,onCommit}){
     if(value!==start)propose(axis,value);
   }
   const pending=Object.keys(proposal).length>0;
+  const hasInput=pending||invalidNumbers.length>0;
   const preview=ghost?.changed?{...proposal,[ghost.axis]:ghost.value}:proposal;
   const liveKey=JSON.stringify([preview.width??null,preview.height??null,preview.gap??null,preview.before??null]);
-  const canPreview=!!geometry&&!context.disabled&&Object.keys(preview).length>0;
+  const canPreview=!!geometry&&!context.disabled&&invalidNumbers.length===0&&Object.keys(preview).length>0;
   // Keep the authoritative host and selection intact; the live layer is inert.
   // Coalesce pointer movement and drop any late result for a superseded proposal.
   useLayoutEffect(()=>{
@@ -170,11 +181,20 @@ export function PaperInlineArea({viewport,node,context,onCommit}){
       </div>
       {canPreview&&<small className="paper-inline-live-status" role="status">{shown?'実測配置案（未保存）':live?.key===liveKey&&live.error?'配置できません：'+live.error:live?.key===liveKey?'配置変更なし':'配置を計算中…'}</small>}
       <div id="paper-inline-properties" className="paper-inline-properties" hidden={!details||!!ghost}>
-              <button type="button" disabled={context.disabled||!(proposal.width??storedValue('width'))} onClick={()=>propose('width',0)}>横を自動</button><button type="button" disabled={context.disabled||!(proposal.height??storedValue('height'))} onClick={()=>propose('height',0)}>縦を自動</button> 
-      <div style={{display:'grid',gap:3,flexBasis:'100%',minWidth:0}}>{[['before','前',before],['gap','後',gap]].map(([axis,label,value])=><label key={axis} style={{display:'grid',gridTemplateColumns:'72px minmax(0,1fr)',alignItems:'center',gap:4}}><small>{label} {value/1000} mm</small><input id={axis==='before'?'paper-inline-gap-before':'paper-inline-gap'} aria-label={'部品の'+label+'の余白（mm）'} type="range" min={0} max={Math.floor(Math.min(context.height,MAX_PAPER_TRAILING_SPACE)/1000)} step={1} value={value/1000} disabled={context.disabled} onChange={e=>{if(context.current())propose(axis,Number(e.target.value)*1000);}} style={{minWidth:0,width:'100%'}}/></label>)}</div>
-
+        <small className="paper-property-help">占有率：0で自動 / 余白：0で解除</small>
+        <div className="paper-property-grid">
+          {[['width','横','%'],['height','縦','%'],['before','前方','mm'],['gap','後方','mm']].map(([axis,name,unit])=>{
+            const value=proposal[axis]??storedValue(axis);
+            const raw=numberText[axis]??String(isGap(axis)?value/1000:value);
+            const invalid=invalidNumbers.includes(axis);
+            return <label key={axis} className="paper-property-number"><span>{name}</span><input id={'paper-property-'+axis} type="text" inputMode={isGap(axis)?'decimal':'numeric'} maxLength={16} aria-label={name+(isGap(axis)?'余白（mm）':'最小占有率（%）')} aria-invalid={invalid||undefined} value={raw} disabled={context.disabled} onChange={e=>editNumber(axis,e.target.value)}/><small>{unit}</small></label>;
+          })}
+        </div>
+        <div className="paper-property-resets"><button type="button" className="secondary-action" disabled={context.disabled||!(proposal.width??storedValue('width'))&&!invalidNumbers.includes('width')} onClick={()=>propose('width',0)}>横を自動</button><button type="button" className="secondary-action" disabled={context.disabled||!(proposal.height??storedValue('height'))&&!invalidNumbers.includes('height')} onClick={()=>propose('height',0)}>縦を自動</button></div>
+        <div className="paper-property-sliders">{[['before','前',before],['gap','後',gap]].map(([axis,name,value])=><label key={axis}><small>{name} {value/1000} mm</small><input id={axis==='before'?'paper-inline-gap-before':'paper-inline-gap'} aria-label={'部品の'+name+'の余白（mm）'} type="range" min={0} max={Math.floor(Math.min(context.height,MAX_PAPER_TRAILING_SPACE)/1000)} step={1} value={value/1000} disabled={context.disabled} onChange={e=>{if(context.current())propose(axis,Number(e.target.value)*1000);}}/></label>)}</div>
       </div>
-      {pending&&!ghost&&<><button id="paper-inline-area-commit" type="button" disabled={context.disabled} onClick={()=>{if(!context.current())return;void onCommit({...proposal});}}>適用して保存</button><button type="button" disabled={context.disabled} onClick={()=>setProposal({})}>取消</button></>}
+      {invalidNumbers.length>0&&<small role="alert" className="paper-property-error">数値を確認してください。占有率は0〜100の整数、余白は本文高さ以内のmm値（小数3桁まで）です。</small>}
+      {hasInput&&!ghost&&<><button id="paper-inline-area-commit" type="button" disabled={context.disabled||!pending||invalidNumbers.length>0} onClick={()=>{if(!context.current()||invalidNumbers.length)return;void onCommit({...proposal});}}>適用して保存</button><button type="button" disabled={context.disabled} onClick={discardProposal}>取消</button></>}
     </div>
   </>;
 }
