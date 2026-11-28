@@ -639,3 +639,32 @@ body{font-family:BCFont_NotoSansJP,system-ui,sans-serif}.font-control,.typograph
   .lab-gui-first .lab-grid[data-left-open=false][data-precision-open=false]{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(340px,75vh)}
   .lab-gui-first .lab-grid[data-left-open=false][data-precision-open=true]{grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(340px,65vh) auto}
 }
+
+/* GUI-04c: calmer editor chrome and a persistent canvas status/zoom strip. */
+.lab-gui-first{background:#fff;border:1px solid #dce3eb;border-radius:12px}
+.lab-gui-first>header{background:#fff;color:#182536;border-bottom:1px solid #e1e6ec;padding:10px 14px;gap:6px;flex-wrap:wrap}
+.lab-gui-first>header strong{font-size:15px;font-weight:650}
+.lab-gui-first>header span{color:#526579}
+.lab-gui-first>header button,.lab-gui-first .lab-canvas-actions button,.lab-gui-first .lab-selection-toolbar button,.lab-gui-first .lab-left-title button,.lab-gui-first .lab-precision-title button{background:#fff;color:#334155;border:1px solid #dce3eb;border-radius:6px;min-height:30px;padding:5px 9px;font-size:12px}
+.lab-gui-first>header button+button{margin-left:0}
+.lab-gui-first>header button:hover:not(:disabled),.lab-gui-first .lab-canvas-actions button:hover:not(:disabled),.lab-gui-first .lab-selection-toolbar button:hover:not(:disabled){background:#edf3f8}
+.lab-gui-first>header button[aria-expanded=true],.lab-gui-first .lab-canvas-actions button[aria-expanded=true],.lab-gui-first .lab-selection-toolbar button[aria-expanded=true],.lab-gui-first .lab-selection-toolbar button[aria-pressed=true]{background:#e0eefb;color:#235b91;border-color:#b8d5ef}
+.lab-gui-first .lab-grid{background:#e1e6ec}
+.lab-gui-first .lab-grid>section{background:#fff}
+.lab-gui-first .lab-grid>.lab-canvas{background:#f0f3f7;padding:10px;gap:6px}
+.lab-gui-first .lab-canvas-toolbar{padding:6px;max-height:40%;background:#fff;border:1px solid #e2e8f0;border-radius:8px}
+.lab-gui-first .lab-selection-toolbar{border:0;background:transparent;margin:0;padding:0;gap:5px}
+.lab-gui-first .lab-canvas-actions{display:flex;gap:5px;flex-wrap:wrap;margin-top:5px;padding-top:5px;border-top:1px solid #edf0f3}
+.lab-gui-first #lab-spacing-fields[hidden],.lab-gui-first #lab-view-options[hidden],.lab-gui-first #lab-measure[hidden]{display:none!important}
+.lab-gui-first #lab-preview{background:#e8edf3;border:1px solid #dde4eb;border-radius:8px}
+.lab-gui-first .lab-canvas-statusbar{display:flex;align-items:center;gap:6px;flex-wrap:wrap;flex:0 0 auto;font-size:12px;color:#475569}
+.lab-gui-first .lab-canvas-statusbar #lab-status{flex:1 1 120px;min-width:0;padding:0;font-size:12px;overflow-wrap:anywhere}
+.lab-gui-first .lab-canvas-statusbar[data-phase=error] #lab-status{color:#a12626}
+.lab-gui-first .lab-canvas-statusbar .lab-zoom-controls{margin:0;gap:4px}
+.lab-gui-first .lab-canvas-statusbar .lab-zoom-controls select{font-size:12px}
+.lab-gui-first .lab-canvas-statusbar #lab-measure{padding:5px 8px;font-size:12px}
+.lab-gui-first .lab-preview-hint{font-size:11px;color:#526579}
+.lab-gui-first .lab-sample-area{margin:0;padding:0;border:0}
+.lab-gui-first .lab-sample-toggle{background:#fff;border:1px solid #dce3eb;color:#475569;padding:5px 8px;font-size:12px}
+.lab-gui-first footer{background:#fff;border-top:1px solid #e1e6ec;padding:8px 12px}
+.lab-gui-first footer #lab-apply,.lab-gui-first footer #lab-open-registration{background:#235f98;border-radius:6px}
