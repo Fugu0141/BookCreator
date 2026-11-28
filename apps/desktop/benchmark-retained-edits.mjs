@@ -51,6 +51,8 @@ export async function benchmarkRetainedEdits({raw,click,until,ready,paperSignatu
         if(retained&&(!sample.work||sample.work.measurement.reusedBlocks<1||sample.work.pagination.reusedBlocks<1))throw Error('Retained benchmark did not reuse measured/placed blocks');
         if(retained){
           const identity=sample.identity;
+          const images=sample.work.images;
+          if(!images||images.resources!==0||images.decodedImages!==0||images.skippedDecodes!==0)throw Error('Unexpected image work for resource-free retained fixture: '+JSON.stringify(images));
           if(identity.reusedFromInitial!==sample.pages-1||sample.componentPages.filter(p=>p.retained).length!==sample.componentPages.length-1)throw Error('Mixed fixture did not retain unchanged component pages: '+JSON.stringify({case:item.id,pair,identity,componentPages:sample.componentPages}));
           if(!identity.sameHost||!Number.isSafeInteger(identity.reported)||identity.reported<1||!Number.isSafeInteger(identity.generated)||identity.generated<0||identity.reported+identity.generated!==sample.pages||identity.reusedFromInitial<1||sample.intermediatePublications===0&&identity.reported!==identity.reusedFromInitial)throw Error('Retained inline-math page DOM reuse missing or inconsistent: '+JSON.stringify({case:item.id,pair,identity,pages:sample.pages,intermediatePublications:sample.intermediatePublications}));
           if(!Number.isSafeInteger(sample.work.measurement.sharedSnapshotEntries)||sample.work.measurement.sharedSnapshotEntries<1||sample.work.measurement.sharedSnapshotEntries>sample.work.measurement.reusedBlocks)throw Error('Retained benchmark did not share measurement snapshots');
