@@ -66,3 +66,5 @@ Paragraph Labの共通化、左レイヤー/ライブラリの折りたたみ、
 次段階（Engineとスキーマの設計変更が必要）: 部品の幅を本文幅に追従する／指定幅（将来は本文幅に対する比率）から選択、高さを内容に追従する／最小高さ＋自動拡張／固定高さから選択。自由配置は装飾に使用し、本文スロットは通常の自動組版に任せる選択肢を提供する。自動高さでは子の実測下端・余白・最小高さから算出する。固定高さであふれる場合は警告と修正案を提示し、無断で文字を縮小・クリップしない。ページをまたぐ部品や分割不可部品、幅変更による折返し、長短の原稿で検証。占有領域をキャンバス上の枠と実紙面の位置で見せ、プリセットとハンドルを優先する。既存部品の固定高さは移行後も同じ結果にする。
 
 前headのDesktop/Windowsビルドで発生したプレビュー表示のJSX閉じ括弧漏れを修正。最新CIは未確認。
+
+GUI-AREA Engine first: LayoutEngine PR #69 (https://github.com/Fugu0141/BookCreator_LayoutEngine/pull/69) introduces opt-in heightMode: auto, height as minimum (0 means pure auto), preserves fixed-height mode, measures occupied child bottom plus padding with page/100mm bounds. BookCreator integration will follow verified Engine merge. No implicit child relocation or overlap avoidance yet. #244 previous Desktop succeeded, Windows recovery smoke failed reaching precision controls after asynchronous editor opening; await editor mount before testing panel visibility. Latest CI pending.
