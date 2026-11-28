@@ -194,7 +194,7 @@ export function PaperInlineArea({viewport,node,context,onCommit,previewOnly=fals
         <div className="paper-property-sliders">{[['before','前',before],['gap','後',gap]].map(([axis,name,value])=><label key={axis}><small>{name} {value/1000} mm</small><input id={axis==='before'?'paper-inline-gap-before':'paper-inline-gap'} aria-label={'部品の'+name+'の余白（mm）'} type="range" min={0} max={Math.floor(Math.min(context.height,MAX_PAPER_TRAILING_SPACE)/1000)} step={1} value={value/1000} disabled={context.disabled} onChange={e=>{if(context.current())propose(axis,Number(e.target.value)*1000);}}/></label>)}</div>
       </div>
       {invalidNumbers.length>0&&<small role="alert" className="paper-property-error">数値を確認してください。占有率は0〜100の整数、余白は本文高さ以内のmm値（小数3桁まで）です。</small>}
-      {previewOnly&&<small className="paper-inline-live-status">全冊の試験配置（保存不可）</small>}
+      {previewOnly&&<small className="paper-inline-live-status">全冊の試験配置（保存条件未成立）</small>}
       {hasInput&&!ghost&&<>{!previewOnly&&<button id="paper-inline-area-commit" type="button" disabled={context.disabled||!pending||invalidNumbers.length>0} onClick={()=>{if(!context.current()||invalidNumbers.length)return;void onCommit({...proposal});}}>適用して保存</button>}<button type="button" disabled={context.disabled} onClick={discardProposal}>取消</button></>}
     </div>
   </>;
