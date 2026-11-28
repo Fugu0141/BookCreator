@@ -69,6 +69,9 @@ jobs:
             $process = Start-Process -FilePath (Join-Path $isolated 'BookCreator.exe') -ArgumentList '--package-smoke' -WorkingDirectory $env:RUNNER_TEMP -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
             if (-not $process.WaitForExit(180000)) {
               taskkill /PID $process.Id /T /F
+              $null = $process.WaitForExit(15000)
+              Get-Content $stdout,$stderr -ErrorAction SilentlyContinue
+              if (Test-Path $env:BC_PACKAGE_SMOKE_REPORT) { Get-Content $env:BC_PACKAGE_SMOKE_REPORT }
               throw 'Packaged app timeout'
             }
             Get-Content $stdout,$stderr -ErrorAction SilentlyContinue
