@@ -44,3 +44,10 @@ test('one edit one history step, redo branch, dirty and stale lease protection',
   const changed=draft.apply({...height,value:30},5);assert.equal(changed.canRedo,false);
   assert.throws(()=>draft.markSaved(4),/変更/);
 });
+
+test('unidentified or unrelated fragment sharing a current key is also ambiguous',()=>{
+  for(const other of [{origin:{documentId:'ch',blockKey:'10'}},fragment('10','other-id')]){
+    const result=bindPaperAreaDocument(doc,[fragment('10'),other]);
+    assert.equal(result.status,'conflict');assert.deepEqual(result.intents,[]);
+  }
+});
