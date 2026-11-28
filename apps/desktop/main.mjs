@@ -123,7 +123,7 @@ async function run(){
     const data=await readFile(new URL(entry[0],import.meta.url));
     return new Response(data,{headers:{'Content-Type':entry[1],'Content-Security-Policy':CSP,'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
   });
-  win=new BrowserWindow({width:1280,height:850,show:!SMOKE,title:'BookCreator – Development Preview',webPreferences:{preload:fileURLToPath(new URL('./preload.cjs',import.meta.url)),contextIsolation:true,nodeIntegration:false,sandbox:true,webSecurity:true,devTools:false}});
+  win=new BrowserWindow({width:1280,height:850,show:!SMOKE,title:'BookCreator – Development Preview',webPreferences:{additionalArguments:BENCHMARK?['--bc-editor-benchmark']:[],preload:fileURLToPath(new URL('./preload.cjs',import.meta.url)),contextIsolation:true,nodeIntegration:false,sandbox:true,webSecurity:true,devTools:false}});
   win.webContents.setWindowOpenHandler(()=>({action:'deny'}));
   win.webContents.on('will-navigate',e=>e.preventDefault());
   win.webContents.on('will-attach-webview',e=>e.preventDefault());
