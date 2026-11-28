@@ -7,3 +7,14 @@ LayoutEngine IL-04/06 の契約に合わせ、個別占有率は placement.sizeC
 paper-area-intent.mjs は選択中の documentId / blockKey / revision / fingerprint / 単一断片を照合し、既存の位置・余白・他の寸法制約を保ったまま、新しい個別配置意図の候補を返す。入力を変更しない。ドラッグ中はCSSピクセルの仮ガイド用サイズを返し、ポインター確定だけで候補を生成する。取消・微小移動・元の位置への復帰・古い計画は無操作。既存 areaPercentFromDrag を共用する。
 
 このPRは独立したGUI側の純粋計算モジュールと試験に限定する。画面にはまだ接続しない。現在の blockKey は永続IDとは限らないため、候補を保存ファイルに直接書き込まない。永続ID対応・意図スキーマ・Undo/Redo・Engine再計測/描画・PDFとの整合性が検証できるまでは操作ハンドルを有効化しない。通常の紙面・部品定義・PDF経路は変更なし。ILリポジトリへの変更なし。
+
+
+## 個別指定の保存形式・編集トランザクション（接続準備）
+
+現在の semantic blockKey は原稿開始オフセットであるため、保存キーとして使用しない。schemaVersion:1 と entries の厳密な JSON データ形式を追加。各 entry は documentId、persistentId、minWidthPercent / minHeightPercent のいずれか以上。0 は解除操作であり保存しない。派生座標、revision、fingerprint、測定サイズは含めない。原稿に永続IDのないブロックは対象外。保存候補ファイル名は layouts/paper-area.json とし、既存プロジェクト形式への登録、原子的なディスクI/O・外部変更検出、復旧処理は後続で確定する。
+
+全対象範囲の最新計測断片から永続IDを現在の blockKey へ再解決する。欠落・重複・複数断片・現行キー衝突では全提案を拒否し、保存済み意図は消さない。別原稿の同じ永続IDは独立。旧原稿のオフセットによる補完は禁止。
+
+draft は一操作一履歴、最大100件、Undo/Redo、新しい編集でRedo破棄、dirty状態、単調増加する編集版を持つ。controller は最新の成功計画、revision/fingerprint、永続ID、編集版を照合し、ドラッグ中は仮表示だけ、確定時に一回更新する。他の位置・余白・寸法制約は baseIntents から結合し、占有率の二重正本は診断する。ILの出力 placement を入力指定に流用しない。候補生成は組版成功やディスク保存を意味しない。
+
+この段階でJSONの検証・直列化/復元、編集履歴、ドラッグ接続コントローラー、単体試験まで実装。実際の画面ハンドル、ディスク書込、IL計測/描画、原稿Undoとの統合、PDF出力ゲートは未接続。最新CI未確認。
