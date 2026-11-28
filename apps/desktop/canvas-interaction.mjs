@@ -34,7 +34,29 @@ export function resizeSize(start,delta,limits,snap=100){
   return result;
 }
 // The same actual measured preview DOM is used for hit testing, not a second renderer.
-export function installCanvasDrag(root,{lookup,onSelect,onActive,onCommit,smartSnap=()=>true,isLocked=()=>false,ratioLocked=()=>false}){
+export function flowDropIndex(index,centers,coordinate){
+  if(!Number.isInteger(index)||index<0||index>=centers.length||!Number.isFinite(coordinate)||
+    !centers.every((v,i)=>Number.isFinite(v)&&(i===0||v>centers[i-1])))return index;
+  // The dragged node's original centre is ignored. Move only after
+  // crossing another sibling's centre; preserve the original order otherwise.
+  let target=index;
+  while(target>0&&coordinate<centers[target-1])target--;
+  while(target<centers.length-1&&coordinate>centers[target+1])target++;
+  return target;
+}
+// Flow dimensions stay explicit only where the schema already allows them.
+export function flowResizeLimits(node,direction,availableWidth,availableHeight,otherWidth=0){
+  const min=node.type==='group'?2*node.padding+1:1;
+  const fixedWidth=node.type!=='content'&&Number.isSafeInteger(node.width);
+  const fixedHeight=['rect','image'].includes(node.type)||(node.type==='group'&&node.direction==='canvas');
+  if(!fixedWidth&&!fixedHeight)return null;
+  if(![availableWidth,availableHeight,otherWidth,min].every(Number.isFinite))return null;
+  const maxWidth=Math.min(100000,Math.max(fixedWidth?node.width:0,Math.floor(availableWidth-(direction==='row'?otherWidth:0))));
+  const maxHeight=Math.min(100000,Math.max(fixedHeight?node.height:0,Math.floor(availableHeight)));
+  if(fixedWidth&&maxWidth<min||fixedHeight&&maxHeight<min)return null;
+  return {fixedWidth,fixedHeight,minWidth:min,maxWidth,minHeight:min,maxHeight};
+}
+export function installCanvasDrag(root,{lookup,onSelect,onActive,onCommit,onReorder=()=>{},onFlowResize=()=>{},onEditText=()=>{},flowDirection=entry=>entry.parent?.direction,flowContainer=entry=>entry.parent,smartSnap=()=>true,isLocked=()=>false,ratioLocked=()=>false}){
   const cleanups=[];let active=null,disposed=false;
   const restore=()=>{if(active){active.el.style.left=active.left;active.el.style.top=active.top;active.el.removeAttribute('data-lab-dragging');if(active.ghost){active.ghost.style.display='none';}active.guides?.show({});}};
   function end(commit,event){
@@ -134,14 +156,144 @@ export function installCanvasDrag(root,{lookup,onSelect,onActive,onCommit,smartS
       for(const [name,fn] of [['focus',focus],['keydown',key],['pointerdown',down],['pointermove',move],['pointerup',up],['pointercancel',cancel],['lostpointercapture',cancel]]){el.addEventListener(name,fn);cleanups.push(()=>el.removeEventListener(name,fn));}
     }
   }
-  return ()=>{disposed=true;end(false);for(const cleanup of cleanups)cleanup();};
+  // Flow nodes retain automatic sizing. Move only within the same sibling
+  // list, using the real measured centres and a transient visual indicator.
+  let flowActive=null;
+  function finishFlow(commit,event){
+    const a=flowActive;if(!a||event&&a.pointerId!==event.pointerId)return;
+    flowActive=null;
+    a.el.style.transform=a.transform;a.el.style.zIndex=a.zIndex;
+    a.mark?.remove();
+    try{if(a.el.hasPointerCapture(a.pointerId))a.el.releasePointerCapture(a.pointerId);}catch{}
+    onActive(false);
+    if(a.ghost)a.ghost.remove();
+    if(commit&&!isLocked(a.id)){
+      if(a.resizing&&a.patch&&Object.entries(a.patch).some(([k,v])=>a.node[k]!==v))onFlowResize(a.id,a.patch);
+      else if(!a.resizing&&a.target!==a.index)onReorder(a.id,a.target);
+    }
+  }
+  for(const el of root.querySelectorAll('[data-component-node]')){
+    const id=el.dataset.componentNode,entry=lookup(id);
+    if(!id||!entry||el.hasAttribute('data-lab-draggable'))continue;
+    el.dataset.labSelectable='true';
+    el.tabIndex=0;
+    el.removeAttribute('aria-hidden');
+    const direction=flowDirection(entry),horizontal=direction==='row';
+    const movable=['row','column'].includes(direction)&&entry.siblings.length>1;
+    if(movable)el.dataset.labFlowDraggable='true';
+    el.setAttribute('aria-label',id+(movable?'：ドラッグまたは矢印キーで並べ替え':'：選択'));
+    el.style.cursor=movable?'grab':'pointer';
+    el.style.touchAction='none';
+    const node=entry.node,container=flowContainer(entry);
+    const canWidth=node.type!=='content'&&Number.isSafeInteger(node.width),canHeight=['rect','image'].includes(node.type)||(node.type==='group'&&node.direction==='canvas');
+    let handle;
+    if((canWidth||canHeight)&&container&&['row','column'].includes(direction)){
+      handle=el.ownerDocument.createElement('span');
+      handle.dataset.labResizeHandle=canWidth&&canHeight?'both':canWidth?'width':'height';
+      handle.setAttribute('aria-hidden','true');handle.title='ドラッグでサイズを変更';
+      handle.style.cssText='all:initial;position:absolute;display:none;box-sizing:border-box;z-index:2147483647;width:12px;height:12px;background:white;border:2px solid #2679c7;touch-action:none;'+(canWidth&&canHeight?'right:0;bottom:0;cursor:nwse-resize;':canWidth?'right:0;top:50%;cursor:ew-resize;':'left:50%;bottom:0;cursor:ns-resize;');
+      el.append(handle);cleanups.push(()=>handle.remove());
+    }
+    const select=()=>{if(!disposed)onSelect(id);};
+    const down=e=>{
+      if(disposed||active||flowActive||e.button!==0||!e.isPrimary)return;
+      e.preventDefault();e.stopPropagation();
+      el.focus({preventScroll:true});select();
+      if(isLocked(id))return;
+      if(handle&&e.target===handle){
+        const parent=el.parentElement,r=parent.getBoundingClientRect(),sx=r.width/parent.offsetWidth,sy=r.height/parent.offsetHeight;
+        if(!Number.isFinite(sx)||!Number.isFinite(sy)||sx<=0||sy<=0)return;
+        const um=v=>Math.round(parseFloat(v)*UM_PER_CSS_PX);
+        const availableWidth=um(parent.style.width)-2*container.padding;
+        const otherWidth=entry.siblings.filter(n=>n.id!==id).reduce((sum,n)=>sum+(Number.isSafeInteger(n.width)?n.width:1000),0)+(entry.siblings.length-1)*container.gap;
+        const limits=flowResizeLimits(node,direction,availableWidth,100000,otherWidth);
+        if(!limits)return;
+        try{el.setPointerCapture(e.pointerId);}catch{return;}
+        const ghost=el.ownerDocument.createElement('span');
+        ghost.style.cssText='all:initial;position:absolute;display:block;box-sizing:border-box;left:0;top:0;border:2px dashed #2679c7;pointer-events:none;z-index:2147483646;width:'+el.style.width+';height:'+el.style.height+';';
+        el.append(ghost);
+        flowActive={resizing:true,el,id,node,limits,ghost,pointerId:e.pointerId,cx:e.clientX,cy:e.clientY,sx,sy,transform:el.style.transform,zIndex:el.style.zIndex};
+        onActive(true);return;
+      }
+      if(!movable)return;
+      const siblings=entry.siblings.map(n=>Array.from(el.parentElement.children).find(c=>c.dataset.componentNode===n.id));
+      if(siblings.some(n=>!n))return; // omitted optional content: do not infer its position
+      const rects=siblings.map(n=>n.getBoundingClientRect());
+      const centers=rects.map(r=>horizontal?r.left+r.width/2:r.top+r.height/2);
+      if(!centers.every((v,i)=>Number.isFinite(v)&&(i===0||v>centers[i-1])))return;
+      const parent=el.parentElement,r=parent.getBoundingClientRect();
+      const sx=r.width/parent.offsetWidth,sy=r.height/parent.offsetHeight;
+      if(!Number.isFinite(sx)||!Number.isFinite(sy)||sx<=0||sy<=0)return;
+      try{el.setPointerCapture(e.pointerId);}catch{return;}
+      const mark=el.ownerDocument.createElement('span');
+      mark.style.cssText='all:initial;position:absolute;display:none;pointer-events:none;background:#2679c7;z-index:2147483646;';
+      parent.append(mark);
+      flowActive={el,id,index:entry.index,target:entry.index,pointerId:e.pointerId,coordinate:horizontal?e.clientX:e.clientY,centers,siblings,horizontal,sx,sy,transform:el.style.transform,zIndex:el.style.zIndex,mark};
+      onActive(true);
+    };
+    const move=e=>{
+      const a=flowActive;if(!a||a.el!==el||a.pointerId!==e.pointerId)return;
+      e.preventDefault();e.stopPropagation();
+      if(a.resizing){
+        const dx=(e.clientX-a.cx)*UM_PER_CSS_PX/a.sx,dy=(e.clientY-a.cy)*UM_PER_CSS_PX/a.sy;
+        if(Math.hypot(e.clientX-a.cx,e.clientY-a.cy)<2&&!a.patch)return;
+        const axis=(value,delta,min,max)=>delta===0?value:Math.max(min,Math.min(max,Math.round((value+delta)/100)*100));
+        if(node.type==='image'&&a.limits.fixedWidth&&a.limits.fixedHeight&&ratioLocked(id)){
+          const key=Math.abs(dx/node.width)>=Math.abs(dy/node.height)?'width':'height';
+          a.patch=proportionalImageSize(node,Math.round((node[key]+(key==='width'?dx:dy))/100)*100,a.limits,key);
+        }else{
+          a.patch={...(a.limits.fixedWidth?{width:axis(node.width,dx,a.limits.minWidth,a.limits.maxWidth)}:{}),...(a.limits.fixedHeight?{height:axis(node.height,dy,a.limits.minHeight,a.limits.maxHeight)}:{})};
+        }
+        if(a.patch.width!==undefined)a.ghost.style.width=a.patch.width/UM_PER_CSS_PX+'px';
+        if(a.patch.height!==undefined)a.ghost.style.height=a.patch.height/UM_PER_CSS_PX+'px';
+        return;
+      }
+      const delta=(horizontal?e.clientX:e.clientY)-a.coordinate;
+      if(Math.abs(delta)<2&&a.target===a.index)return;
+      a.target=flowDropIndex(a.index,a.centers,a.centers[a.index]+delta);
+      el.style.transform=(a.transform?a.transform+' ':'')+(horizontal?'translateX(':'translateY(')+(delta/(horizontal?a.sx:a.sy))+'px)';
+      el.style.zIndex='2147483645';
+      if(a.target===a.index){a.mark.style.display='none';return;}
+      const other=a.siblings[a.target],after=a.target>a.index;
+      Object.assign(a.mark.style,horizontal?{display:'block',left:(other.offsetLeft+(after?other.offsetWidth:0)-1)+'px',top:other.offsetTop+'px',width:'2px',height:other.offsetHeight+'px'}:{display:'block',left:other.offsetLeft+'px',top:(other.offsetTop+(after?other.offsetHeight:0)-1)+'px',width:other.offsetWidth+'px',height:'2px'});
+    };
+    const up=e=>{if(flowActive?.el===el&&flowActive.pointerId===e.pointerId){move(e);finishFlow(true,e);}};
+    const cancel=e=>{if(flowActive?.el===el)finishFlow(false,e);};
+    const key=e=>{
+      if(disposed||e.ctrlKey||e.metaKey||e.altKey)return;
+      if(e.key==='Escape'&&flowActive?.el===el){e.preventDefault();e.stopPropagation();finishFlow(false);return;}
+      if(['Enter',' '].includes(e.key)){e.preventDefault();e.stopPropagation();select();return;}
+      const delta=e.key===(horizontal?'ArrowLeft':'ArrowUp')?-1:e.key===(horizontal?'ArrowRight':'ArrowDown')?1:0;
+      if(!movable||!delta||flowActive||isLocked(id))return;
+      e.preventDefault();e.stopPropagation();
+      const next=entry.index+delta;
+      if(next>=0&&next<entry.siblings.length)onReorder(id,next);
+    };
+    for(const [name,fn] of [['pointerdown',down],['focus',select],['keydown',key],['pointermove',move],['pointerup',up],['pointercancel',cancel],['lostpointercapture',cancel]]){
+      el.addEventListener(name,fn);cleanups.push(()=>el.removeEventListener(name,fn));
+    }
+  }
+  // Labels are the only editable literal text in the component definition.
+  // Manuscript slots and dynamic labels must retain their source semantics.
+  for(const el of root.querySelectorAll('[data-component-node]')){
+    const id=el.dataset.componentNode;
+    if(lookup(id)?.node.type!=='label')continue;
+    el.dataset.labTextEditable='true';el.title='ダブルクリックまたはF2で文字を編集';
+    const edit=e=>{
+      if(disposed||active||flowActive||isLocked(id)||(e.type==='keydown'&&e.key!=='F2')||e.ctrlKey||e.metaKey||e.altKey)return;
+      e.preventDefault();e.stopPropagation();onSelect(id);onEditText(id);
+    };
+    el.addEventListener('dblclick',edit);el.addEventListener('keydown',edit);
+    cleanups.push(()=>{el.removeEventListener('dblclick',edit);el.removeEventListener('keydown',edit);});
+  }
+  return ()=>{disposed=true;end(false);finishFlow(false);for(const cleanup of cleanups)cleanup();};
 }
 export function highlightCanvasSelection(root,id,isLocked=()=>false){
   const ids=Array.isArray(id)?id:[id];
-  for(const el of root.querySelectorAll('[data-lab-draggable]')){
+  for(const el of root.querySelectorAll('[data-lab-draggable],[data-lab-selectable]')){
     const selected=ids.includes(el.dataset.componentNode);
     const locked=isLocked(el.dataset.componentNode);
-    el.dataset.labLocked=String(locked);el.style.cursor=locked?'not-allowed':'grab';
+    el.dataset.labLocked=String(locked);el.style.cursor=locked?'not-allowed':(el.hasAttribute('data-lab-draggable')||el.hasAttribute('data-lab-flow-draggable'))?'grab':'pointer';
     el.style.outline=selected?(locked?'2px dashed #64748b':'2px solid #2679c7'):'';
     el.style.outlineOffset=selected?'-1px':'';
     for(const child of el.children)if(child.dataset.labResizeHandle)child.style.display=selected&&!locked&&ids.length===1?'block':'none';
@@ -149,5 +301,5 @@ export function highlightCanvasSelection(root,id,isLocked=()=>false){
 }
 
 export function focusCanvasSelection(root,id){
-  for(const el of root.querySelectorAll('[data-lab-draggable]'))if(el.dataset.componentNode===id){el.focus({preventScroll:true});return;}
+  for(const el of root.querySelectorAll('[data-lab-draggable],[data-lab-selectable]'))if(el.dataset.componentNode===id){el.focus({preventScroll:true});return;}
 }
