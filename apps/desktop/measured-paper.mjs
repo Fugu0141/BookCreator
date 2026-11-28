@@ -47,7 +47,7 @@ export function describeMeasuredPaper(result,options,{previewSourceRange,paperTh
         if(!range){if(reuse){node.removeAttribute('tabindex');node.style.removeProperty('cursor');}return;}
         if(node.tabIndex!==0)node.tabIndex=0;
         if(node.style.cursor!=='pointer')node.style.cursor='pointer';
-        bindings.set(node,{documentId:slice.origin.documentId,range});
+        bindings.set(node,{documentId:slice.origin.documentId,range,blockRange:block?.origin?.range});
       };
       const block=sourceBlocks.get(slice.origin.documentId)?.get(slice.origin.blockKey);
       bind(el,previewSourceRange(block,slice));
