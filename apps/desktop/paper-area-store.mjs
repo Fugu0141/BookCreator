@@ -41,6 +41,15 @@ export function setPaperAreaValue(document,{documentId,persistentId,axis,value})
   if(fields.some(f=>Object.hasOwn(entry,f)))entries.push(entry);
   return validatePaperAreaDocument({schemaVersion:1,entries});
 }
+// Apply a two-axis GUI proposal atomically in memory before any disk write.
+export function setPaperAreaValues(document,{documentId,persistentId,values}){
+  if(!record(values)||!Object.keys(values).length||Object.keys(values).some(k=>!['width','height'].includes(k)))invalid();
+  let next=validatePaperAreaDocument(document);
+  for(const axis of ['width','height'])if(Object.hasOwn(values,axis)){
+    next=setPaperAreaValue(next,{documentId,persistentId,axis,value:values[axis]});
+  }
+  return next;
+}
 // Only a current, complete fragment inventory may be used. A missing or
 // duplicated persistent identity is never repaired using an offset or label.
 // Failure is atomic; keep the stored intent for explicit resolution.
