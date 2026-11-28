@@ -53,10 +53,12 @@ test('sparse base lease is tied to a successful retained host and invalidated on
   const initial=make();
   const timing={};
   assert.deepEqual(display.publishSparse(viewport,'a',initial,null,()=>['page'],timing),{retained:false,pages:['page']});
-  assert.deepEqual(Object.keys(timing),['assemblyMs','describeMs','commitMs','scrollRestoreMs','otherCommitMs','scrollRestoreSkipped']);
+  assert.deepEqual(Object.keys(timing),['assemblyMs','describeMs','commitMs','scrollRestoreMs','otherCommitMs','scrollRestoreSkipped','scrollRestoreReason','scrollBeforeTop','scrollBeforeLeft','previousPageCount','currentPageCount']);
   assert.ok(Math.abs(timing.commitMs-timing.scrollRestoreMs-timing.otherCommitMs)<0.001);
   assert.equal(timing.scrollRestoreSkipped,false);
-  for(const [key,value] of Object.entries(timing))if(key!=='scrollRestoreSkipped')assert.ok(Number.isFinite(value)&&value>=0);
+  assert.equal(timing.scrollRestoreReason,'full-host');
+  assert.equal(timing.previousPageCount,0);assert.equal(timing.currentPageCount,1);
+  for(const [key,value] of Object.entries(timing))if(!['scrollRestoreSkipped','scrollRestoreReason'].includes(key))assert.ok(Number.isFinite(value)&&value>=0);
   assert.equal(display.getSparseBase(viewport,'a'),null);
   assert.equal(display.retain(viewport,'a'),true);
   const lease=display.getSparseBase(viewport,'a');
@@ -129,9 +131,12 @@ test('exact retained publication at scroll origin skips setters but nonzero offs
   writes=0;
   let timing=reuse();
   assert.equal(writes,0);assert.equal(timing.scrollRestoreSkipped,true);assert.equal(timing.scrollRestoreMs,0);
+  assert.equal(timing.scrollRestoreReason,'origin');assert.equal(timing.previousPageCount,1);assert.equal(timing.currentPageCount,1);
+  assert.equal(timing.scrollBeforeTop,0);assert.equal(timing.scrollBeforeLeft,0);
   assert.equal(viewport.firstElementChild,first.changedElement);
   top=150;left=25;writes=0;
   timing=reuse();
   assert.equal(writes,2);assert.equal(timing.scrollRestoreSkipped,false);
+  assert.equal(timing.scrollRestoreReason,'nonzero-offset');assert.equal(timing.scrollBeforeTop,150);assert.equal(timing.scrollBeforeLeft,25);
   assert.equal(top,150);assert.equal(left,25);
 });

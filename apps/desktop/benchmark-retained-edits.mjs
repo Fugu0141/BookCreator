@@ -54,7 +54,9 @@ export async function benchmarkRetainedEdits({raw,click,until,ready,paperSignatu
           if(!['preparationMs','publicationMs'].every(key=>Number.isFinite(sample.work.hostTiming?.[key])&&sample.work.hostTiming[key]>=0))throw Error('Missing host timing diagnostics');
           const publicationStages=sample.work.hostTiming.publicationStages;
           if(!['assemblyMs','describeMs','commitMs','scrollRestoreMs','otherCommitMs'].every(key=>Number.isFinite(publicationStages?.[key])&&publicationStages[key]>=0)||Math.abs(publicationStages.commitMs-publicationStages.scrollRestoreMs-publicationStages.otherCommitMs)>0.001)throw Error('Missing or inconsistent sparse publication stage timing');
-          if(typeof publicationStages.scrollRestoreSkipped!=='boolean'||publicationStages.scrollRestoreSkipped&&(publicationStages.scrollRestoreMs!==0||sample.scrollTop!==0||sample.scrollLeft!==0))throw Error('Invalid retained scroll origin restoration');
+          const {scrollRestoreReason:reason,scrollBeforeTop:top,scrollBeforeLeft:left,previousPageCount:previous,currentPageCount:current,scrollRestoreSkipped:skipped}=publicationStages;
+          if(!['origin','full-host','page-count-changed','nonzero-offset'].includes(reason)||!Number.isFinite(top)||!Number.isFinite(left)||!Number.isSafeInteger(previous)||previous<0||!Number.isSafeInteger(current)||current!==sample.pages||typeof skipped!=='boolean'||skipped!==(reason==='origin'))throw Error('Invalid scroll restoration diagnostics');
+          if(reason==='origin'&&(previous!==current||top!==0||left!==0||publicationStages.scrollRestoreMs!==0||sample.scrollTop!==0||sample.scrollLeft!==0)||reason==='page-count-changed'&&previous===current||reason==='nonzero-offset'&&(previous!==current||top===0&&left===0))throw Error('Inconsistent retained scroll restoration decision');
           if(!Number.isSafeInteger(sample.work.pagination.sharedSnapshotFragments)||sample.work.pagination.sharedSnapshotFragments<1)throw Error('Retained benchmark did not share placement snapshots');
           if(!Number.isFinite(sample.work.hostTiming?.preparationYieldMs)||sample.work.hostTiming.preparationYieldMs<0)throw Error('Missing preparation task boundary timing');
           const cancelled=sample.work.cancelledJobs;
@@ -67,7 +69,7 @@ export async function benchmarkRetainedEdits({raw,click,until,ready,paperSignatu
         if(!retained&&(sample.work||sample.provisionalMs!==null))throw Error('Baseline used retained work');
         const {finalMs,provisionalMs,pages,work}=sample;
         const burst=item.id==='burst'?{dispatchOffsetsMs:sample.dispatchOffsetsMs,timerLagMs:sample.timerLagMs,dispatchWorkMs:sample.dispatchWorkMs,intermediatePublications:sample.intermediatePublications,totalMs:sample.totalMs}:undefined;
-        samples.push({case:item.id,pair,arm,finalMs,provisionalMs,pages,work,...(burst?{burst}:{})});
+        samples.push({case:item.id,pair,arm,finalMs,provisionalMs,pages,work,scrollAfter:{top:sample.scrollTop,left:sample.scrollLeft},...(burst?{burst}:{})});
         await edit(large.source);
         if(await paperSignature()!==original||await readFile(join(root,'manuscript',large.id+'.md'),'utf8')!==large.source)throw Error('Retained benchmark restore failed');
       }

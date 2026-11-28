@@ -79,10 +79,11 @@ export function createPaperDisplay(){
     const same=!!host&&target===key&&host.parentNode===viewport;
     const top=same?viewport.scrollTop:0,left=same?viewport.scrollLeft:0;
     const next=result.changedElement;
+    const previousPageCount=timing&&same?(host.shadowRoot?.children??host.shadowRoot?.childNodes)?.length??0:0;
     // Keep commitMs inclusive; scroll restoration is a measured subset.
     // A scroll setter may synchronously flush pending style/layout.
-    const report=(described,scrollRestoreMs,scrollRestoreSkipped=false)=>{
-      if(timing){const commitMs=performance.now()-described;Object.assign(timing,{assemblyMs:assembled-started,describeMs:described-assembled,commitMs,scrollRestoreMs,otherCommitMs:Math.max(0,commitMs-scrollRestoreMs),scrollRestoreSkipped});}
+    const report=(described,scrollRestoreMs,scrollRestoreReason)=>{
+      if(timing){const commitMs=performance.now()-described;Object.assign(timing,{assemblyMs:assembled-started,describeMs:described-assembled,commitMs,scrollRestoreMs,otherCommitMs:Math.max(0,commitMs-scrollRestoreMs),scrollRestoreSkipped:scrollRestoreReason==='origin',scrollRestoreReason,scrollBeforeTop:top,scrollBeforeLeft:left,previousPageCount,currentPageCount:assembly.pages.length});}
     };
     try{
       if(!assembly.reused){
@@ -92,7 +93,7 @@ export function createPaperDisplay(){
         const retained=publish(viewport,key,next,{scrollTiming});
         host.dataset.sparsePaper='true';host.dataset.generatedPages=String(assembly.pages.length);
         sparseBase=Object.freeze({host,snapshot:result.pageDelta.snapshot});
-        report(described,scrollTiming?.restoreMs??0);
+        report(described,scrollTiming?.restoreMs??0,'full-host');
         return {retained,pages};
       }
       const root=host.shadowRoot;
@@ -115,11 +116,11 @@ export function createPaperDisplay(){
       // assign zero again. Other positions and page count changes retain
       // the explicit restoration contract. Never read scroll offsets here.
       const skipScrollRestore=top===0&&left===0&&old.length===assembly.pages.length;
-      if(skipScrollRestore)report(described,0,true);
+      if(skipScrollRestore)report(described,0,'origin');
       else{
         const beforeScroll=timing?performance.now():0;
         viewport.scrollTop=top;viewport.scrollLeft=left;
-        report(described,timing?performance.now()-beforeScroll:0);
+        report(described,timing?performance.now()-beforeScroll:0,old.length!==assembly.pages.length?'page-count-changed':'nonzero-offset');
       }
       return {retained:true,pages};
     }catch{
