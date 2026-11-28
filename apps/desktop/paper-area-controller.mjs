@@ -55,6 +55,11 @@ export function createPaperAreaController(initial,currentPlan){
       const axis=handle.gesture.axis,key=axis==='width'?'minWidthPercent':'minHeightPercent';
       return draft.apply({documentId:selected.target.documentId,persistentId:selected.persistentId,axis,value:next.placement.sizeConstraints?.[key]??0},handle.lease);
     },
+    set(selection,axis,value,lease){
+      const selected=resolve(selection);
+      if(!selected||selected.snapshot.version!==lease||selected.placement.mode==='fixed'||selected.placement.fixed)return null;
+      return draft.apply({documentId:selected.target.documentId,persistentId:selected.persistentId,axis,value},lease);
+    },
     clear(selection,axis,lease){
       const selected=resolve(selection);
       if(!selected||selected.snapshot.version!==lease||selected.placement.mode==='fixed'||selected.placement.fixed)return null;
