@@ -7,7 +7,7 @@ export function reserveLivePreview({store,snapshot,delay,generation,policy,retai
   const current=()=>store.getPreviewInput()===snapshot&&generation.current===job;
   const scope=desiredLivePreviewScope({...policy,hasFile:!!snapshot.file});
   if(scope&&current()){
-    const wait=livePreviewWaitMs({mode:policy.mode,scope,retained,warmRetained:retained&&warmRetained(scope)});
+    const wait=livePreviewWaitMs({mode:policy.mode,scope,retained,warmRetained:retained&&warmRetained(scope,snapshot.file)});
     delay.request(()=>{if(current()&&!isBlocked())onRender(scope==='book',snapshot);},wait);
   }
   return ()=>delay.cancel();

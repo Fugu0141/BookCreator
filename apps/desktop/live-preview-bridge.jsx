@@ -8,7 +8,7 @@ export function LivePreviewBridge({store,delay,generation,enabled,mode,paperVisi
   useEffect(()=>reserveLivePreview({
     store,snapshot,delay,generation,
     policy:{enabled,mode,paperVisible,hasBook:!!book,hasPage:!!page,blocked,measuring,phase,scope,override},
-    retained,warmRetained:scope=>!pageCacheEnabled&&!reusePaperPages&&warmRetained(scope),
+    retained,warmRetained:(scope,targetFile)=>!pageCacheEnabled&&!reusePaperPages&&warmRetained(scope,targetFile),
     isBlocked,onRender
   }),[store,snapshot,delay,generation,enabled,mode,paperVisible,book,page,order,typography,theme,fonts,blocked,measuring,phase,scope,override,retained,pageCacheEnabled,reusePaperPages]);
   return null;
