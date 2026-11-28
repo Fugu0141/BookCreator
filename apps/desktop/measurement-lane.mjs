@@ -7,14 +7,16 @@ export function createMeasurementLane({now=()=>performance.now(),report=()=>{}}=
   function finish(entry,outcome,started=now()){
     report({stage:'measurement',category:entry.category,outcome,waitMs:started-entry.queuedAt,runMs:outcome==='cancelled'&&!entry.started?0:now()-started});
   }
-  function cancel(entry){finish(entry,'cancelled');entry.resolve(undefined);}
+  function detach(entry){entry.signal?.removeEventListener('abort',entry.abort);}
+  function cancel(entry){detach(entry);finish(entry,'cancelled');entry.resolve(undefined);}
   function drain(){
     if(running)return;
     while(queue.length){
       const index=queue.findIndex(e=>e.priority==='foreground');
       const entry=queue.splice(index<0?0:index,1)[0];
       if(!entry.current()){cancel(entry);continue;}
-      running=true;
+      // Once started, keep physical exclusivity until the callback settles.
+      detach(entry);running=true;
       const started=now();entry.started=true;
       void (async()=>{
         try{
@@ -32,10 +34,21 @@ export function createMeasurementLane({now=()=>performance.now(),report=()=>{}}=
     }
   }
   return {
-    run(run,{current=()=>true,priority='foreground',category='other'}={}){
+    run(run,{current=()=>true,priority='foreground',category='other',signal}={}){
       const queuedAt=now();
       for(let i=queue.length-1;i>=0;i--)if(!queue[i].current())cancel(queue.splice(i,1)[0]);
-      return new Promise((resolve,reject)=>{queue.push({run,current,priority,category,queuedAt,resolve,reject});drain();});
+      return new Promise((resolve,reject)=>{
+        const entry={run,current:()=>!signal?.aborted&&current(),priority,category,queuedAt,resolve,reject,signal};
+        entry.abort=()=>{
+          const index=queue.indexOf(entry);
+          if(index>=0){queue.splice(index,1);cancel(entry);drain();}
+        };
+        if(!entry.current()){cancel(entry);return;}
+        queue.push(entry);
+        signal?.addEventListener('abort',entry.abort,{once:true});
+        if(signal?.aborted){entry.abort();return;}
+        drain();
+      });
     }
   };
 }

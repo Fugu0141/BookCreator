@@ -741,7 +741,7 @@ function App(){
               if(!current())throw Error('Preview superseded');
             }
           }:undefined);
-        },{current,category:scope});
+        },{current,category:scope,signal});
       }catch(e){if(!current())return;if(!retainedMode)throw e;retainedError=true;display.forgetSparseBase();}
       if((!result&&!retainedError)||!current())return;
       phase='publish';let presentationStarted=performance.now();
@@ -757,7 +757,7 @@ function App(){
       let sparseFallback=false;
       if(sparse&&!publication){
         phase='fallback';sparseFallback=true;display.forgetSparseBase();
-        result=await measurementLane.run(()=>createPlainTextPagePreview(document,previewOptions),{current,category:scope});
+        result=await measurementLane.run(()=>createPlainTextPagePreview(document,previewOptions),{current,category:scope,signal});
         if(!result||!current()||!preview.current)return;
         presentationStarted=performance.now();
       }
