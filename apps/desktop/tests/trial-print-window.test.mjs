@@ -58,3 +58,20 @@ test('IL print must carry a ticket and isolated renderer verification before Chr
   assert.ok(verified.calls.find(c=>c[0]==='render')[1].includes('layoutSignature'));
   assert.equal(verified.calls.some(c=>c[0]==='print'),true);
 });
+
+
+import {assertSavedTrialLayout} from '../trial-pdf-export.mjs';
+test('IL trial export must bind exactly the persisted intent revision, including an empty first snapshot',()=>{
+  const base={revision:'r',fingerprint:'f',sections:[{id:'ch',blocks:[{origin:{documentId:'ch',blockKey:'a',persistentId:'q'}}]}]};
+  const area={revision:'a'.repeat(64),document:{schemaVersion:1,entries:[{documentId:'ch',persistentId:'q',bookFixed:{page:0,x:100,y:200}}]}};
+  const ticket={schemaVersion:1,publicationReady:false,revision:'r',fingerprint:'f',planSignature:'plan',layoutSignature:'layout'};
+  const opts={...base,intelligentLayout:{intents:[{documentId:'ch',blockKey:'a',placement:{mode:'fixed',fixed:{page:0,x:100,y:200}}}]}};
+  assert.doesNotThrow(()=>assertSavedTrialLayout(opts,area,area.revision,ticket));
+  assert.throws(()=>assertSavedTrialLayout(opts,area,'b'.repeat(64),ticket),/変更/);
+  assert.throws(()=>assertSavedTrialLayout({...opts,intelligentLayout:{intents:[]}},area,area.revision,ticket),/一致/);
+  assert.throws(()=>assertSavedTrialLayout(opts,area,area.revision,{...ticket,fingerprint:'old'}),/不正/);
+  assert.throws(()=>assertSavedTrialLayout(opts,area,area.revision,undefined),/一致/);
+  assert.throws(()=>assertSavedTrialLayout(base,area,area.revision,undefined),/一致/);
+  assert.doesNotThrow(()=>assertSavedTrialLayout(base,undefined,undefined,undefined));
+  assert.doesNotThrow(()=>assertSavedTrialLayout({...base,intelligentLayout:{intents:[]}}, {revision:null,document:{schemaVersion:1,entries:[]}},null,ticket));
+});
