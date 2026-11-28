@@ -11,9 +11,9 @@ function AreaSlider({id,label,value,min,max,disabled,onCommit,format}){
     <label htmlFor={id}>{label}<output htmlFor={id}>{format(draft??value)}</output></label>
     <input id={id} type="range" min={min} max={max} step="1" value={draft??value} disabled={disabled}
       aria-valuetext={format(draft??value)}
-      onPointerDown={e=>{if(e.button!==0||disabled)return;gesture.current={value};try{e.currentTarget.setPointerCapture(e.pointerId);}catch{}}}
+      onPointerDown={e=>{if(e.button!==0||disabled)return;gesture.current={value,id:e.pointerId};try{e.currentTarget.setPointerCapture(e.pointerId);}catch{gesture.current=null;}}}
       onChange={e=>{const v=Number(e.target.value);if(gesture.current){gesture.current.value=v;setDraft(v);}else onCommit(v);}}
-      onPointerUp={()=>finish(true)} onLostPointerCapture={()=>finish(true)} onPointerCancel={()=>finish(false)}
+      onPointerUp={e=>{if(gesture.current?.id===e.pointerId)finish(true);}} onLostPointerCapture={e=>{if(gesture.current?.id===e.pointerId)finish(false);}} onPointerCancel={e=>{if(gesture.current?.id===e.pointerId)finish(false);}}
       onKeyDown={e=>{if(e.key==='Escape'&&gesture.current){e.preventDefault();e.stopPropagation();finish(false);}}}/>
   </div>;
 }
