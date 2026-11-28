@@ -31,8 +31,22 @@ test('cancel, stale plan or stale draft cannot commit a drag',()=>{
   assert.equal(c.clear(selection,'height',0),null);
 });
 test('no persistent identity, split/duplicate identity, fixed or missing plan is not editable',()=>{
-  for(const latest of [null,plan([fragment('10','')]),plan([fragment(),fragment()]),plan([fragment(),fragment('20')]),plan([fragment('10','q-1',{mode:'fixed'})])]){
+  for(const latest of [null,plan([fragment('10','')]),plan([fragment(),fragment()]),plan([fragment(),fragment('20')]),plan([fragment('10','q-1',{fixed:true})])]){
     const c=createPaperAreaController(undefined,()=>latest);
     assert.equal(c.begin(selection,geometry),null);
   }
+});
+
+test('area proposals preserve other explicit IL inputs and reject dual ownership',()=>{
+  const base={documentId:'ch',blockKey:'10',placement:{mode:'preferred',preferred:{page:0,x:0,y:0},spaceBefore:1000,sizeConstraints:{maxHeight:200000}}};
+  let latest={...plan(),baseIntents:[base]};
+  const c=createPaperAreaController(undefined,()=>latest);
+  assert.ok(c.finish(c.begin(selection,geometry),500));
+  assert.deepEqual(c.bind().intents,[{...base,placement:{...base.placement,sizeConstraints:{maxHeight:200000,minHeightPercent:50}}}]);
+  latest={...plan(),baseIntents:[{...base,placement:{sizeConstraints:{minHeightPercent:25}}}]};
+  assert.equal(c.bind().status,'conflict');
+  latest={...plan(),baseIntents:[base,base]};
+  assert.equal(c.bind().status,'conflict');assert.equal(c.begin(selection,geometry),null);
+  latest={...plan(),baseIntents:[{...base,placement:{mode:'fixed',fixed:{page:0,x:0,y:0}}}]};
+  assert.equal(c.begin(selection,geometry),null);
 });
