@@ -695,3 +695,8 @@ body{font-family:BCFont_NotoSansJP,system-ui,sans-serif}.font-control,.typograph
 
 .paper-selection-frame{position:fixed;z-index:20;pointer-events:none;box-sizing:border-box;border:2px solid #3478b7;background:#3478b70a;}
 .paper-selection-frame[hidden]{display:none;}
+
+.paper-block-drag{position:absolute;left:0;top:0;pointer-events:auto;touch-action:none;cursor:grab;min-width:28px;min-height:28px;padding:2px 6px;border:1px solid #3478b7;border-radius:4px;background:white;color:#1e568c;font-weight:bold;}
+.paper-block-drag:active{cursor:grabbing;}
+.paper-drop-guide{position:fixed;z-index:19;pointer-events:none;box-sizing:border-box;border:2px dashed #3478b7;background:#3478b71a;}
+.paper-drop-guide[hidden]{display:none;}
