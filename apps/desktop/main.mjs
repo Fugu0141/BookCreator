@@ -196,7 +196,7 @@ async function run(){
     return exportSavedTrialPdf({workspace:current,request,BrowserWindow,isCurrent:()=>workspace===current&&settingsToken===token&&!closing&&!win.isDestroyed(),
       chooseDestination:async()=>{
         // Only isolated CLI test profiles bypass the native save dialog.
-        if(SMOKE)return smokeTrialPdfDialogs++===0?null:join(smokeRoot,'smoke-trial.pdf');
+        if(SMOKE){if(request?.options?.intelligentLayout!==undefined)return join(smokeRoot,'smoke-il-trial.pdf');return smokeTrialPdfDialogs++===0?null:join(smokeRoot,'smoke-trial.pdf');}
         const result=await dialog.showSaveDialog(win,{title:'試しPDFを書き出す（新規保存）',defaultPath:'BookCreator-trial.pdf',filters:[{name:'PDF',extensions:['pdf']}]});
         return result.canceled?null:result.filePath;
       }});
@@ -718,7 +718,7 @@ function workspaceSmokeExec(){
 }
 async function packageSmoke(){
   const exec=workspaceSmokeExec();
-  const until=async js=>{for(let i=0;i<150;i++){if(await exec(js))return;await new Promise(r=>setTimeout(r,100));}throw Error('Package smoke timeout: '+js+'; '+await exec("document.querySelector('#status')?.textContent"));};
+  const until=async js=>{const began=performance.now();for(let i=0;i<150;i++){if(await exec(js)){if(performance.now()-began>2000)console.log('PACKAGE slow wait '+JSON.stringify({ms:Math.round(performance.now()-began),condition:js.slice(0,240)}));return;}if(i===50)console.log('PACKAGE waiting '+JSON.stringify({condition:js.slice(0,240),status:await exec("document.querySelector('#status')?.textContent")}));await new Promise(r=>setTimeout(r,100));}throw Error('Package smoke timeout: '+js+'; '+await exec("document.querySelector('#status')?.textContent"));};
   await until("!!document.querySelector('#open')?.getClientRects().length&&!document.querySelector('#open').disabled");
   if(!await exec("document.querySelector('.workspace-shell').dataset.workspaceMode==='home'&&!document.querySelector('#source').getClientRects().length&&!document.querySelector('#body-font').getClientRects().length"))throw Error('Initial home exposes unrelated controls');
   if(!await exec("typeof require==='undefined'&&typeof process==='undefined'&&!!window.bookcreator"))throw Error('Renderer isolation failed');
@@ -2337,6 +2337,48 @@ async function trialPdfJourneySmoke(){
   if(!await raw("document.querySelector('#publication-output').dataset.state==='unavailable'"))throw Error('Formal export gate changed');
   console.log('PASS PRACTICAL-05d GUI -> isolated Electron print -> actual PDF -> safe save '+JSON.stringify({pageCount,bytes:bytes.length,paper}));
 }
+// Exercise the IL ticket through the actual hidden Electron print window,
+// not a mocked renderer. The fixture belongs to the isolated smoke project.
+async function intelligentTrialPdfJourneySmoke(root){
+  const raw=js=>win.webContents.executeJavaScript(js);
+  const until=async(label,js)=>{for(let i=0;i<300;i++){if(await raw(js))return;await new Promise(r=>setTimeout(r,100));}throw Error('IL trial PDF journey: '+label+'; '+await raw("document.querySelector('#status')?.textContent"));};
+  const click=async selector=>{const q=JSON.stringify(selector);await until('reachable '+selector,"(()=>{const e=document.querySelector("+q+");return !!e?.getClientRects().length&&!e.disabled;})()");await raw("document.querySelector("+q+").click()");};
+  const areaPath=join(root,'layouts','paper-area.json'),destination=join(smokeRoot,'smoke-il-trial.pdf');
+  const stored=percent=>JSON.stringify({schemaVersion:1,entries:[{documentId:'chapter-02',persistentId:'example-01',minHeightPercent:percent}]});
+  await mkdir(join(root,'layouts'),{recursive:true});
+  await writeFile(areaPath,stored(35),{flag:'wx'});
+  const whole="document.querySelector('#workspace-layout-state').dataset.phase==='ready'&&document.querySelector('#workspace-layout-state').dataset.scope==='book'&&document.querySelector('#preview > div')?.dataset.paperFreshness==='current'";
+  const ready="document.querySelector('#publication-export-trial-pdf')&&!document.querySelector('#publication-export-trial-pdf').disabled";
+  const geometry=()=>raw("(()=>{const root=document.querySelector('#preview > div').shadowRoot,pages=[...root.querySelectorAll('[data-page]')];const block=[...root.querySelectorAll('[data-block]')].find(n=>n.dataset.document==='chapter-02'&&n.textContent.includes('を解きなさい。'));if(!block)throw Error('Missing following exercise');return {page:pages.indexOf(block.closest('[data-page]')),y:block.offsetTop};})()");
+  await click('#mode-layout');
+  await until('normal whole paper',whole);
+  const normal=await geometry();
+  await click('#paper-area-apply-saved');
+  await click('#preview-book');
+  await until('stored IL paper',whole);
+  const placed=await geometry();
+  if(placed.page<normal.page||placed.page===normal.page&&placed.y<=normal.y+1)throw Error('IL occupation did not move the following exercise: '+JSON.stringify({normal,placed}));
+  await click('#layout-to-publication');
+  await until('IL export enabled',ready);
+  // External change after approval must not be silently accepted.
+  await writeFile(areaPath,stored(45));
+  await click('#publication-export-trial-pdf');
+  await until('stale area refused',ready+"&&document.querySelector('#status').textContent.includes('保存済み配置が変更')");
+  await readFile(destination).then(()=>{throw Error('Stale IL PDF was saved');},e=>{if(e.code!=='ENOENT')throw e;});
+  await click('#mode-layout');await click('#preview-book');
+  await until('recomposed changed area',whole);
+  const pageCount=await raw("document.querySelector('#preview > div').shadowRoot.querySelectorAll('[data-page]').length");
+  const paper=await raw("(()=>{const p=document.querySelector('#preview > div').shadowRoot.querySelector('[data-page]');return {width:Math.round(parseFloat(p.style.width)*25400/96),height:Math.round(parseFloat(p.style.height)*25400/96)};})()");
+  await click('#layout-to-publication');await until('fresh export enabled',ready);
+  await click('#publication-export-trial-pdf');
+  await until('IL PDF saved',ready+"&&document.querySelector('#status').textContent.includes('試しPDFを保存しました')");
+  const bytes=await readFile(destination),{inspectTrialPdfStructure}=await import('./trial-pdf-inspection.mjs');
+  const report=await inspectTrialPdfStructure(bytes,{pageCount,paper,expectedNonblank:Array(pageCount).fill(true)});
+  if(!report.structureVerified||report.publicationReady!==false||await readFile(areaPath,'utf8')!==stored(45))throw Error('IL trial PDF or persisted intent mismatch');
+  if(!await raw("document.querySelector('#publication-output').dataset.state==='unavailable'"))throw Error('IL draft unexpectedly authorized formal publication');
+  console.log('PASS PAPER-GUI-30 stored IL placement -> stale refusal -> real PDF '+JSON.stringify({pageCount,bytes:bytes.length,normal,placed}));
+  await click('#mode-layout');await click('#paper-area-apply-saved');await rm(areaPath);
+}
 // Practical acceptance: create a real starter through the visible UI, edit a
 // chapter, save, compose the whole book and reopen without touching other files.
 async function textbookJourneySmoke(){
@@ -2389,6 +2431,7 @@ async function textbookJourneySmoke(){
   await click('#mode-layout');await click('#preview-book');
   await until('recomposed textbook',whole+"&&"+paper);
   await trialPdfJourneySmoke();
+  await intelligentTrialPdfJourneySmoke(root);
   if(await readFile(chapter,'utf8')!==expected||!(await readFile(join(root,'book.yaml'))).equals(manifest))throw Error('Textbook journey: saved source or manifest mismatch');
   for(let i=0;i<otherPaths.length;i++)if(!(await readFile(otherPaths[i])).equals(other[i]))throw Error('Textbook journey: unrelated chapter changed');
   console.log('PASS PRACTICAL-01 textbook UI creation, structured edit, save, whole-book paper and reopen');
