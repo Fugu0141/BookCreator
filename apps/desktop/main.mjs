@@ -2392,9 +2392,18 @@ async function smoke(){
   const flowOrder=await exec("[...document.querySelectorAll('[data-lab-node]')].map(e=>e.dataset.labNode)");
   if(flowOrder[0]!=='bar'||flowOrder[1]!=='content')throw Error('Unexpected initial flow fixture');
   await exec("(()=>{const el=document.querySelector('#lab-preview > div').shadowRoot.querySelector('[data-component-node=bar]');if(!el.hasAttribute('data-lab-flow-draggable'))throw Error('Flow node is not movable');el.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}));})()");
-  await until("!document.querySelector('#lab-apply').disabled&&[...document.querySelectorAll('[data-lab-node]')].map(e=>e.dataset.labNode).slice(0,2).join(',')==='content,bar'");
+  try{
+    await until("[...document.querySelectorAll('[data-lab-node]')].map(e=>e.dataset.labNode).slice(0,2).join(',')==='content,bar'");
+    await until("!document.querySelector('#lab-apply').disabled");
+  }catch(e){throw Error('Flow reorder: '+await exec("JSON.stringify({order:[...document.querySelectorAll('[data-lab-node]')].map(e=>e.dataset.labNode),status:document.querySelector('#lab-status').textContent,phase:document.querySelector('#lab-preview').dataset.previewPhase,direction:document.querySelector('#lab-direction').value})"),{cause:e});}
   await exec("document.querySelector('#lab-undo').click()");
   await until("!document.querySelector('#lab-apply').disabled&&JSON.stringify([...document.querySelectorAll('[data-lab-node]')].map(e=>e.dataset.labNode))==="+JSON.stringify(JSON.stringify(flowOrder)));
+
+  const spacingStart=await exec("Number(document.querySelector('#lab-visual-padding').value)");
+  await exec("document.querySelector('#lab-visual-padding').dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true,cancelable:true}))");
+  await until("Number(document.querySelector('#lab-visual-padding').value)==="+(spacingStart+500)+"&&Number(document.querySelector('#lab-padding').value)==="+((spacingStart+500)/1000)+"&&!document.querySelector('#lab-apply').disabled");
+  await exec("document.querySelector('#lab-undo').click()");
+  await until("Number(document.querySelector('#lab-visual-padding').value)==="+spacingStart+"&&Number(document.querySelector('#lab-padding').value)==="+(spacingStart/1000)+"&&!document.querySelector('#lab-apply').disabled");
 
   await exec("document.querySelector('#lab-add-menu').click()");
   await until("!document.querySelector('#lab-add-options').hidden&&!!document.querySelector('#lab-add-label').getClientRects().length");
