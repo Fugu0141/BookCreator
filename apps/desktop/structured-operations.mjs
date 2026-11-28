@@ -171,7 +171,7 @@ export function resolveBookPaperMove(source,range,{scan,parseInline}){
   const selected=resolvePaperBlock(model.rows,range);
   if(!selected)return null;
   const {row,index}=selected;
-  if(range.start!==row.range.start||range.end>row.range.end)return null;
+  if(range.start!==row.range.start||range.end>row.range.end||! /^(?:\r\n|\n)?$/.test(source.slice(range.end,row.range.end)))return null;
   const bounds=paperMoveBounds(source,model.rows,index);
   if(!bounds)return null;
   return {index,bounds,up:index>bounds.min,down:index<bounds.max};
