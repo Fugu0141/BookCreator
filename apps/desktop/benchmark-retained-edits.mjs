@@ -67,7 +67,7 @@ export async function benchmarkRetainedEdits({raw,click,until,ready,paperSignatu
           if(!Number.isSafeInteger(sample.work.pagination.sharedSnapshotFragments)||sample.work.pagination.sharedSnapshotFragments<1)throw Error('Retained benchmark did not share placement snapshots');
           if(!Number.isFinite(sample.work.hostTiming?.preparationYieldMs)||sample.work.hostTiming.preparationYieldMs<0)throw Error('Missing preparation task boundary timing');
           const cancelled=sample.work.cancelledJobs;
-          if(!cancelled||!Number.isSafeInteger(cancelled.dropped)||cancelled.dropped<0||!Array.isArray(cancelled.jobs)||cancelled.jobs.length>8||cancelled.jobs.some(j=>!['read','prepare','prepare-yield','lane','engine','publish','fallback'].includes(j.phase)||!Number.isFinite(j.elapsedMs)||j.elapsedMs<0||j.preparationMs!==null&&(!Number.isFinite(j.preparationMs)||j.preparationMs<0)))throw Error('Missing cancelled preview diagnostics');
+          if(!cancelled||!Number.isSafeInteger(cancelled.dropped)||cancelled.dropped<0||!Array.isArray(cancelled.jobs)||cancelled.jobs.length>8||cancelled.jobs.some(j=>!['read','prepare','prepare-worker','prepare-yield','lane','engine','publish','fallback'].includes(j.phase)||!Number.isFinite(j.elapsedMs)||j.elapsedMs<0||j.preparationMs!==null&&(!Number.isFinite(j.preparationMs)||j.preparationMs<0)))throw Error('Missing cancelled preview diagnostics');
           const stages=sample.work?.checkpoint?.byStage;
           if(!stages||!['paginate-validate','paginate-key','paginate-place','paginate-match','paginate-reuse','paginate-snapshot'].every(stage=>Number.isSafeInteger(stages[stage]?.count)&&stages[stage].count>0&&Number.isFinite(stages[stage].maxGapMs)&&stages[stage].maxGapMs>=0))throw Error('Missing pagination checkpoint diagnostics');
           if(!stages||!['measure-graphemes','measure-hard-line','measure-frozen-line','measure-variable-graphemes','measure-variable-line'].every(stage=>Number.isSafeInteger(stages[stage]?.count)&&stages[stage].count>=0&&Number.isFinite(stages[stage].maxGapMs)&&stages[stage].maxGapMs>=0))throw Error('Missing measurement checkpoint diagnostics');
@@ -201,7 +201,7 @@ export async function benchmarkRetainedEdits({raw,click,until,ready,paperSignatu
     if(!timing||timing.preparationMode!==(worker?'worker':'main')||
       !Number.isFinite(timing.preparationMs)||timing.preparationMs<0||
       (worker?(!Number.isFinite(timing.workerComputeMs)||timing.workerComputeMs<0):timing.workerComputeMs!==null))throw Error('Worker comparison preparation path or timing invalid: '+JSON.stringify(timing));
-    return {hostMs:timing.preparationMs,computeMs:timing.workerComputeMs};
+    return preparationTiming(timing,worker);
   }
   for(const {pair,order} of cacheComparisonPlan()){
     for(const arm of order){
@@ -216,14 +216,14 @@ export async function benchmarkRetainedEdits({raw,click,until,ready,paperSignatu
       const preparation=checkPreparation(s.work,worker);
       if(await paperSignature()!==expectedBurstSignature||!s.focus||!s.clean||!s.identity.sameHost||s.identity.reusedFromInitial!==s.pages-1||
         s.work.directSinglePage||!Number.isSafeInteger(s.work.inline?.hits)||s.work.inline.hits<1)throw Error('Worker comparison paper parity or retained reuse failed');
-      workerRows.push({pair,arm,finalMs:s.finalMs,provisionalMs:s.provisionalMs,identity:s.identity,preparation,prime,
+      workerRows.push({pair,arm,finalMs:s.finalMs,provisionalMs:s.provisionalMs,identity:s.identity,preparation,prime,cancelled:workerCancelledTiming(s.work.cancelledJobs),
         burst:{dispatchOffsetsMs:s.dispatchOffsetsMs,timerLagMs:s.timerLagMs,dispatchWorkMs:s.dispatchWorkMs,intermediatePublications:s.intermediatePublications,totalMs:s.totalMs}});
       await edit(large.source);
       if(await paperSignature()!==original||await readFile(join(root,'manuscript',large.id+'.md'),'utf8')!==large.source)throw Error('Worker comparison restore failed');
     }
   }
   await setWorker(false);await setRetained(false);
-  const workerComparison=summarizeBurstInputSamples(workerRows);
+  const workerComparison={...summarizeBurstInputSamples(workerRows),preparation:summarizePreparationTiming(workerRows)};
   console.log('BENCH preparation worker '+JSON.stringify({version:1,arms:{uncached:'main',warm:'worker'},comparison:workerComparison,samples:workerRows}));
   const summaries=cases.map(({id})=>summarizeRetainedEditSamples(id,samples.filter(s=>s.case===id)));
   const burst=summarizeBurstInputSamples(samples.filter(s=>s.case==='burst'));
@@ -267,4 +267,31 @@ export function summarizeBurstInputSamples(rows){
     return [arm,{dispatchWorkP95Ms:dispatch[Math.ceil(dispatch.length*.95)-1],dispatchWorkMaxMs:dispatch.at(-1),timerLagP95Ms:lag[Math.ceil(lag.length*.95)-1],timerLagMaxMs:lag.at(-1),intermediatePublications:selected.reduce((n,r)=>n+r.burst.intermediatePublications,0),scheduledInputs:lag.length}];
   }));
   return {intervalMs:35,inputsPerSample:5,lastInputToFinal:compare(r=>r.finalMs),firstInputTaskToFinal:compare(r=>r.burst.totalMs),arms};
+}
+
+ // Request duration includes payload projection, structured clone, queueing,
+ // computation and delivery. The difference is not pure transport CPU time.
+export function preparationTiming(timing,worker){
+  const valid=v=>Number.isFinite(v)&&v>=0;
+  const {preparationMs:hostMs,workerRequestMs:requestMs,workerComputeMs:computeMs}=timing;
+  if(!valid(hostMs)||(worker?(!valid(requestMs)||!valid(computeMs)):requestMs!==null||computeMs!==null))throw Error('Invalid preparation timing');
+  return {hostMs,requestMs,computeMs,nonComputeMs:worker?Math.max(0,requestMs-computeMs):null};
+}
+export function workerCancelledTiming(log){
+  const valid=v=>v===null||Number.isFinite(v)&&v>=0;
+  if(!log||!Number.isSafeInteger(log.dropped)||log.dropped<0||!Array.isArray(log.jobs)||log.jobs.length>8)throw Error('Invalid cancelled preparation log');
+  for(const j of log.jobs)if(!valid(j.workerRequestMs)||!valid(j.workerComputeMs)||j.workerRequestMs===null&&j.workerComputeMs!==null)throw Error('Invalid cancelled preparation timing');
+  return {dropped:log.dropped,observed:log.jobs.length,
+    workerRequests:log.jobs.filter(j=>j.workerRequestMs!==null).length,
+    workerRequestMs:log.jobs.reduce((n,j)=>n+(j.workerRequestMs??0),0)};
+}
+export function summarizePreparationTiming(rows){
+  const median=values=>{const v=[...values].sort((a,b)=>a-b);return v.length%2?v[(v.length-1)/2]:(v[v.length/2-1]+v[v.length/2])/2;};
+  return Object.fromEntries(['uncached','warm'].map(arm=>{
+    const selected=rows.filter(r=>r.arm===arm),worker=arm==='warm';
+    if(selected.length!==4||new Set(selected.map(r=>r.pair)).size!==4)throw Error('Incomplete preparation timing pairs');
+    const summarize=key=>({hostMs:median(selected.map(r=>r[key].hostMs)),requestMs:worker?median(selected.map(r=>r[key].requestMs)):null,computeMs:worker?median(selected.map(r=>r[key].computeMs)):null,nonComputeMs:worker?median(selected.map(r=>r[key].nonComputeMs)):null});
+    return [arm,{prime:summarize('prime'),edit:summarize('preparation'),
+      cancelled:selected.reduce((n,r)=>({dropped:n.dropped+r.cancelled.dropped,observed:n.observed+r.cancelled.observed,workerRequests:n.workerRequests+r.cancelled.workerRequests,workerRequestMs:n.workerRequestMs+r.cancelled.workerRequestMs}),{dropped:0,observed:0,workerRequests:0,workerRequestMs:0})}];
+  }));
 }
