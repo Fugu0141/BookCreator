@@ -687,3 +687,6 @@ body{font-family:BCFont_NotoSansJP,system-ui,sans-serif}.font-control,.typograph
 .lab-occupancy-presets button{background:#fff;color:#334155;border:1px solid #ccd7e1;padding:4px 7px;font-size:12px;border-radius:4px}
 .lab-occupancy-presets button[aria-pressed=true]{background:#e0eefb;color:#235b91;border-color:#b8d5ef}
 .lab-occupancy-fields small{font-size:11px;color:#526579;margin-top:4px}
+
+.lab-occupancy-axis label{display:flex;justify-content:space-between;gap:6px;font-size:12px;margin:0}
+.lab-occupancy-axis+.lab-occupancy-axis{margin-top:7px}
