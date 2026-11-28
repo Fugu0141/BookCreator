@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {prepareSavedAreaPreview,verifySavedAreaPreview,measureInlineAreaProposal} from '../paper-area-preview.mjs';
+import {prepareSavedAreaPreview,verifySavedAreaPreview,measureInlineAreaProposal,resolvePaperAreaSelection} from '../paper-area-preview.mjs';
 const origin=(documentId,blockKey,persistentId)=>({documentId,blockKey,persistentId});
 const options={revision:'r1',fingerprint:'f1',width:1000,height:2000,sections:[{id:'a',blocks:[{origin:origin('a','40','q')}]},{id:'b',blocks:[{origin:origin('b','70','q')}]}]};
 const snapshot={revision:'saved',document:{schemaVersion:1,entries:[{documentId:'a',persistentId:'q',minHeightPercent:30},{documentId:'b',persistentId:'q',minWidthPercent:50}]}};
@@ -74,4 +74,27 @@ test('leading whitespace is verified against preceding occupied footprint or pag
   assert.throws(()=>verifySavedAreaPreview(p,result(0,599)),/前方余白/);
   assert.doesNotThrow(()=>verifySavedAreaPreview(p,result(1,200)));
   assert.throws(()=>verifySavedAreaPreview(p,result(1,199)),/前方余白/);
+});
+
+test('whole-book draft preserves all other manuscript intents including equal local IDs',async()=>{
+  const context={scope:'book',target:{documentId:'b'},persistentId:'q',areaPrepared:prepareSavedAreaPreview(options,snapshot,{whole:true}),areaSnapshot:snapshot,options};
+  const a={origin:origin('a','40','q'),placement:{rect:{width:1000,height:100},occupiedRect:{width:1000,height:600}}};
+  const b={origin:origin('b','70','q'),placement:{rect:{width:750,height:100}}};
+  const result={plan:{completeness:'full',diagnostics:[]},intelligentLayout:{status:'placed',revision:'r1',fingerprint:'f1',fragments:[a,b]}};
+  assert.equal(await measureInlineAreaProposal(context,{width:75},async o=>{
+    assert.equal(o.sections,options.sections);
+    assert.deepEqual(o.intelligentLayout.intents,[{documentId:'a',blockKey:'40',placement:{sizeConstraints:{minHeightPercent:30}}},{documentId:'b',blockKey:'70',placement:{sizeConstraints:{minWidthPercent:75}}}]);
+    return result;
+  },()=>true),result);
+  assert.equal(snapshot.document.entries[1].minWidthPercent,50);
+  await assert.rejects(()=>measureInlineAreaProposal(context,{width:75},async()=>({...result,intelligentLayout:{...result.intelligentLayout,fragments:[b]}}),()=>true),{code:'AREA_CONFLICT'});
+});
+test('whole-book selection resolves the exact local identity, not same-named blocks in other manuscripts',()=>{
+  const a={origin:origin('a','40','q')},b={origin:origin('b','40','q')};
+  const plan={revision:'r1',fingerprint:'f1',fragments:[a,b]};
+  assert.deepEqual(resolvePaperAreaSelection(plan,'b','40'),{persistentId:'q',selection:{documentId:'b',blockKey:'40',revision:'r1',fingerprint:'f1'}});
+  assert.equal(resolvePaperAreaSelection(plan,'c','40'),null);
+  assert.equal(resolvePaperAreaSelection({...plan,fragments:[a,b,b]},'b','40'),null);
+  assert.equal(resolvePaperAreaSelection({...plan,fragments:[a,b,{origin:origin('b','41','q')}]},'b','40'),null);
+  assert.equal(resolvePaperAreaSelection({...plan,fragments:[a,{...b,placement:{fixed:true}}]},'b','40'),null);
 });
