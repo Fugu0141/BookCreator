@@ -25,7 +25,7 @@ export async function benchmarkRetainedEdits({raw,click,until,ready,paperSignatu
     await raw("("+installInputProbe.toString()+")("+JSON.stringify({values,intervalMs:35})+")");
     try{
       await until('retained benchmark input committed',ready('manuscript')+"&&window.__bcRetainedEditBenchmark.probe.finalMs!==null&&document.querySelector('#source').value==="+JSON.stringify(value));
-      return await raw("(()=>{const h=document.querySelector('#preview > div'),p=window.__bcRetainedEditBenchmark.probe;return {...p,pages:h.shadowRoot.children.length,work:h.dataset.retainedWork?JSON.parse(h.dataset.retainedWork):null,focus:document.activeElement.id==='source',clean:!h.dataset.provisionalPages&&!h.shadowRoot.querySelector('[data-provisional-layer]')};})()");
+      return await raw("(()=>{const h=document.querySelector('#preview > div'),p=window.__bcRetainedEditBenchmark.probe;return {...p,pages:h.shadowRoot.children.length,work:h.dataset.retainedWork?JSON.parse(h.dataset.retainedWork):null,focus:document.activeElement.id==='source',scrollTop:h.parentNode.scrollTop,scrollLeft:h.parentNode.scrollLeft,clean:!h.dataset.provisionalPages&&!h.shadowRoot.querySelector('[data-provisional-layer]')};})()");
     }finally{await raw("(()=>{const p=window.__bcRetainedEditBenchmark;if(p){p.observer.disconnect();p.timers.forEach(t=>clearTimeout(t));}delete window.__bcRetainedEditBenchmark;})()");}
   }
   const samples=[];
@@ -54,6 +54,7 @@ export async function benchmarkRetainedEdits({raw,click,until,ready,paperSignatu
           if(!['preparationMs','publicationMs'].every(key=>Number.isFinite(sample.work.hostTiming?.[key])&&sample.work.hostTiming[key]>=0))throw Error('Missing host timing diagnostics');
           const publicationStages=sample.work.hostTiming.publicationStages;
           if(!['assemblyMs','describeMs','commitMs','scrollRestoreMs','otherCommitMs'].every(key=>Number.isFinite(publicationStages?.[key])&&publicationStages[key]>=0)||Math.abs(publicationStages.commitMs-publicationStages.scrollRestoreMs-publicationStages.otherCommitMs)>0.001)throw Error('Missing or inconsistent sparse publication stage timing');
+          if(typeof publicationStages.scrollRestoreSkipped!=='boolean'||publicationStages.scrollRestoreSkipped&&(publicationStages.scrollRestoreMs!==0||sample.scrollTop!==0||sample.scrollLeft!==0))throw Error('Invalid retained scroll origin restoration');
           if(!Number.isSafeInteger(sample.work.pagination.sharedSnapshotFragments)||sample.work.pagination.sharedSnapshotFragments<1)throw Error('Retained benchmark did not share placement snapshots');
           if(!Number.isFinite(sample.work.hostTiming?.preparationYieldMs)||sample.work.hostTiming.preparationYieldMs<0)throw Error('Missing preparation task boundary timing');
           const cancelled=sample.work.cancelledJobs;
