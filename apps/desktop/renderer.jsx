@@ -1,10 +1,11 @@
 import {measurementLane} from './measurement-lane.mjs';
+import {editorCommitMetrics} from './editor-commit-metrics.mjs';
 import {performanceMetrics} from './performance-metrics.mjs';
 import {previewPhaseMetrics} from './preview-phase-metrics.mjs';
 import {PerformancePanel} from './performance-panel.jsx';
 import {retryPreviewRead,unwrapIpc} from './preview-read-retry.mjs';
 import {CatalogSpecimen} from './catalog-specimen.jsx';
-import React,{useState,useRef,useEffect,useMemo,useCallback,useSyncExternalStore} from 'react';
+import React,{useState,useRef,useEffect,useLayoutEffect,useMemo,useCallback,useSyncExternalStore} from 'react';
 import {projectBookSettings,projectTypographySettings,projectFontChoices} from './workspace-settings-projection.mjs';
 import {createRoot} from 'react-dom/client';
 import {createManuscriptScanSession,parsePreviewInline,prepareBrowserPreview,prepareBookBrowserPreview,previewSourceRange,planInlineFormat,planListFormat,planListIndent,planListBatch,inspectDisplayMath,planDisplayMath,inspectInlineMath,planInlineMath,inspectComponentDisplayMath,planComponentDisplayMath,equationReferenceTargets,planEquationReference,planEquationNumbering,planNumberedComponentDisplayMath,hasDynamicLabels,hasStudyNumbering,studyTemplate,studyKinds,defaultStudyDesign,customStudyTemplate,isCustomComponentId,linkedStudyTemplate,slottedStudyTemplate,namedSlotDefinitions} from '../../dist/index.js';
@@ -85,6 +86,7 @@ async function resolvePreviewImage(token,id,current){if(typeof token!=='string'|
 const unwrap=unwrapIpc;
 function validPaper(page){try{return page?paperGeometry(page):null;}catch{return null;}}
 function App(){
+  useLayoutEffect(()=>{editorCommitMetrics.commit('workspace');});
   const [manuscriptStore]=useState(createManuscriptStore);
   const {file,dirty,undo,redo}=useSyncExternalStore(manuscriptStore.subscribeMetadata,manuscriptStore.getMetadata);
   const {dispatch:dispatchManuscript}=manuscriptStore;
