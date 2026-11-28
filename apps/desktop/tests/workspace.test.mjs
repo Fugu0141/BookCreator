@@ -168,7 +168,7 @@ test('textbook starter creates three editable chapters with unique IDs and survi
   const [intro,lesson,practice]=await Promise.all(ids.map(id=>w.read(id)));
   assert.equal(intro.editable,true);assert.equal(lesson.editable,true);assert.equal(practice.editable,true);
   assert.match(intro.text,/この本の使い方/);
-  assert.match(lesson.text,/2x\+3=7/);assert.ok(lesson.text.includes('answer-to="exercise-01"'));
+  assert.ok(lesson.text.includes('$$\n2x+3=7\n$$\n'));assert.ok(lesson.text.includes('answer-to="exercise-01"'));
   assert.ok(practice.text.includes('answer-to="exercise-02"'));
   const manifest=join(parent,'textbook','book.yaml'),before=await readFile(manifest);
   await w.save('chapter-02',lesson.revision,lesson.text.replace('基本の考え方','方程式の基本'));
