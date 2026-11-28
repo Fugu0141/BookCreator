@@ -2,7 +2,7 @@ import React from 'react';
 
 // All mutations go through the caller's existing draft history and validation.
 // This toolbar is a view of the selected node, not an independent style store.
-export function LabSelectionToolbar({node,draft,fontOptions,disabled,canDuplicate,canRemove,canMoveBack,canMoveForward,locked,inheritedLock,onLock,onDuplicate,onRemove,onMove,onStyle,onFont,onEditText,onPrecision}){
+export function LabSelectionToolbar({node,draft,fontOptions,disabled,canDuplicate,canRemove,canMoveBack,canMoveForward,locked,inheritedLock,onLock,onDuplicate,onRemove,onMove,onStyle,onFont,onEditText,onPrecision,canEditText,alignmentCount,onAlign}){
   const type=node?.type;
   const text=['content','label','dynamic','slot'].includes(type);
   const style=type==='content'?draft:node;
@@ -25,8 +25,11 @@ export function LabSelectionToolbar({node,draft,fontOptions,disabled,canDuplicat
       </div>
     </>}
     {(text||type==='rect'||type==='group')&&<label className="lab-quick-color">{type==='group'?'背景':'色'}<input id="lab-quick-color" type="color" aria-label={type==='group'?'背景色':'色'} value={style[colorKey]} disabled={styleDisabled} onChange={e=>onStyle({[colorKey]:e.target.value})}/></label>}
-    {type==='label'&&<button id="lab-direct-text-open" type="button" disabled={styleDisabled} onClick={onEditText}>文字編集</button>}
+    {type==='label'&&<button id="lab-direct-text-open" type="button" disabled={styleDisabled||!canEditText} onClick={onEditText}>文字編集</button>}
     {type==='image'&&<select id="lab-quick-image-fit" aria-label="画像の表示方式" value={node.fit} disabled={styleDisabled} onChange={e=>onStyle({fit:e.target.value})}><option value="contain">全体表示</option><option value="cover">枠を埋める</option></select>}
+    {alignmentCount>=2&&<select id="lab-quick-align" aria-label="選択要素の整列" value="" disabled={styleDisabled} onChange={e=>{if(e.target.value)onAlign(e.target.value);}}>
+      <option value="">整列</option>{[['left','左揃え'],['center','左右中央'],['right','右揃え'],['top','上揃え'],['middle','上下中央'],['bottom','下揃え'],['distribute-x','横均等配置'],['distribute-y','縦均等配置']].map(([mode,label])=><option key={mode} value={mode} disabled={mode.startsWith('distribute-')&&alignmentCount<3}>{label}</option>)}
+    </select>}
     <span className="lab-toolbar-separator" aria-hidden="true"/>
     <button type="button" id="lab-quick-back" title="配置順を一つ前へ" aria-label="配置順を一つ前へ" disabled={styleDisabled||!canMoveBack} onClick={()=>onMove(-1)}>←</button>
     <button type="button" id="lab-quick-forward" title="配置順を一つ後へ" aria-label="配置順を一つ後へ" disabled={styleDisabled||!canMoveForward} onClick={()=>onMove(1)}>→</button>
