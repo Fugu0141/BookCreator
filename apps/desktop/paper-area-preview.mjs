@@ -25,7 +25,19 @@ export function verifySavedAreaPreview(prepared,result){
   if(bound.status!=='ready')reject(bound.diagnostics);
   if(JSON.stringify(bound.intents)!==JSON.stringify(prepared.intents))throw Error('配置対象が組版中に変化しました。');
   const byKey=new Map(il.fragments.map(f=>[JSON.stringify([f.origin.documentId,f.origin.blockKey]),f]));
+  // IL places a block with spaceBefore on a new row. Verify its physical
+  // separation from every preceding occupied footprint on the same page.
+  const beforeKeys=new Set(bound.intents.filter(i=>i.placement.spaceBefore).map(i=>JSON.stringify([i.documentId,i.blockKey])));
+  const precedingBottom=new Map(),beforeClearance=new Map();
+  if(beforeKeys.size)for(const f of il.fragments){
+    const p=f.placement,r=p?.occupiedRect??p?.rect,k=JSON.stringify([f.origin.documentId,f.origin.blockKey]);
+    if(!Number.isSafeInteger(p?.page)||p.page<0||!Number.isSafeInteger(r?.y)||r.y<0||!Number.isSafeInteger(r.height)||r.height<=0)throw Error('前方余白の計測結果が不正です。');
+    const bottom=precedingBottom.get(p.page)??0;
+    if(beforeKeys.has(k))beforeClearance.set(k,r.y-bottom);
+    precedingBottom.set(p.page,Math.max(bottom,r.y+r.height));
+  }
   for(const intent of bound.intents){
+    if(intent.placement.spaceBefore&&(beforeClearance.get(JSON.stringify([intent.documentId,intent.blockKey]))??-1)<intent.placement.spaceBefore)throw Error('指定した前方余白が組版結果に確保されていません。');
     const placement=byKey.get(JSON.stringify([intent.documentId,intent.blockKey]))?.placement;
     const rect=placement?.occupiedRect??placement?.rect,c=intent.placement.sizeConstraints??{},gap=intent.placement.spaceAfter??0;
     if(!rect||!Number.isSafeInteger(rect.width)||!Number.isSafeInteger(rect.height)||rect.width<Math.ceil(prepared.options.width*(c.minWidthPercent??0)/100)||rect.height<Math.ceil(prepared.options.height*(c.minHeightPercent??0)/100)+gap||(gap>0&&(!Number.isSafeInteger(placement?.rect?.height)||rect.height<placement.rect.height+gap)))throw Error('指定した占有領域が組版結果に確保されていません。');
