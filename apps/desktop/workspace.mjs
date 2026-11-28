@@ -260,6 +260,7 @@ export async function openWorkspace(manifestPath){
     get manifestPath(){return manifest;},
     async bookSettings(){await checkManifest();return settingsView();},
     async readPaperArea(id){return areaPersistence.read(id);},
+    async readBookPaperArea(){return areaPersistence.readBook();},
     async savePaperArea(id,sourceRevision,expectedRevision,value){
       if(busy)fail('BUSY','Another write is in progress');
       busy=true;try{return await areaPersistence.save(id,sourceRevision,expectedRevision,value);}finally{busy=false;}
