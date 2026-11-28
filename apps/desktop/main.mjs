@@ -184,6 +184,7 @@ async function run(){
   handle('saveStudyDesign',async(...args)=>{checkArgs(args,3);return requireWorkspace().saveStudyDesign(...args);});
   handle('readPaperArea',async(...args)=>{checkArgs(args,2);const [token,id]=args;if(token!==settingsToken||typeof token!=='string')throw Error('Invalid paper area session');return requireWorkspace().readPaperArea(id);});
   handle('savePaperArea',async(...args)=>{checkArgs(args,5);const [token,...request]=args;if(token!==settingsToken||typeof token!=='string')throw Error('Invalid paper area session');return requireWorkspace().savePaperArea(...request);});
+  handle('saveBookPaperArea',async(...args)=>{checkArgs(args,5);const [token,...request]=args;if(token!==settingsToken||typeof token!=='string')throw Error('Invalid paper area session');return requireWorkspace().saveBookPaperArea(...request);});
   handle('saveParagraphDesign',async(...args)=>{checkArgs(args,2);return requireWorkspace().saveParagraphDesign(...args);});
   handle('saveHeadingDesign',async(...args)=>{checkArgs(args,3);return requireWorkspace().saveHeadingDesign(...args);});
   handle('saveTypography',async(...args)=>{checkArgs(args,2);return requireWorkspace().saveTypography(...args);});
