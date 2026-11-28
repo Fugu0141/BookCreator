@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {clipPaperRect,placePaperPropertyPanel,paperPositionFromDrag,paperPositionFromPagePointer,resolvePaperSelectionNodes,preferredPositionEditStart} from '../paper-selection-geometry.mjs';
+import {clipPaperRect,placePaperPropertyPanel,paperPositionFromDrag,paperPositionFromPagePointer,resolvePaperSelectionNodes,preferredPositionEditStart,placeBookPositionPanel} from '../paper-selection-geometry.mjs';
 const v={left:10,top:20,right:110,bottom:120};
 test('visible rectangle and partial clipping',()=>{
   assert.deepEqual(clipPaperRect({left:20,top:30,right:70,bottom:80},v),{left:20,top:30,width:50,height:50});
@@ -59,4 +59,17 @@ test('preferred position editing preserves requested coordinates and tolerances 
     assert.deepEqual(start.tolerance,invalid.tolerance);
   }
   assert.deepEqual(preferredPositionEditStart(position,bounds,body,undefined),{position,tolerance:{x:5000,y:5000},requiresRebase:false});
+});
+
+
+test('position property panel avoids the drag handle even in a short viewport',()=>{
+  const bounds={left:200,top:420,right:1000,bottom:650},selection={left:280,top:578,width:630,height:56},handle={left:282,top:580,width:32,height:32};
+  const assertFree=(bounds,selection,handle)=>{
+    const p=placeBookPositionPanel(selection,handle,bounds,{width:260,height:270});
+    assert.ok(p.width>0&&p.maxHeight>0);
+    assert.ok(p.left>=bounds.left&&p.top>=bounds.top&&p.left+p.width<=bounds.right&&p.top+p.maxHeight<=bounds.bottom);
+    assert.ok(p.left>=handle.left+handle.width||p.left+p.width<=handle.left||p.top>=handle.top+handle.height||p.top+p.maxHeight<=handle.top);
+  };
+  assertFree(bounds,selection,handle);
+  assertFree({left:0,top:0,right:220,bottom:150},{left:0,top:55,width:220,height:60},{left:2,top:57,width:32,height:32});
 });
