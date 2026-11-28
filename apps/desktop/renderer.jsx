@@ -32,6 +32,7 @@ import {planStructuredEquation,structuredReferenceOffset} from './structured-equ
 import {planBlockOperation,canBlockOperation} from './structured-operations.mjs';
 import {projectStructuredEditor} from './structured-projection.mjs';
 import {resolvePaperBlock} from './paper-block-selection.mjs';
+import {paperBlockRangeForNode} from './paper-navigation.mjs';
 import {PaperSelectionOverlay} from './paper-selection-overlay.jsx';
 import {planStudyInsertion} from './study-insertion.mjs';
 const parseStructuredInline=value=>parsePreviewInline(value,0,parsePreviewMath);
@@ -849,7 +850,7 @@ function App(){
       const command=captureStructuredCommand(structuredCommandDeps(),source,null);
       if(!command||command.file.id!==documentId)return true;
       const model=projectStructuredEditor(source,scanDocument,parseStructuredInline);
-      const selected=model.diagnostics.length?null:resolvePaperBlock(model.rows,range);
+      const selected=model.diagnostics.length?null:resolvePaperBlock(model.rows,paperBlockRangeForNode(node));
       if(!selected){setStatus('この紙面断片は安全に編集対象を特定できません。');return true;}
       const {row,index}=selected;
       setPaperBlock({command,job,index,node:node?.closest('[data-block]')??null,label:row.raw.trim().slice(0,80),up:canBlockOperation(source,model.rows,index,'up'),down:canBlockOperation(source,model.rows,index,'down')});
