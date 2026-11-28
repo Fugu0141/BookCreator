@@ -1,19 +1,32 @@
 // One pair of listeners per paper root. Replace the source mapping when a
 // new measured result is published; no per-fragment callbacks survive reuse.
 const roots=new WeakMap();
+function lineHit(binding,path){
+  if(!binding.mapLine)return null;
+  for(const lineNode of path){
+    const {start,end}=lineNode?.dataset??{};
+    if(typeof start!=='string'||typeof end!=='string'||!/^\d+$/.test(start)||!/^\d+$/.test(end))continue;
+    const lineRange=binding.mapLine(Number(start),Number(end));
+    if(lineRange)return {lineRange,lineNode};
+  }
+  return null;
+}
 export function installPaperNavigation(root,bindings,onNavigate){
   let state=roots.get(root);
   if(!state){
     state={bindings,onNavigate};
     const dispatch=(event,keyboard)=>{
       if(root.host?.inert||keyboard&&event.key!=='Enter'&&event.key!==' ')return;
-      for(const node of event.composedPath()){
+      const path=event.composedPath();
+      for(const node of path){
         if(node===root)break;
         const binding=state.bindings.get(node);
         if(!binding)continue;
         if(keyboard)event.preventDefault();
         event.stopPropagation();
-        state.onNavigate(binding.documentId,binding.range,node);
+        const line=lineHit(binding,path.slice(0,path.indexOf(node)));
+        if(line)state.onNavigate(binding.documentId,binding.range,node,line.lineRange,line.lineNode);
+        else state.onNavigate(binding.documentId,binding.range,node);
         return;
       }
     };
