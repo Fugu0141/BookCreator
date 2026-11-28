@@ -476,6 +476,26 @@ async function benchmarkBookPositionDrag({win,raw,click,until,ready,paperSignatu
     const pages=await raw("document.querySelector('#preview > div').shadowRoot.querySelectorAll('[data-page]').length");
     if(pages<10)throw Error('Long-book drag fixture is too small: '+pages);
     const baseline=await paperSignature();
+    await click('#book-il-quality-open');
+    await until('retained quality summary',"Number(document.querySelector('#book-il-quality-summary')?.dataset.pages)==="+pages);
+    await until('explicit scope required',"document.querySelector('#book-il-propose')?.disabled===true");
+    await raw("(()=>{const e=document.querySelector('#book-il-scope');e.value='book';e.dispatchEvent(new Event('change',{bubbles:true}));})()");
+    await click('#book-il-propose');
+    await until('verified proposal or rejection',"['review','rejected'].includes(document.querySelector('#book-il-proposal-result')?.dataset.status)||!!document.querySelector('#book-il-quality-details [role=alert]')");
+    const reviewError=await raw("document.querySelector('#book-il-quality-details [role=alert]')?.textContent??null");
+    if(reviewError)throw Error('IL review failed: '+reviewError);
+    if(await raw("document.querySelector('#book-il-proposal-result')?.dataset.status==='review'")){
+      await until('isolated measured candidate',"!!document.querySelector('#book-il-candidate-paper > div')?.shadowRoot?.querySelector('[data-il-changed=true]')&&!!document.querySelector('#preview > div')?.shadowRoot&&!document.querySelector('#preview > div').shadowRoot.querySelector('[data-il-changed]')");
+      if(await paperSignature()!==baseline)throw Error('Candidate modified authoritative paper');
+      await click('#book-il-compare-toggle');
+      await until('original view',"!document.querySelector('#book-il-candidate-paper')");
+      await click('#book-il-compare-toggle');
+      await until('candidate restored',"!!document.querySelector('#book-il-candidate-paper > div')?.shadowRoot?.querySelector('[data-il-changed=true]')");
+    }
+    await click('#book-il-discard');
+    await until('review discarded',"!document.querySelector('#book-il-proposal-result')&&!document.querySelector('#book-il-candidate-paper')");
+    await click('#book-il-quality-open');
+    if(await paperSignature()!==baseline||await readFile(path,'utf8')!==source)throw Error('Read-only IL review changed paper or manuscript');
     await click('#paper-edit-mode');
     const target="(()=>{const r=document.querySelector('#preview > div').shadowRoot;return [...r.querySelectorAll('[data-block]')].find(n=>n.dataset.document==='small'&&n.textContent.includes('例題の本文です。'));})()";
     const phase=p=>"(!!document.querySelector('[data-position-phase="+p+"]'))";
