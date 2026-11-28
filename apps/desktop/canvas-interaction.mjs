@@ -51,8 +51,8 @@ export function flowResizeLimits(node,direction,availableWidth,availableHeight,o
   const fixedHeight=['rect','image'].includes(node.type)||(node.type==='group'&&node.direction==='canvas');
   if(!fixedWidth&&!fixedHeight)return null;
   if(![availableWidth,availableHeight,otherWidth,min].every(Number.isFinite))return null;
-  const maxWidth=Math.min(100000,Math.max(node.width||0,Math.floor(availableWidth-(direction==='row'?otherWidth:0))));
-  const maxHeight=Math.min(100000,Math.max(node.height||0,Math.floor(availableHeight)));
+  const maxWidth=Math.min(100000,Math.max(fixedWidth?node.width:0,Math.floor(availableWidth-(direction==='row'?otherWidth:0))));
+  const maxHeight=Math.min(100000,Math.max(fixedHeight?node.height:0,Math.floor(availableHeight)));
   if(fixedWidth&&maxWidth<min||fixedHeight&&maxHeight<min)return null;
   return {fixedWidth,fixedHeight,minWidth:min,maxWidth,minHeight:min,maxHeight};
 }
