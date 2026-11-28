@@ -33,7 +33,7 @@ const smokeRoot=PACKAGE_RESTART_SMOKE?restartSmokeRoot():SMOKE?mkdtempSync(join(
 if(smokeRoot)app.setPath('userData',smokeRoot);
 protocol.registerSchemesAsPrivileged([{scheme:'bookcreator',privileges:{standard:true,secure:true,supportFetchAPI:true}}]);
 const PAGE='bookcreator://app/index.html';
-const ASSETS=new Map([['/index.html',['index.html','text/html; charset=utf-8']],['/renderer.js',['build/renderer.js','text/javascript; charset=utf-8']],['/style.css',['style.css','text/css; charset=utf-8']]]);
+const ASSETS=new Map([['/index.html',['index.html','text/html; charset=utf-8']],['/renderer.js',['build/renderer.js','text/javascript; charset=utf-8']],['/preview-preparation-worker.js',['build/preview-preparation-worker.js','text/javascript; charset=utf-8']],['/style.css',['style.css','text/css; charset=utf-8']]]);
 let win,workspace,closing=false,busy=false,projectFontAssets=new Map();
 const previewReadLane=createPreviewReadLane();
 const previewImageLane=createPreviewReadLane();
@@ -43,7 +43,7 @@ async function loadProjectFonts(next){
   const info=faces.map(({bytes,...face})=>{assets.set('/project-fonts/'+face.sha256,{bytes,format:face.format});return face;});
   projectFontAssets=assets;return info;
 }
-const CSP="default-src 'none'; font-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self'; connect-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'";
+const CSP="default-src 'none'; font-src 'self'; script-src 'self'; worker-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self'; connect-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'";
 function sender(event){
   if(!win||event.sender!==win.webContents||event.senderFrame!==win.webContents.mainFrame||event.senderFrame.url!==PAGE)throw Error('Untrusted IPC sender');
 }
@@ -308,6 +308,7 @@ async function run(){
   await win.loadURL(PAGE);
   if(SMOKE){
     if(!PACKAGE_RESTART_SMOKE){
+      await previewPreparationWorkerSmoke();
       await liveWritingSmoke();
       // Legacy scenarios start with a fresh renderer, not a previously open book.
       await win.loadURL(PAGE);
@@ -319,6 +320,33 @@ async function run(){
   else if(PACKAGE_RESTART_SMOKE)await packageRestartSmoke();
   else if(PACKAGE_SMOKE)await packageSmoke();
   else if(SMOKE)await smoke();
+}
+// Exercise the actual sandboxed worker and protocol before enabling it in the editor.
+async function previewPreparationWorkerSmoke(){
+  const result=await win.webContents.executeJavaScript(`(async()=>{
+    const worker=new Worker('/preview-preparation-worker.js');
+    let timer;
+    try{
+      let id=0;
+      const send=data=>new Promise((resolve,reject)=>{
+        const expected=++id;
+        timer=setTimeout(()=>reject(Error('Preparation worker timeout')),10000);
+        worker.onerror=e=>{clearTimeout(timer);reject(Error(e.message||'Preparation worker error'));};
+        worker.onmessage=e=>{clearTimeout(timer);if(e.data.id!==expected)reject(Error('Worker request identity mismatch'));else resolve(e.data);};
+        worker.postMessage({...data,id:expected});
+      });
+      const input={whole:false,needsContext:false,file:{id:'worker'},rev:'1',fingerprint:'worker-1',geometry:{content:{width:100000,height:160000}}};
+      const documents=[{documentId:'worker',revision:'1',source:'# 見出し\\n\\n本文 **強調** と $x^2$。\\n',startOn:'page'}];
+      const message={type:'prepare',input,documents,retained:true};
+      const a=await send(message),b=await send(message),reset=await send({type:'reset'}),c=await send(message);
+      const invalid=await send({type:'unexpected'});
+      const plain=await send({...message,retained:false});
+      return {a,b,reset,c,invalid,plain};
+    }finally{clearTimeout(timer);worker.terminate();}
+  })()`);
+  const {a,b,c,reset,invalid,plain}=result;
+  if(a.type!=='prepared'||!a.prepared.options||b.type!=='prepared'||c.type!=='prepared'||plain.type!=='prepared'||reset.type!=='reset'||invalid.type!=='error'||b.work?.scan.hits!==1||b.work?.inline.hits<1||c.work?.scan.misses!==1||plain.work!==null||JSON.stringify(a.prepared)!==JSON.stringify(b.prepared)||JSON.stringify(a.prepared)!==JSON.stringify(c.prepared)||JSON.stringify(a.prepared)!==JSON.stringify(plain.prepared))throw Error('Preparation worker smoke mismatch: '+JSON.stringify(result));
+  console.log('PASS preparation worker protocol, cache reuse, reset and full parity');
 }
 // Existing explicit-composition regressions deliberately use the supported manual
 // mode. Exercise the default automatic mode separately before those regressions.
