@@ -2093,7 +2093,8 @@ async function componentRecoveryJourneySmoke(){
     await click('#hub-recovery');
     await until('registered component listed',"document.querySelector('#hub-recovery-summary')?.textContent==='1 件の復旧候補'&&!!document.querySelector("+JSON.stringify('[data-recovery-entry='+oracle.customId+'] .hub-recovery-open')+")");
     await click('[data-recovery-entry='+oracle.customId+'] .hub-recovery-open');
-    if(await raw("document.querySelector('#lab-precision-panel')?.hidden===true"))await click('#lab-precision-toggle');
+    await until('component editor opened',"!!document.querySelector('#lab-precision-toggle')");
+    if(await raw("document.querySelector('#lab-precision-panel').hidden"))await click('#lab-precision-toggle');
     await click('[data-property-choice=layout]');
     await until('candidate',"!!document.querySelector('#component-recovery-restore')&&document.querySelector('#lab-padding').disabled");
   }
