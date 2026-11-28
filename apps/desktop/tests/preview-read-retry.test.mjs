@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {retryPreviewRead,unwrapIpc} from '../preview-read-retry.mjs';
 import {createPreviewReadLane} from '../preview-read-lane.mjs';
+import {createLayoutScheduler} from '../layout-scheduler.mjs';
 const conflict=()=>Object.assign(Error('busy'),{code:'PREVIEW_RETRY'});
 test('transient conflict retries and returns newest successful read',async()=>{
   let count=0;const delays=[];
@@ -34,4 +35,35 @@ test('real read lane recovers after foreground operation releases lock',async()=
   const read=()=>lane.read('session',()=>!busy,()=>++loads);
   assert.equal(await retryPreviewRead(read,{sleep:async()=>{busy=false;}}),1);
   assert.equal(loads,1);
+});
+
+test('abort interrupts a long retry backoff and allows the latest scheduled read',{timeout:2000},async()=>{
+  const tasks=[],scheduler=createLayoutScheduler({scheduleHandoff:fn=>tasks.push(fn)});
+  let count=0;
+  const old=scheduler.submit((id,signal)=>retryPreviewRead(()=>{count++;throw conflict();},{signal,delays:[60000]}));
+  const rejected=assert.rejects(old,{code:'PREVIEW_CANCELLED'});
+  const latest=scheduler.submit((id,signal)=>retryPreviewRead(()=>42,{signal}));
+  await rejected;
+  assert.equal(count,1);assert.equal(tasks.length,1);
+  tasks.shift()();assert.equal(await latest,42);
+});
+test('pre-aborted read never invokes IPC',async()=>{
+  const controller=new AbortController();controller.abort();
+  await assert.rejects(retryPreviewRead(()=>assert.fail('aborted read ran'),{signal:controller.signal}),{code:'PREVIEW_CANCELLED'});
+});
+test('abort does not release an already dispatched read before it settles',async()=>{
+  const controller=new AbortController();let release,settled=false,count=0;
+  const pending=new Promise(resolve=>{release=resolve;});
+  const read=retryPreviewRead(()=>{count++;return pending;},{signal:controller.signal});
+  const checked=assert.rejects(read,{code:'PREVIEW_CANCELLED'}).then(()=>{settled=true;});
+  controller.abort();await Promise.resolve();await Promise.resolve();
+  assert.equal(settled,false);assert.equal(count,1);
+  release('obsolete');await checked;
+});
+test('abort after a completed retry does not affect another request',async()=>{
+  const controller=new AbortController();let count=0;
+  assert.equal(await retryPreviewRead(()=>{if(++count===1)throw conflict();return 'first';},{signal:controller.signal,delays:[0]}),'first');
+  controller.abort();
+  assert.equal(await retryPreviewRead(()=> 'second'),'second');
+  assert.equal(count,2);
 });
