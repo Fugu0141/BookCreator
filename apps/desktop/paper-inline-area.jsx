@@ -59,12 +59,19 @@ export function PaperInlineArea({viewport,node,context,onCommit}){
   function finish(e){
     const g=active.current;if(!g||g.id!==e.pointerId)return;
     const p=previewPaperAreaDrag(g.gesture,g.axis==='width'?e.clientX:e.clientY);
-    const next=context.current()?finishPaperAreaDrag(g.gesture,{current:target,placement,pointerPx:g.axis==='width'?e.clientX:e.clientY}):null;
+    // Compare against the pending axis, not just the persisted value, so a
+    // second drag can explicitly restore the saved value without losing the other axis.
+    const key=g.axis==='width'?'minWidthPercent':'minHeightPercent';
+    const constraints={...stored};
+    if(Object.hasOwn(proposal,g.axis)){
+      if(proposal[g.axis])constraints[key]=proposal[g.axis];else delete constraints[key];
+    }
+    const next=context.current()&&!context.disabled?finishPaperAreaDrag(g.gesture,{current:target,placement:{...placement,sizeConstraints:constraints},pointerPx:g.axis==='width'?e.clientX:e.clientY}):null;
     cancel();
     if(next&&p)propose(g.axis,p.value);
   }
   function keyAdjust(e,axis){
-    if(context.disabled||!context.current()||!geometry||e.ctrlKey||e.metaKey||e.altKey)return;
+    if(context.disabled||active.current||!context.current()||!geometry||e.ctrlKey||e.metaKey||e.altKey)return;
     const delta=axis==='width'?({ArrowLeft:-1,ArrowRight:1})[e.key]:({ArrowUp:-1,ArrowDown:1})[e.key];
     if(!delta)return;e.preventDefault();e.stopPropagation();
     const extent=axis==='width'?geometry.bodyWidth:geometry.bodyHeight,actual=axis==='width'?geometry.full.width:geometry.full.height;
@@ -85,7 +92,7 @@ export function PaperInlineArea({viewport,node,context,onCommit}){
   return <>
     {guide&&<div className="paper-inline-area-guide" aria-hidden="true" style={style(guide)}/>}
     <div className="paper-inline-area-frame" style={style(clipped)}>
-      {['width','height'].map(axis=>(axis==='width'?geometry.rightVisible:geometry.bottomVisible)&&<button key={axis} id={'paper-inline-area-'+axis} type="button" className={'paper-area-handle '+axis} aria-label={axis==='width'?'横の最小占有率を調整':'縦の最小占有率を調整'} disabled={context.disabled} onPointerDown={e=>begin(e,axis)} onPointerMove={move} onPointerUp={finish} onPointerCancel={cancel} onLostPointerCapture={()=>{if(active.current)cancel();}} onKeyDown={e=>keyAdjust(e,axis)}/>)}
+      {['width','height'].map(axis=>(axis==='width'?geometry.rightVisible:geometry.bottomVisible)&&<button key={axis} id={'paper-inline-area-'+axis} type="button" className={'paper-area-handle '+axis} aria-label={axis==='width'?'横の最小占有率を調整':'縦の最小占有率を調整'} disabled={context.disabled} onPointerDown={e=>begin(e,axis)} onPointerMove={move} onPointerUp={finish} onPointerCancel={e=>{if(active.current?.id===e.pointerId)cancel();}} onLostPointerCapture={e=>{if(active.current?.id===e.pointerId)cancel();}} onKeyDown={e=>keyAdjust(e,axis)}/>)}
     </div>
     <div className="paper-inline-area-toolbar" style={{left:Math.max(bounds.left,Math.min(clipped.left,bounds.right-260)),top:Math.max(bounds.top,Math.min(clipped.bottom+10,bounds.bottom-62))}}>
       <small aria-live="polite">横 {label('width')} · 縦 {label('height')}{pending||ghost?'（未確定）':''}</small>
