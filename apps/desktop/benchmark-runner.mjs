@@ -384,12 +384,19 @@ export async function runBookBenchmark(win,app,root,fixture){
   await measure('partial-open','manuscript',()=>click('[data-section='+large.id+']'),"document.querySelector('#source').value==="+JSON.stringify(large.source));
   if(await paperSignature()!==originalPaper)throw Error('Partial baseline differs');
   const partialComparisons=[];
+  // This comparison deliberately measures an already-warm paragraph cache.
+  // The performance panel itself introduces Japanese glyphs from lazy CSS
+  // font subsets. Load the fixture and UI glyph coverage before priming.
+  await click('#performance-toggle');
+  await raw(`(async()=>{const text=document.body.textContent+' '+${JSON.stringify(edited)};await Promise.all([document.fonts.load('400 16px BCFont_NotoSansJP',text),document.fonts.load('700 16px BCFont_NotoSansJP',text)]);await document.fonts.ready;})()`);
+  await click('#performance-close');
+  await raw('document.fonts.ready.then(()=>true)');
   // Diagnostic only: identify environment invalidation without weakening the
   // exact one-miss assertion or changing the measured editing path.
   await raw(`(()=>{
     const faces=new WeakMap();let next=0,events=[];
     const snapshot=()=>({scale:devicePixelRatio,fontStatus:document.fonts.status,
-      faces:[...document.fonts].map(f=>{if(!faces.has(f))faces.set(f,++next);return {identity:faces.get(f),family:f.family,style:f.style,weight:f.weight,stretch:f.stretch,unicodeRange:f.unicodeRange,status:f.status,ascent:f.ascentOverride,descent:f.descentOverride,lineGap:f.lineGapOverride,feature:f.featureSettings,variation:f.variationSettings};}),
+      faces:[...document.fonts].map(f=>{const descriptors=JSON.stringify([f.family,f.style,f.weight,f.stretch,f.unicodeRange,f.ascentOverride,f.descentOverride,f.lineGapOverride,f.featureSettings,f.variationSettings]);let entry=faces.get(f);if(!entry){entry={identity:++next,descriptors,revision:0};faces.set(f,entry);}else if(entry.descriptors!==descriptors){entry.descriptors=descriptors;entry.revision++;}return {identity:entry.identity,family:f.family,status:f.status,descriptorRevision:entry.revision};}),
       visibility:document.visibilityState});
     const record=event=>{events.push({event:event.type,at:performance.now(),environment:snapshot()});if(events.length>64)events.shift();};
     const types=['loading','loadingdone','loadingerror'];
@@ -404,6 +411,7 @@ export async function runBookBenchmark(win,app,root,fixture){
       const enabled=arm==='warm';
       await setPartial(false);
       await setParagraphComparison(true);
+      await raw('document.fonts.ready.then(()=>true)');
       await raw("document.querySelector('#preview > div').dataset.paperProbe='old'");
       await measure('partial-prime-'+pair+'-'+arm,'manuscript',()=>click('#preview-button'),"document.querySelector('#preview > div').dataset.paperProbe!=='old'");
       if(await paperSignature()!==originalPaper)throw Error('Partial prime differs');
