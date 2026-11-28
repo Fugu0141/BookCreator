@@ -53,9 +53,10 @@ test('sparse base lease is tied to a successful retained host and invalidated on
   const initial=make();
   const timing={};
   assert.deepEqual(display.publishSparse(viewport,'a',initial,null,()=>['page'],timing),{retained:false,pages:['page']});
-  assert.deepEqual(Object.keys(timing),['assemblyMs','describeMs','commitMs','scrollRestoreMs','otherCommitMs']);
+  assert.deepEqual(Object.keys(timing),['assemblyMs','describeMs','commitMs','scrollRestoreMs','otherCommitMs','scrollRestoreSkipped']);
   assert.ok(Math.abs(timing.commitMs-timing.scrollRestoreMs-timing.otherCommitMs)<0.001);
-  for(const value of Object.values(timing))assert.ok(Number.isFinite(value)&&value>=0);
+  assert.equal(timing.scrollRestoreSkipped,false);
+  for(const [key,value] of Object.entries(timing))if(key!=='scrollRestoreSkipped')assert.ok(Number.isFinite(value)&&value>=0);
   assert.equal(display.getSparseBase(viewport,'a'),null);
   assert.equal(display.retain(viewport,'a'),true);
   const lease=display.getSparseBase(viewport,'a');
@@ -103,4 +104,34 @@ test('clearing an already empty viewport does not perform another DOM replacemen
   assert.equal(display.retain(viewport,'b'),false);
   assert.equal(calls,2);
   display.clear(viewport);assert.equal(calls,2);
+});
+
+test('exact retained publication at scroll origin skips setters but nonzero offsets are restored',()=>{
+  const {viewport,host}=fixture(),display=createPaperDisplay(),doc={};
+  let top=0,left=0,writes=0;
+  Object.defineProperties(viewport,{scrollTop:{get:()=>top,set:value=>{top=value;writes++;}},scrollLeft:{get:()=>left,set:value=>{left=value;writes++;}}});
+  const make=(omitted=[])=>{
+    const h=host();
+    Object.defineProperty(h,'isConnected',{get:()=>h.parentNode===viewport});
+    const page={nodeType:1,namespaceURI:'http://www.w3.org/1999/xhtml',localName:'div',getAttribute:key=>key==='data-page'?'0':null,querySelectorAll:()=>[]};
+    const nodes=omitted.length?[]:[page];
+    h.shadowRoot={ownerDocument:doc,host:h,childNodes:nodes,children:nodes};
+    return {changedElement:h,plan:{pages:[{index:0,fragments:[]}]},slices:[],pageDelta:{snapshot:{},reusedPageIndices:omitted}};
+  };
+  const first=make();
+  display.publishSparse(viewport,'doc',first,null,()=>[]);
+  function reuse(){
+    assert.equal(display.retain(viewport,'doc'),true);
+    const timing={};
+    assert.deepEqual(display.publishSparse(viewport,'doc',make([0]),display.getSparseBase(viewport,'doc'),()=>[],timing),{retained:true,pages:[]});
+    return timing;
+  }
+  writes=0;
+  let timing=reuse();
+  assert.equal(writes,0);assert.equal(timing.scrollRestoreSkipped,true);assert.equal(timing.scrollRestoreMs,0);
+  assert.equal(viewport.firstElementChild,first.changedElement);
+  top=150;left=25;writes=0;
+  timing=reuse();
+  assert.equal(writes,2);assert.equal(timing.scrollRestoreSkipped,false);
+  assert.equal(top,150);assert.equal(left,25);
 });
