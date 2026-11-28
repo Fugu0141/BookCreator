@@ -471,7 +471,7 @@ async function benchmarkBookPositionDrag({win,raw,click,until,ready,paperSignatu
     await click('#paper-edit-mode');
     const target="(()=>{const r=document.querySelector('#preview > div').shadowRoot;return [...r.querySelectorAll('[data-block]')].find(n=>n.dataset.document==='small'&&n.textContent.includes('例題の本文です。'));})()";
     const phase=p=>"(!!document.querySelector('[data-position-phase="+p+"]'))";
-    const dragState=()=>raw("(()=>{const h=document.querySelector('#book-paper-position-drag'),r=h?.getBoundingClientRect();return {handle:h?{...h.dataset,rect:r?.toJSON()}:null,focused:document.hasFocus(),active:document.activeElement?.id,phase:[...document.querySelectorAll('[data-position-phase]')].map(e=>({phase:e.dataset.positionPhase,text:e.textContent}))};})()");
+    const dragState=()=>raw("(()=>{const h=document.querySelector('#book-paper-position-drag'),r=h?.getBoundingClientRect();return {handle:h?{...h.dataset,rect:r?.toJSON()}:null,focused:document.hasFocus(),active:document.activeElement?.id,hit:r?document.elementFromPoint(r.left+r.width/2,r.top+r.height/2)?.outerHTML.slice(0,300):null,viewport:{width:innerWidth,height:innerHeight},panel:document.querySelector('.book-position-panel')?.getBoundingClientRect().toJSON(),phase:[...document.querySelectorAll('[data-position-phase]')].map(e=>({phase:e.dataset.positionPhase,text:e.textContent}))};})()");
     const readTiming=async p=>{
       const failure=p.replace('-ready','-conflict');
       await until('drag '+p,phase(p)+"||"+phase(failure));
