@@ -12,15 +12,17 @@ test('reject gaps, overlaps, empty and invalid ranges',()=>{
  assert.equal(resolvePaperBlock([...rows,{range:{start:13,end:20}}],{start:14,end:17}),null);
 });
 
-test('paper drop accepts only eligible adjacent rows in the same manuscript',()=>{
+test('paper drop accepts any reachable row in the same manuscript, including index zero',()=>{
   const rows=[{range:{start:0,end:5}},{range:{start:7,end:12}},{range:{start:14,end:19}},{range:{start:21,end:26}}];
-  const selection={command:{file:{id:'chapter'}},rows,index:1,up:true,down:true};
+  const selection={command:{file:{id:'chapter'}},rows,index:1,bounds:{min:0,max:3}};
   const hit=(i,documentId='chapter')=>({documentId,range:rows[i].range});
-  assert.equal(resolvePaperDrop(selection,hit(0)),'up');
-  assert.equal(resolvePaperDrop(selection,hit(2)),'down');
+  assert.equal(resolvePaperDrop(selection,hit(0)),0);
+  assert.equal(resolvePaperDrop(selection,hit(2)),2);
   assert.equal(resolvePaperDrop(selection,hit(1)),null);
-  assert.equal(resolvePaperDrop(selection,hit(3)),null);
+  assert.equal(resolvePaperDrop(selection,hit(3)),3);
   assert.equal(resolvePaperDrop(selection,hit(0,'other')),null);
-  assert.equal(resolvePaperDrop({...selection,up:false},hit(0)),null);
+  assert.equal(resolvePaperDrop({...selection,bounds:{min:1,max:2}},hit(0)),null);
+  assert.equal(resolvePaperDrop({...selection,bounds:{min:1,max:2}},hit(3)),null);
+  assert.equal(resolvePaperDrop({...selection,bounds:null},hit(2)),null);
   assert.equal(resolvePaperDrop(selection,{documentId:'chapter',range:{start:4,end:8}}),null);
 });
