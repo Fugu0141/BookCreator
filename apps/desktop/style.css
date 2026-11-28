@@ -692,3 +692,6 @@ body{font-family:BCFont_NotoSansJP,system-ui,sans-serif}.font-control,.typograph
 .paper-block-toolbar{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:0 0 8px;}
 .paper-block-toolbar small{flex:1 1 160px;min-width:0;overflow-wrap:anywhere;}
 .paper-block-toolbar button[aria-pressed=true]{outline:2px solid #3478b7;outline-offset:1px;}
+
+.paper-selection-frame{position:fixed;z-index:20;pointer-events:none;box-sizing:border-box;border:2px solid #3478b7;background:#3478b70a;}
+.paper-selection-frame[hidden]{display:none;}
