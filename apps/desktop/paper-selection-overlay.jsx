@@ -146,7 +146,7 @@ export function BookPositionOverlay({viewport,node,context,bounds,onCommit,onClo
   const tolerance={x:parseTolerance(tx,body.width),y:parseTolerance(ty,body.height)},validTolerance=tolerance.x!==null&&tolerance.y!==null;
   const displayChanged=display.page!==context.position.page||display.x!==context.position.x||display.y!==context.position.y;
   const action=preferredMode?'preferred':'move';
-  const quickMode=dragging&&!!context.geometryBase;
+  const quickMode=dragging&&!!draft.current?.geometrySession;
   const proposalKey=geometry&&!invalid&&context.current()&&(preferredMode?validTolerance:displayChanged)?JSON.stringify([action,display.page,display.x,display.y,preferredMode?tolerance.x:null,preferredMode?tolerance.y:null]):null;
   const liveKey=quickMode?null:proposalKey;
   const quickKey=quickMode&&ghost?proposalKey:null;
