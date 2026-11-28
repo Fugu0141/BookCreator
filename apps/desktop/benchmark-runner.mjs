@@ -473,7 +473,7 @@ async function benchmarkBookPositionDrag({win,raw,click,until,ready,paperSignatu
     const phase=p=>"(!!document.querySelector('[data-position-phase="+p+"]'))";
     const readTiming=async p=>{
       await until('drag '+p,phase(p));
-      const row=await raw("(()=>{const e=document.querySelector('[data-position-phase="+p+"]');return {elapsedMs:Number(e.dataset.elapsedMs),queueMs:Number(e.dataset.queueMs)};})()");
+      const row=await raw("(()=>{const e=document.querySelector('[data-position-phase="+p+"]');return {elapsedMs:Number(e.dataset.elapsedMs),queueMs:Number(e.dataset.queueMs),measurementWork:e.dataset.measurementWork?JSON.parse(e.dataset.measurementWork):null};})()");
       if(![row.elapsedMs,row.queueMs].every(n=>Number.isFinite(n)&&n>=0))throw Error('Invalid position timing');
       return row;
     };
@@ -497,6 +497,7 @@ async function benchmarkBookPositionDrag({win,raw,click,until,ready,paperSignatu
         win.webContents.sendInputEvent({type:'mouseUp',...end,button:'left',clickCount:1});
         const paper=await readTiming('paper-ready');
         const dropToPaperMs=performance.now()-drop;
+        if(!paper.measurementWork||!['measuredBlocks','reusedBlocks','bypassedBlocks','sharedSnapshotEntries'].every(k=>Number.isSafeInteger(paper.measurementWork[k])&&paper.measurementWork[k]>=0)||paper.measurementWork.reusedBlocks<1)throw Error('Expected retained published measurement reuse: '+JSON.stringify(paper));
         if(!await raw("!!document.querySelector('.paper-inline-live')"))throw Error('Complete draft DOM missing');
         rows.push({sample:i+1,geometry,paper,pointerToGuideMs,dropToPaperMs});
       }finally{win.webContents.sendInputEvent({type:'mouseUp',...end,button:'left',clickCount:1});}
