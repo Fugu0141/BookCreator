@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {prepareSavedAreaPreview,verifySavedAreaPreview,measureInlineAreaProposal,resolvePaperAreaSelection,captureBookAreaLease,prepareBookAreaCommit,prepareBookAreaRestore,acknowledgeBookAreaCommit,prepareBookFixedRelease,resolveBookFixedSelection,prepareBookFixedCommit,resolveBookMoveBounds} from '../paper-area-preview.mjs';
+import {prepareSavedAreaPreview,verifySavedAreaPreview,measureInlineAreaProposal,resolvePaperAreaSelection,captureBookAreaLease,prepareBookAreaCommit,prepareBookAreaRestore,acknowledgeBookAreaCommit,prepareBookFixedRelease,resolveBookFixedSelection,prepareBookFixedCommit,resolveBookMoveBounds,prepareBookPreferredCommit} from '../paper-area-preview.mjs';
 const origin=(documentId,blockKey,persistentId)=>({documentId,blockKey,persistentId});
 const options={revision:'r1',fingerprint:'f1',width:1000,height:2000,sections:[{id:'a',blocks:[{origin:origin('a','40','q')}]},{id:'b',blocks:[{origin:origin('b','70','q')}]}]};
 const snapshot={revision:'saved',document:{schemaVersion:1,entries:[{documentId:'a',persistentId:'q',minHeightPercent:30},{documentId:'b',persistentId:'q',minWidthPercent:50}]}};
@@ -235,4 +235,27 @@ test('same-page movement preserves explicit dimensions and rejects invalid or st
   assert.equal(prepareBookFixedCommit(context,'move',selected.position),null);
   for(const bad of [{...position,page:3},{...position,x:501},{...position,y:1301},{...position,x:-1},{...position,x:2.5},{...position,extra:true}])assert.throws(()=>prepareBookFixedCommit(context,'move',bad));
   assert.throws(()=>prepareBookFixedCommit({...context,selection:{...selected.selection,revision:'stale'}},'move',position));
+});
+
+
+test('preferred position is distinct from hard lock; both honored and fallback must be reported accurately',()=>{
+  const fragment={origin:origin('a','40','q'),placement:{page:2,fixed:false,rect:{x:100,y:300,width:400,height:600}}},other={origin:origin('b','70','q'),placement:{page:2,fixed:false,rect:{x:0,y:1000,width:500,height:100}}};
+  const plan={revision:'r1',fingerprint:'f1',fragments:[fragment,other]},selected=resolveBookFixedSelection(plan,'a','40');
+  const context={scope:'book',bookLease:{documents:[{documentId:'a'},{documentId:'b'}]},areaPrepared:prepareSavedAreaPreview(options,snapshot,{whole:true}),areaSnapshot:snapshot,options,plan,...selected};
+  const preferred={position:{page:2,x:150,y:300},tolerance:{x:50,y:0}},commit=prepareBookPreferredCommit(context,preferred);
+  assert.deepEqual(commit.value.entries,[{documentId:'a',persistentId:'q',minHeightPercent:30,bookPreferred:preferred}]);
+  assert.deepEqual(commit.prepared.intents[0].placement,{sizeConstraints:{minHeightPercent:30},preferred:preferred.position,preferredTolerance:preferred.tolerance});
+  const result=(placement)=>({intelligentLayout:{status:'placed',revision:'r1',fingerprint:'f1',fragments:[{...fragment,placement},other]}});
+  const honored={...fragment.placement,preference:'honored'},fallback={...fragment.placement,rect:{...fragment.placement.rect,x:99},preference:'fallback'};
+  assert.doesNotThrow(()=>verifySavedAreaPreview(commit.prepared,result(honored)));
+  assert.doesNotThrow(()=>verifySavedAreaPreview(commit.prepared,result(fallback)));
+  assert.throws(()=>verifySavedAreaPreview(commit.prepared,result({...fallback,preference:'honored'})));
+  assert.throws(()=>verifySavedAreaPreview(commit.prepared,result({...honored,preference:'fallback'})));
+  const saved={...context,areaPrepared:commit.prepared,areaSnapshot:{revision:'a'.repeat(64),document:commit.prepared.document}};
+  assert.throws(()=>prepareBookFixedCommit(saved,'lock'));
+  assert.throws(()=>prepareSavedAreaPreview(options,saved.areaSnapshot,{whole:false,documentId:'a'}),{code:'AREA_BOOK_SCOPE'});
+  assert.deepEqual(prepareBookPreferredCommit(saved,null).value.entries,snapshot.document.entries.slice(0,1));
+  assert.deepEqual(prepareBookFixedRelease(saved,'a','q','preferred').value.entries,snapshot.document.entries.slice(0,1));
+  assert.equal(prepareBookPreferredCommit(saved,preferred),null);
+  assert.throws(()=>prepareBookPreferredCommit(context,{...preferred,tolerance:{x:-1,y:0}}));
 });

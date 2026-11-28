@@ -1,4 +1,4 @@
-import {validatePaperAreaDocument,bindPaperAreaDocument,setPaperAreaValues,setBookPaperFixed,encodePaperAreaDocument} from './paper-area-store.mjs';
+import {validatePaperAreaDocument,bindPaperAreaDocument,setPaperAreaValues,setBookPaperFixed,setBookPaperPreferred,encodePaperAreaDocument} from './paper-area-store.mjs';
 
 function reject(diagnostics){
   const e=Object.assign(Error('保存済みの占有領域を適用できません：'+diagnostics.map(d=>d.documentId+'/'+d.persistentId+' '+d.code).join('、')),{code:'AREA_CONFLICT',diagnostics});
@@ -9,7 +9,7 @@ function reject(diagnostics){
 export function prepareSavedAreaPreview(options,snapshot,{whole,documentId}){
   const stored=validatePaperAreaDocument(snapshot.document);
   const document=whole?stored:validatePaperAreaDocument({schemaVersion:1,entries:stored.entries.filter(e=>e.documentId===documentId)});
-  if(!whole&&document.entries.some(e=>e.bookFixed))throw Object.assign(Error('絶対ページ位置の固定設定は全冊紙面で確認してください。'),{code:'AREA_BOOK_SCOPE'});
+  if(!whole&&document.entries.some(e=>e.bookFixed||e.bookPreferred))throw Object.assign(Error('絶対ページ位置の設定は全冊紙面で確認してください。'),{code:'AREA_BOOK_SCOPE'});
   if(!document.entries.length)return {options:whole?{...options,intelligentLayout:{intents:[]}}:options,document,revision:snapshot.revision,intents:[]};
   const blocks=options.sections.flatMap(s=>s.blocks.filter(b=>!('kind' in b)));
   const bound=bindPaperAreaDocument(document,blocks);
@@ -42,6 +42,12 @@ export function verifySavedAreaPreview(prepared,result){
     const placement=byKey.get(JSON.stringify([intent.documentId,intent.blockKey]))?.placement;
     const fixed=intent.placement.fixed;
     if(fixed&&(!placement?.fixed||placement.page!==fixed.page||placement.rect?.x!==fixed.x||placement.rect?.y!==fixed.y))throw Error('指定した固定位置が組版結果に保持されていません。');
+    const preferred=intent.placement.preferred,tolerance=intent.placement.preferredTolerance;
+    if(preferred){
+      if(!placement||placement.fixed||!Number.isSafeInteger(placement.page)||!Number.isSafeInteger(placement.rect?.x)||!Number.isSafeInteger(placement.rect?.y))throw Error('希望位置の計測結果が不正です。');
+      const honored=placement.page===preferred.page&&Math.abs(placement.rect.x-preferred.x)<=tolerance.x&&Math.abs(placement.rect.y-preferred.y)<=tolerance.y;
+      if(placement.preference!==(honored?'honored':'fallback'))throw Error('希望位置の判定が計測結果と一致しません。');
+    }
     const rect=placement?.occupiedRect??placement?.rect,c=intent.placement.sizeConstraints??{},gap=intent.placement.spaceAfter??0;
     if(!rect||!Number.isSafeInteger(rect.width)||!Number.isSafeInteger(rect.height)||rect.width<Math.ceil(prepared.options.width*(c.minWidthPercent??0)/100)||rect.height<Math.ceil(prepared.options.height*(c.minHeightPercent??0)/100)+gap||(gap>0&&(!Number.isSafeInteger(placement?.rect?.height)||rect.height<placement.rect.height+gap)))throw Error('指定した占有領域が組版結果に確保されていません。');
   }
@@ -139,12 +145,12 @@ export function acknowledgeBookAreaCommit(commit,saved){
 
 
 // Explicit recovery does not require a successful measured plan.
-export function prepareBookFixedRelease(context,documentId,persistentId){
+export function prepareBookFixedRelease(context,documentId,persistentId,kind='fixed'){
   const snapshot=context?.areaSnapshot,lease=context?.bookLease;
   if(!snapshot||typeof snapshot.revision!=='string'||!/^[a-f0-9]{64}$/.test(snapshot.revision)||!lease?.documents?.some(d=>d.documentId===documentId))throw Error('全冊の固定位置を解除するための保存情報がありません。');
   const before=validatePaperAreaDocument(snapshot.document);
-  if(!before.entries.some(e=>e.documentId===documentId&&e.persistentId===persistentId&&e.bookFixed))throw Error('指定された固定位置は存在しません。');
-  const next=setBookPaperFixed(before,{documentId,persistentId,position:null});
+  if(!['fixed','preferred'].includes(kind)||!before.entries.some(e=>e.documentId===documentId&&e.persistentId===persistentId&&(kind==='fixed'?e.bookFixed:e.bookPreferred)))throw Error('指定された位置設定は存在しません。');
+  const next=kind==='fixed'?setBookPaperFixed(before,{documentId,persistentId,position:null}):setBookPaperPreferred(before,{documentId,persistentId,preferred:null});
   const value=validatePaperAreaDocument({schemaVersion:1,entries:next.entries.filter(e=>e.documentId===documentId)});
   return {documentId,value,lease,expectedRevision:snapshot.revision};
 }
@@ -193,4 +199,23 @@ export function resolveBookMoveBounds(context,target){
   const maxX=width-occupied.width,maxY=height-occupied.height;
   if(maxX<0||maxY<0||target.position.x>maxX||target.position.y>maxY)return null;
   return {maxX,maxY,width:occupied.width,height:occupied.height};
+}
+
+
+// Soft preference is persisted only by an explicit full-book action. It may
+// fall back to natural flow; the measured result must report that honestly.
+export function prepareBookPreferredCommit(context,preferred){
+  if(context?.scope!=='book'||!context.bookLease||!context.areaSnapshot||!context.areaPrepared||preferred===undefined)throw Error('全冊の希望位置情報がありません。');
+  const {documentId,blockKey}=context.selection??{},target=resolveBookFixedSelection(context.plan,documentId,blockKey);
+  if(!target||target.fixed||target.persistentId!==context.persistentId||target.selection.revision!==context.selection.revision||target.selection.fingerprint!==context.selection.fingerprint||!context.bookLease.documents.some(d=>d.documentId===documentId))throw Error('希望位置の対象が変更されました。');
+  if(preferred!==null){
+    const bounds=resolveBookMoveBounds(context,target),position=preferred.position,tolerance=preferred.tolerance;
+    if(!bounds||!position||position.page!==target.position.page||!Number.isSafeInteger(position.x)||!Number.isSafeInteger(position.y)||position.x<0||position.y<0||position.x>bounds.maxX||position.y>bounds.maxY||!tolerance||!Number.isSafeInteger(tolerance.x)||!Number.isSafeInteger(tolerance.y)||tolerance.x<0||tolerance.y<0||tolerance.x>context.options.width||tolerance.y>context.options.height)throw Error('希望位置または許容範囲が不正です。');
+  }
+  const before=context.areaPrepared.document,next=setBookPaperPreferred(before,{documentId,persistentId:target.persistentId,preferred});
+  if(encodePaperAreaDocument(before)===encodePaperAreaDocument(next))return null;
+  const {measurementCache,paragraphCache,pageCache,inlineMathCache,displayMathCache,mathCache,intelligentLayout,...options}=context.options;
+  const prepared=prepareSavedAreaPreview(options,{revision:context.areaSnapshot.revision,document:next},{whole:true});
+  const value=validatePaperAreaDocument({schemaVersion:1,entries:next.entries.filter(e=>e.documentId===documentId)});
+  return {prepared,value,documentId,lease:context.bookLease,expectedRevision:context.areaSnapshot.revision};
 }
