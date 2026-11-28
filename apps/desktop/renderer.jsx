@@ -898,7 +898,7 @@ function App(){
     });
   }
   function openRichReference(draft,rawOffset){
-    if(busy||working.current||structuredComposing||referenceDraft||draft.inlineEdit||draft.richError||!draft.rich||draft.row.kind!=='paragraph')return;
+    if(!draft||busy||working.current||structuredComposing||referenceDraft||draft.inlineEdit||draft.richError||!draft.rich||draft.row.kind!=='paragraph')return;
     const command=captureStructuredCommand(structuredCommandDeps(),draft.source,draft);
     if(!command)return;
     const {file,text,job}=command;
@@ -917,7 +917,7 @@ function App(){
     });
   }
   function applyMixedRange(draft,request){
-    if(busy||working.current||structuredComposing||referenceDraft||draft.inlineEdit?.mode!=='range'||request.mode!=='range')return;
+    if(!draft||busy||working.current||structuredComposing||referenceDraft||draft.inlineEdit?.mode!=='range'||request.mode!=='range')return;
     const command=captureStructuredCommand(structuredCommandDeps(),draft.source,draft);
     if(!command)return;
     const {file,text,job}=command;
@@ -933,7 +933,7 @@ function App(){
     });
   }
   function removeMixedAtom(draft,request){
-    if(busy||working.current||structuredComposing||referenceDraft||draft.inlineEdit!==request||request.mode!=='delete')return;
+    if(!draft||busy||working.current||structuredComposing||referenceDraft||draft.inlineEdit!==request||request.mode!=='delete')return;
     const command=captureStructuredCommand(structuredCommandDeps(),draft.source,draft);
     if(!command)return;
     const {file,text,job}=command;
@@ -951,7 +951,7 @@ function App(){
     });
   }
   function openMixedReference(draft,request){
-    if(busy||working.current||structuredComposing||referenceDraft||draft.inlineEdit)return;
+    if(!draft||busy||working.current||structuredComposing||referenceDraft||draft.inlineEdit)return;
     const command=captureStructuredCommand(structuredCommandDeps(),draft.source,draft);
     if(!command)return;
     const {file,text,job}=command;
@@ -969,7 +969,7 @@ function App(){
     });
   }
   function openStructuredReference(draft,start,end){
-    if(busy||working.current||structuredComposing||referenceDraft||draft.inlineEdit)return;
+    if(!draft||busy||working.current||structuredComposing||referenceDraft||draft.inlineEdit)return;
     const command=captureStructuredCommand(structuredCommandDeps(),draft.source,draft);
     if(!command)return;
     const {file,text,job}=command;
@@ -1024,7 +1024,7 @@ function App(){
     try{const next=planListAction(text,row,request,{scan:scanDocument,parseInline:parseStructuredInline,applyPatches,project:projectBlocks});commitStructured(next,command);setStatus('リスト操作を反映しました（未保存）。');}catch(e){setStatus(String(e.message??e));}
   }
   function splitStructuredDraft(draft,start,end){
-    if(busy||working.current||structuredComposing||draft.richError||draft.inlineEdit||draft.row.kind!=='paragraph'||start!==end)return;
+    if(!draft||busy||working.current||structuredComposing||draft.richError||draft.inlineEdit||draft.row.kind!=='paragraph'||start!==end)return;
     const command=captureStructuredCommand(structuredCommandDeps(),draft.source,draft);
     if(!command)return;
     const {file,text,job}=command;
@@ -1036,11 +1036,13 @@ function App(){
       commitStructured(next,command);setStructuredDraft(null);setStatus('段落を分割しました（未保存）。');
     }catch(e){setStatus(String(e.message??e));}
   }
-  function applyStructured(draft){if(busy||structuredComposing||draft.inlineEdit||draft.richError)return;
+  function applyStructured(draft){
+    if(!draft||busy||working.current||structuredComposing||draft.inlineEdit||draft.richError)return;
     const command=captureStructuredCommand(structuredCommandDeps(),draft.source,draft);
     if(!command)return;
     const {file,text,job}=command;
-try{const next=draft.mixed?planMixedEdit(text,draft,{scan:scanDocument,parseInline:parseStructuredInline,applyPatches,project:projectBlocks}):draft.list?planListDraft(text,draft,{scan:scanDocument,parseInline:parseStructuredInline,applyPatches,project:projectBlocks}):draft.equation?planStructuredEquation(text,draft.row,draft.value,{scan:scanDocument,applyPatches,validateMath:parseDisplayMath}):draft.study?planStudyEdit(text,draft.study,draft.values,{scan:scanDocument,applyPatches}):planStructuredEdit(text,draft.row,draft.value,{scan:scanDocument,applyPatches,validateMath:parseDisplayMath,parseInline:parseStructuredInline,level:draft.level});if(next===text)return;commitStructured(next,command);setStructuredDraft(null);setStatus('ブロックの変更を反映しました（未保存）。');}catch(e){setStatus(String(e.message??e));}}
+    try{const next=draft.mixed?planMixedEdit(text,draft,{scan:scanDocument,parseInline:parseStructuredInline,applyPatches,project:projectBlocks}):draft.list?planListDraft(text,draft,{scan:scanDocument,parseInline:parseStructuredInline,applyPatches,project:projectBlocks}):draft.equation?planStructuredEquation(text,draft.row,draft.value,{scan:scanDocument,applyPatches,validateMath:parseDisplayMath}):draft.study?planStudyEdit(text,draft.study,draft.values,{scan:scanDocument,applyPatches}):planStructuredEdit(text,draft.row,draft.value,{scan:scanDocument,applyPatches,validateMath:parseDisplayMath,parseInline:parseStructuredInline,level:draft.level});if(next===text)return;commitStructured(next,command);setStructuredDraft(null);setStatus('ブロックの変更を反映しました（未保存）。');}catch(e){setStatus(String(e.message??e));}
+  }
   const componentBaseDisabled=routeBlocked||!validPaper(page)||themeDirty;
   const headingDisabled=componentBaseDisabled||!theme?.componentEditable;
   const paragraphDisabled=componentBaseDisabled||!theme?.paragraphEditable;
