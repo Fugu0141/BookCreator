@@ -6,11 +6,10 @@ export function resolvePaperBlock(rows,range){
   return matches.length===1?matches[0]:null;
 }
 
-/** Only the existing, validated adjacent moves are exposed by the drag UI. */
+/** Resolve a target index inside the prevalidated reachable interval. */
 export function resolvePaperDrop(selection,binding){
-  if(!selection||!binding||binding.documentId!==selection.command.file.id)return null;
+  if(!selection?.bounds||!binding||binding.documentId!==selection.command.file.id)return null;
   const target=resolvePaperBlock(selection.rows,binding.range);
-  if(!target)return null;
-  const action=target.index===selection.index-1?'up':target.index===selection.index+1?'down':null;
-  return action&&selection[action]?action:null;
+  if(!target||target.index===selection.index||target.index<selection.bounds.min||target.index>selection.bounds.max)return null;
+  return target.index;
 }
