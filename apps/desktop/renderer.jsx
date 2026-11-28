@@ -10,7 +10,7 @@ import {projectBookSettings,projectTypographySettings,projectFontChoices} from '
 import {createRoot} from 'react-dom/client';
 import {createInlineParseSession,createManuscriptScanSession,parsePreviewInline,prepareBrowserPreview,prepareBookBrowserPreview,previewSourceRange,planInlineFormat,planListFormat,planListIndent,planListBatch,inspectDisplayMath,planDisplayMath,inspectInlineMath,planInlineMath,inspectComponentDisplayMath,planComponentDisplayMath,equationReferenceTargets,planEquationReference,planEquationNumbering,planNumberedComponentDisplayMath,hasDynamicLabels,hasStudyNumbering,studyTemplate,studyKinds,defaultStudyDesign,customStudyTemplate,isCustomComponentId,linkedStudyTemplate,slottedStudyTemplate,namedSlotDefinitions} from '../../dist/index.js';
 import {scanDocument,scanDocumentIncremental,validateScannedBlocks,indexBlockIds,applyPatches,parseReferenceToken} from '../../../BookCreator_Markdown/dist/index.js';
-import {createIntelligentPrintTicket,createPlainTextPagePreview,createIncrementalTextPagePreview,createRetainedTextPagePreview,createTextMeasurementCache,createParagraphMeasurementCache,createPageRenderCache,createMathCompilationCache,createDisplayMathGeometryCache,createInlineMathGeometryCache,parsePreviewMath,parseDisplayMath,createPreviewMath} from '../../../BookCreator_LayoutEngine/dist/index.js';
+import {createIntelligentPrintTicket,createFullRetainedTextPagePreview,createPlainTextPagePreview,createIncrementalTextPagePreview,createRetainedTextPagePreview,createTextMeasurementCache,createParagraphMeasurementCache,createPageRenderCache,createMathCompilationCache,createDisplayMathGeometryCache,createInlineMathGeometryCache,parsePreviewMath,parseDisplayMath,createPreviewMath} from '../../../BookCreator_LayoutEngine/dist/index.js';
 import {ParagraphLab} from './paragraph-lab.jsx';
 import {ComponentLab} from './component-lab.jsx';
 import {paperGeometry} from './book-settings.mjs';
@@ -766,6 +766,7 @@ function App(){
       phase='lane';
       try{
         result=await measurementLane.run(()=>{
+          if(whole&&areaPrepared&&!pageCache){checkpoint=createPreviewCheckpoint({current});return createFullRetainedTextPagePreview(document,previewOptions,undefined,checkpoint);}
           if(!retainedMode)return sparse?createIncrementalTextPagePreview(document,previewOptions,lease?.snapshot):createPlainTextPagePreview(document,previewOptions);
           // Read at lane entry, after any waiting, from the exact retained host.
           if(lease&&display.getSparseBase(preview.current,target)===lease)priorityPages=visiblePaperPageIndices(preview.current,lease.host);
@@ -821,7 +822,7 @@ function App(){
       }
       const {pages,retained}=publication;
       const bookLease=whole&&areaPrepared?captureBookAreaLease({snapshot,file,raw,dirty:manuscriptStore.getMetadata().dirty,themeDirty,settingsDirty,themeRevision:theme?.revision,settingsRevision:savedSettings?.revision}):null;
-      paperAreaContext.current=(scope==='manuscript'||whole&&!!areaPrepared)&&result.plan.completeness==='full'&&!result.plan.diagnostics.some(d=>d.severity==='error')?{job,scope,bookLease,bookSources:bookLease?snapshot:null,options:previewOptions,plan:{revision:options.revision,fingerprint:options.fingerprint,pageCount:result.plan.pages.length,fragments:result.intelligentLayout?.fragments??result.slices.map(slice=>({origin:slice.origin}))},areaPrepared,areaSnapshot,current}:null;
+      paperAreaContext.current=(scope==='manuscript'||whole&&!!areaPrepared)&&result.plan.completeness==='full'&&!result.plan.diagnostics.some(d=>d.severity==='error')?{job,scope,bookLease,bookSources:bookLease?snapshot:null,options:previewOptions,geometryBase:whole&&areaPrepared?result.snapshot:undefined,plan:{revision:options.revision,fingerprint:options.fingerprint,pageCount:result.plan.pages.length,fragments:result.intelligentLayout?.fragments??result.slices.map(slice=>({origin:slice.origin}))},areaPrepared,areaSnapshot,current}:null;
       const pageNumber=retained?Math.max(1,Math.min(activePage,pages.length)):1;
       trialPdfSnapshot.current=null;
       if(whole&&snapshot&&result.plan.completeness==='full'&&!result.plan.diagnostics.some(d=>d.severity==='error')&&!manuscriptStore.getMetadata().dirty&&!themeDirty&&!settingsDirty&&
