@@ -4,6 +4,7 @@ function projection(previous,next){
   return previous&&Object.keys(next).every(key=>Object.is(previous[key],next[key]))?previous:next;
 }
 const sourceOf=state=>({fileId:state.file?.id??null,hasFile:!!state.file,editable:!!state.file?.editable,value:state.text});
+// Recovery and preview currently require the same immutable document projection.
 const recoveryOf=state=>({file:state.file,text:state.text});
 function metadataOf(state){
   const history=activeStructuredHistory(state);
@@ -28,5 +29,5 @@ export function createManuscriptStore(){
     if(metadataChanged)for(const listener of [...metadataListeners])listener();
     if(recoveryChanged)for(const listener of [...recoveryListeners])listener();
   }
-  return {dispatch,getSnapshot:()=>state,subscribe:subscribe(listeners),getSource:()=>source,subscribeSource:subscribe(sourceListeners),getMetadata:()=>metadata,subscribeMetadata:subscribe(metadataListeners),getRecovery:()=>recovery,subscribeRecovery:subscribe(recoveryListeners)};
+  return {dispatch,getSnapshot:()=>state,subscribe:subscribe(listeners),getSource:()=>source,subscribeSource:subscribe(sourceListeners),getMetadata:()=>metadata,subscribeMetadata:subscribe(metadataListeners),getRecovery:()=>recovery,subscribeRecovery:subscribe(recoveryListeners),getPreviewInput:()=>recovery,subscribePreviewInput:subscribe(recoveryListeners)};
 }
