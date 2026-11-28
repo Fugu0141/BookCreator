@@ -1448,7 +1448,7 @@ async function packageSmoke(){
   await exec("document.querySelector('#preview-button').click()");
   await until("document.querySelector('#workspace-layout-state').dataset.phase==='ready'&&document.querySelector('#workspace-layout-state').dataset.scope==='manuscript'&&!document.querySelector('#preview > div').inert");
   await exec("document.querySelector('#paper-edit-mode').click()");
-  await exec("(()=>{const v=document.querySelector('#preview');v.scrollTop=0;v.scrollLeft=0;v.firstElementChild.shadowRoot.querySelector('[data-block][tabindex]').click();})()");
+  await exec("(()=>{const v=document.querySelector('#preview');v.scrollTop=0;v.scrollLeft=0;v.firstElementChild.shadowRoot.querySelector('[data-block][tabindex] [data-start][data-end]').click();})()");
   await until("!document.querySelector('#paper-block-down').disabled&&!!document.querySelector('#paper-selection-frame')&&!document.querySelector('#paper-selection-frame').hidden");
   await exec("document.querySelector('#paper-block-down').click()");
   await until("document.querySelector('#source').value==="+JSON.stringify(paperEditMoved)+"&&!document.querySelector('#paper-block-undo').disabled&&!document.querySelector('#paper-selection-frame')");
