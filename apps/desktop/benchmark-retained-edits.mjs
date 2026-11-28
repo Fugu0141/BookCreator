@@ -25,7 +25,7 @@ export async function benchmarkRetainedEdits({raw,click,until,ready,paperSignatu
     await raw("("+installInputProbe.toString()+")("+JSON.stringify({values,intervalMs:35})+")");
     try{
       await until('retained benchmark input committed',ready('manuscript')+"&&window.__bcRetainedEditBenchmark.probe.finalMs!==null&&document.querySelector('#source').value==="+JSON.stringify(value));
-      return await raw("(()=>{const h=document.querySelector('#preview > div'),p=window.__bcRetainedEditBenchmark.probe;return {...p,pages:h.shadowRoot.children.length,work:h.dataset.retainedWork?JSON.parse(h.dataset.retainedWork):null,focus:document.activeElement.id==='source',scrollTop:h.parentNode.scrollTop,scrollLeft:h.parentNode.scrollLeft,clean:!h.dataset.provisionalPages&&!h.shadowRoot.querySelector('[data-provisional-layer]')};})()");
+      return await raw("(()=>{const h=document.querySelector('#preview > div'),{probe:p,initialHost,initialPages}=window.__bcRetainedEditBenchmark,nodes=Array.from(h.shadowRoot.children);return {...p,pages:nodes.length,identity:{sameHost:h===initialHost,reusedFromInitial:nodes.filter((n,i)=>n===initialPages[i]).length,reported:Number(h.dataset.reusedPages),generated:h.dataset.generatedPages===undefined?null:Number(h.dataset.generatedPages)},work:h.dataset.retainedWork?JSON.parse(h.dataset.retainedWork):null,focus:document.activeElement.id==='source',scrollTop:h.parentNode.scrollTop,scrollLeft:h.parentNode.scrollLeft,clean:!h.dataset.provisionalPages&&!h.shadowRoot.querySelector('[data-provisional-layer]')};})()");
     }finally{await raw("(()=>{const p=window.__bcRetainedEditBenchmark;if(p){p.observer.disconnect();p.timers.forEach(t=>clearTimeout(t));}delete window.__bcRetainedEditBenchmark;})()");}
   }
   const samples=[];
@@ -50,6 +50,8 @@ export async function benchmarkRetainedEdits({raw,click,until,ready,paperSignatu
         if(!sample.focus||!sample.clean||!Number.isFinite(sample.finalMs)||sample.finalMs<0||sample.provisionalMs!==null&&(!Number.isFinite(sample.provisionalMs)||sample.provisionalMs<0||sample.provisionalMs>sample.finalMs))throw Error('Invalid retained benchmark sample');
         if(retained&&(!sample.work||sample.work.measurement.reusedBlocks<1||sample.work.pagination.reusedBlocks<1))throw Error('Retained benchmark did not reuse measured/placed blocks');
         if(retained){
+          const identity=sample.identity;
+          if(!identity.sameHost||!Number.isSafeInteger(identity.reported)||identity.reported<1||!Number.isSafeInteger(identity.generated)||identity.generated<0||identity.reported+identity.generated!==sample.pages||identity.reusedFromInitial<1||sample.intermediatePublications===0&&identity.reported!==identity.reusedFromInitial)throw Error('Retained inline-math page DOM reuse missing or inconsistent: '+JSON.stringify({case:item.id,pair,identity,pages:sample.pages,intermediatePublications:sample.intermediatePublications}));
           if(!Number.isSafeInteger(sample.work.measurement.sharedSnapshotEntries)||sample.work.measurement.sharedSnapshotEntries<1||sample.work.measurement.sharedSnapshotEntries>sample.work.measurement.reusedBlocks)throw Error('Retained benchmark did not share measurement snapshots');
           if(!['preparationMs','publicationMs'].every(key=>Number.isFinite(sample.work.hostTiming?.[key])&&sample.work.hostTiming[key]>=0))throw Error('Missing host timing diagnostics');
           const publicationStages=sample.work.hostTiming.publicationStages;
@@ -66,10 +68,10 @@ export async function benchmarkRetainedEdits({raw,click,until,ready,paperSignatu
           if(!stages||!['measure-graphemes','measure-hard-line','measure-frozen-line','measure-variable-graphemes','measure-variable-line'].every(stage=>Number.isSafeInteger(stages[stage]?.count)&&stages[stage].count>=0&&Number.isFinite(stages[stage].maxGapMs)&&stages[stage].maxGapMs>=0))throw Error('Missing measurement checkpoint diagnostics');
           if(!stages||!['render-key-page','render-fragment','render-line'].every(stage=>Number.isSafeInteger(stages[stage]?.count)&&stages[stage].count>0&&Number.isFinite(stages[stage].maxGapMs)&&stages[stage].maxGapMs>=0))throw Error('Retained benchmark missing fine render checkpoints');
         }
-        if(!retained&&(sample.work||sample.provisionalMs!==null))throw Error('Baseline used retained work');
+        if(!retained&&(sample.work||sample.provisionalMs!==null||sample.identity.sameHost||sample.identity.reusedFromInitial!==0))throw Error('Baseline used retained work');
         const {finalMs,provisionalMs,pages,work}=sample;
         const burst=item.id==='burst'?{dispatchOffsetsMs:sample.dispatchOffsetsMs,timerLagMs:sample.timerLagMs,dispatchWorkMs:sample.dispatchWorkMs,intermediatePublications:sample.intermediatePublications,totalMs:sample.totalMs}:undefined;
-        samples.push({case:item.id,pair,arm,finalMs,provisionalMs,pages,work,scrollAfter:{top:sample.scrollTop,left:sample.scrollLeft},...(burst?{burst}:{})});
+        samples.push({case:item.id,pair,arm,finalMs,provisionalMs,pages,work,identity:sample.identity,scrollAfter:{top:sample.scrollTop,left:sample.scrollLeft},...(burst?{burst}:{})});
         await edit(large.source);
         if(await paperSignature()!==original||await readFile(join(root,'manuscript',large.id+'.md'),'utf8')!==large.source)throw Error('Retained benchmark restore failed');
       }
