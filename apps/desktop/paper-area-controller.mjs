@@ -3,9 +3,16 @@ import {beginPaperAreaDrag,previewPaperAreaDrag,finishPaperAreaDrag} from './pap
 
 // currentPlan is a host-provided function, returning only the latest complete
 // successful plan (not an old retained preview). Its fragment inventory must
-// cover the entire document scope. No DOM or disk IO belongs here.
+// cover the entire document scope. baseIntents contains other user-owned IL
+// placement inputs (never derived placements or this store's percent fields).
+// No DOM or disk IO belongs here.
 export function createPaperAreaController(initial,currentPlan){
   const draft=createPaperAreaDraft(initial);
+  function baseFor(plan,documentId,blockKey){
+    const matches=(plan.baseIntents??[]).filter(i=>i.documentId===documentId&&i.blockKey===blockKey);
+    if(matches.length>1)return null;
+    return matches[0]?.placement??{};
+  }
   const resolve=selection=>{
     const plan=currentPlan();
     if(!selection||!plan||selection.revision!==plan.revision||selection.fingerprint!==plan.fingerprint||!Array.isArray(plan.fragments))return null;
@@ -18,7 +25,10 @@ export function createPaperAreaController(initial,currentPlan){
     const target={documentId:origin.documentId,blockKey:origin.blockKey,revision:plan.revision,fingerprint:plan.fingerprint,fragmentCount:1};
     const snapshot=draft.snapshot();
     const stored=snapshot.document.entries.find(e=>e.documentId===origin.documentId&&e.persistentId===persistentId);
-    const placement={...matches[0].placement};
+    const base=baseFor(plan,origin.documentId,origin.blockKey);
+    if(!base)return null;
+    const placement={...base};
+    if(matches[0].placement?.fixed===true)placement.mode='fixed';
     // Existing position/spacing and unrelated constraints are not replaced.
     // The draft, not measured extents, is the source of truth for area edits.
     const sizeConstraints={...placement.sizeConstraints};
@@ -53,6 +63,22 @@ export function createPaperAreaController(initial,currentPlan){
     undo:draft.undo,redo:draft.redo,markSaved:draft.markSaved,
     // Return proposals for the current complete inventory; never publish
     // them as successful layout until IL has independently accepted them.
-    bind(){const plan=currentPlan();return plan?bindPaperAreaDocument(draft.snapshot().document,plan.fragments):null;}
+    bind(){
+      const plan=currentPlan();if(!plan)return null;
+      const area=bindPaperAreaDocument(draft.snapshot().document,plan.fragments);
+      if(area.status!=='ready')return area;
+      const intents=[],seen=new Set(),keys=['minWidthPercent','minHeightPercent'];
+      const k=i=>JSON.stringify([i.documentId,i.blockKey]);
+      const byKey=new Map(area.intents.map(i=>[k(i),i]));
+      for(const base of plan.baseIntents??[]){
+        const id=k(base),placement=base.placement??{};
+        if(seen.has(id)||keys.some(key=>Object.hasOwn(placement.sizeConstraints??{},key)))return {status:'conflict',intents:[],diagnostics:[{documentId:base.documentId,blockKey:base.blockKey,code:'AREA_INTENT_OWNERSHIP'}]};
+        seen.add(id);
+        const own=byKey.get(id);
+        intents.push(own?{...base,placement:{...placement,sizeConstraints:{...placement.sizeConstraints,...own.placement.sizeConstraints}}}:base);
+      }
+      for(const own of area.intents)if(!seen.has(k(own)))intents.push(own);
+      return {...area,intents};
+    }
   };
 }
