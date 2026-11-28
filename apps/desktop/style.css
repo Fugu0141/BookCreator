@@ -777,3 +777,7 @@ body{font-family:BCFont_NotoSansJP,system-ui,sans-serif}.font-control,.typograph
 /* Geometry-only drag feedback: no new page DOM and no source hit targets. */
 .book-geometry-draft-frame{position:fixed;box-sizing:border-box;z-index:19;pointer-events:none;border:1px dashed #6b83a3;background:#7895bc22;}
 .book-geometry-draft-frame.is-selected{border:2px solid #3478b7;background:#3478b71a;}
+
+/* Position handle remains reachable if a very small viewport forces overlap. */
+.book-position-frame{z-index:23;}
+.book-position-panel{min-width:0;}
