@@ -2388,6 +2388,13 @@ async function smoke(){
   await until("document.querySelector('.lab-selection-caption').textContent.includes('content')&&document.querySelector('#lab-preview > div').shadowRoot.querySelector('[data-component-node=content]').style.outline.includes('solid')");
   await exec("(()=>{const el=document.querySelector('#lab-preview > div').shadowRoot.querySelector('[data-component-node=bar]');el.focus();el.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true}));})()");
   await until("document.querySelector('.lab-selection-caption').textContent.includes('bar')&&document.querySelector('#lab-preview > div').shadowRoot.querySelector('[data-component-node=bar]').style.outline.includes('solid')");
+  const flowOrder=await exec("[...document.querySelectorAll('[data-lab-node]')].map(e=>e.dataset.labNode)");
+  if(flowOrder[0]!=='bar'||flowOrder[1]!=='content')throw Error('Unexpected initial flow fixture');
+  await exec("(()=>{const el=document.querySelector('#lab-preview > div').shadowRoot.querySelector('[data-component-node=bar]');if(!el.hasAttribute('data-lab-flow-draggable'))throw Error('Flow node is not movable');el.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}));})()");
+  await until("!document.querySelector('#lab-apply').disabled&&[...document.querySelectorAll('[data-lab-node]')].map(e=>e.dataset.labNode).slice(0,2).join(',')==='content,bar'");
+  await exec("document.querySelector('#lab-undo').click()");
+  await until("!document.querySelector('#lab-apply').disabled&&JSON.stringify([...document.querySelectorAll('[data-lab-node]')].map(e=>e.dataset.labNode))==="+JSON.stringify(JSON.stringify(flowOrder)));
+
   await exec("document.querySelector('#lab-add-menu').click()");
   await until("!document.querySelector('#lab-add-options').hidden&&!!document.querySelector('#lab-add-label').getClientRects().length");
   await exec("document.querySelector('#lab-add-menu').click()");
