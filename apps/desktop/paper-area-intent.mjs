@@ -47,17 +47,18 @@ export function finishPaperAreaDrag(gesture,{current,placement,pointerPx,cancell
 
 // Gap gestures use physical micrometres, not occupied-height percentages.
 // Zero is a valid starting point, and no layout or saved state is changed here.
-export function beginPaperGapDrag({target,current,placement={},value=0,bodyPx,bodyHeight,originPx}){
+export function beginPaperGapDrag({target,current,placement={},value=0,bodyPx,bodyHeight,originPx,side='after'}){
   if(!canEditPaperArea(target,current)||placement.mode==='fixed'||placement.fixed)return null;
   if(!Number.isSafeInteger(bodyHeight)||bodyHeight<=0||!Number.isFinite(bodyPx)||bodyPx<=0||!Number.isFinite(originPx)||!Number.isSafeInteger(value)||value<0||value>MAX_PAPER_TRAILING_SPACE)return null;
+  if(side!=='before'&&side!=='after')return null;
   const max=Math.floor(Math.min(bodyHeight,MAX_PAPER_TRAILING_SPACE)/1000)*1000;
   if(value>max)return null;
-  return {target:{...target},value,bodyPx,bodyHeight,originPx,max};
+  return {target:{...target},value,bodyPx,bodyHeight,originPx,max,side};
 }
 export function previewPaperGapDrag(gesture,pointerPx){
   if(!gesture||!Number.isFinite(pointerPx))return null;
   const delta=pointerPx-gesture.originPx;
-  const value=Math.max(0,Math.min(gesture.max,Math.round((gesture.value+delta/gesture.bodyPx*gesture.bodyHeight)/1000)*1000));
+  const value=Math.max(0,Math.min(gesture.max,Math.round((gesture.value+(gesture.side==='before'?-delta:delta)/gesture.bodyPx*gesture.bodyHeight)/1000)*1000));
   return {value,extentPx:value/gesture.bodyHeight*gesture.bodyPx,changed:Math.abs(delta)>=2&&value!==gesture.value};
 }
 export function finishPaperGapDrag(gesture,{current,placement={},pointerPx,cancelled=false}){
