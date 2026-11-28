@@ -924,13 +924,12 @@ function App(){
     const current=()=>paperAreaContext.current===host&&host.current()&&!manuscriptStore.getMetadata().dirty;
     void io(async()=>{
       const next=planBookPaperMove(persisted.source,{expectedSource:persisted.source,range:selected.moveRange,action},{scan:scanDocument,parseInline:parseStructuredInline,applyPatches});
-      if(!current())throw Error('全冊紙面が変更されました。');
+      const fresh=await unwrap(api.readBook());
+      if(!current()||fresh.length!==host.bookSources.length||fresh.some((d,i)=>d.documentId!==host.bookSources[i].documentId||d.revision!==host.bookSources[i].revision||d.source!==host.bookSources[i].source))throw Error('全冊紙面の計測後に原稿が変更されました。');
       const open=manuscriptStore.getPreviewInput();
       if(open.file?.id===persisted.documentId){
         if(open.file.revision!==persisted.revision||open.text!==persisted.source||!open.file.editable)throw Error('原稿が変更されました。');
-        // Re-read before applying even when the target is already open.
-        const disk=await unwrap(api.read(persisted.documentId));
-        if(!current()||disk.revision!==persisted.revision||disk.text!==persisted.source||!disk.editable||disk.recovery?.candidate)throw Error('原稿または復旧状態が変更されました。');
+        // readBook checked the source without rotating the active recovery token.
       }else{
         await withDiscard(async()=>{
           const disk=await unwrap(api.read(persisted.documentId));
