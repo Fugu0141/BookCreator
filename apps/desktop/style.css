@@ -813,3 +813,8 @@ body{font-family:BCFont_NotoSansJP,system-ui,sans-serif}.font-control,.typograph
 .paper-area-docked .paper-inline-summary small{flex-basis:100%;}
 .paper-area-docked .paper-property-grid{grid-template-columns:minmax(0,1fr);}
 .paper-area-docked .paper-property-resets{flex-wrap:wrap;}
+
+.paper-inline-area-toolbar.paper-position-docked{position:static;z-index:auto;width:100%;max-width:none;max-height:none;box-shadow:none;padding:8px;overflow:visible;}
+.paper-position-docked .paper-property-grid{grid-template-columns:minmax(0,1fr);}
+.paper-position-docked .controls{flex-wrap:wrap;}
+.paper-position-docked>small{flex-basis:100%;overflow-wrap:anywhere;}
