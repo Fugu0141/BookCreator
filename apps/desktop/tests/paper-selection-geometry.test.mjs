@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {clipPaperRect,placePaperPropertyPanel,paperPositionFromDrag,paperPositionFromPagePointer} from '../paper-selection-geometry.mjs';
+import {clipPaperRect,placePaperPropertyPanel,paperPositionFromDrag,paperPositionFromPagePointer,resolvePaperSelectionNodes} from '../paper-selection-geometry.mjs';
 const v={left:10,top:20,right:110,bottom:120};
 test('visible rectangle and partial clipping',()=>{
   assert.deepEqual(clipPaperRect({left:20,top:30,right:70,bottom:80},v),{left:20,top:30,width:50,height:50});
@@ -35,4 +35,15 @@ test('cross-page pointer preserves physical grab offset with different page orig
   assert.deepEqual(paperPositionFromPagePointer(page,body,{x:660,y:185},grab,bounds),{page:4,x:20000,y:30000});
   assert.deepEqual(paperPositionFromPagePointer({...page,left:800,width:250,height:500},body,{x:855,y:102.5},grab,bounds),{page:4,x:20000,y:30000});
   for(const pointer of [{x:549,y:185},{x:1050,y:185},{x:550,y:20},{x:1000,y:185},{x:660,y:900}])assert.equal(paperPositionFromPagePointer(page,body,pointer,grab,bounds),null);
+});
+
+
+test('group selection frame nodes match exact document and block identities, retaining selection order',()=>{
+  const node=(document,block)=>({dataset:{document,block}});
+  const a=node('ch','a'),b=node('ch','b'),other=node('other','a'),dup=node('ch','b');
+  assert.deepEqual(resolvePaperSelectionNodes([a,other,b],'ch',['b','a']),[{key:'b',index:0,node:b},{key:'a',index:1,node:a}]);
+  assert.deepEqual(resolvePaperSelectionNodes([a,b,dup,other],'ch',['b','a','missing']),[{key:'a',index:1,node:a}]);
+  assert.deepEqual(resolvePaperSelectionNodes([a,b],'ch',['a','a']),[]);
+  const quoted=node('ch','a"]#unexpected');
+  assert.deepEqual(resolvePaperSelectionNodes([quoted],'ch',['a"]#unexpected']),[{key:'a"]#unexpected',index:0,node:quoted}]);
 });
