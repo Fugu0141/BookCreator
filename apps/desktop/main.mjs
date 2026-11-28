@@ -647,6 +647,12 @@ function workspaceSmokeExec(){
         await raw("document.querySelector('#component-quick-select summary').click()");
         if(!await raw("document.querySelector('#component-quick-select').open"))throw Error('Cannot open direct component selector');
       }
+      if(selectors.some(s=>/^#lab-(measure|smart-snap)$/.test(s))&&await raw("document.querySelector('#lab-view-options')?.hidden===true")){
+        await raw("document.querySelector('#lab-view-options-toggle').click()");
+      }
+      if(selectors.some(s=>/^#lab-visual-(padding|gap)$/.test(s))&&await raw("document.querySelector('#lab-spacing-fields')?.hidden===true")){
+        await raw("document.querySelector('#lab-spacing-toggle').click()");
+      }
       const side=await raw("(()=>{for(const selector of "+JSON.stringify(selectors)+"){const el=document.querySelector(selector);if(el?.closest('#lab-library-fields'))return 'library';if(el?.closest('#lab-layer-fields'))return 'layers';}return null;})()");
       if(side&&await raw("document.querySelector('#lab-"+(side==='library'?'library':'layer')+"-fields')?.hidden===true")){
         await raw("document.querySelector('#lab-"+side+"-toggle').click()");
@@ -1898,7 +1904,7 @@ async function productionDataCrashSmoke(mode){
     await until('registered candidate locked',"!!document.querySelector('#component-recovery-restore')&&document.querySelector('#lab-padding').disabled");
     await click('#component-recovery-restore');
     await until('restored and unmeasured',"Number(document.querySelector('#lab-padding').value)==="+oracle.values.padding+"&&document.querySelector('#lab-library-replace').disabled&&!document.querySelector('#lab-measure').disabled");
-    await click('#lab-measure');await until('measured',"!document.querySelector('#lab-library-replace').disabled");
+    if(await raw("document.querySelector('#lab-measure')?.hidden===true"))await click('#lab-view-options-toggle');await click('#lab-measure');await until('measured',"!document.querySelector('#lab-library-replace').disabled");
     if(!same(await hashes(),saved))throw Error('Component recovery silently updated theme');
     await click('#lab-cancel');await until('closed',"!document.querySelector('#lab-measure')");
     if((await records()).length||!same(await hashes(),saved))throw Error('Component cancel lost original or retained working draft');
@@ -2096,7 +2102,7 @@ async function componentRecoveryJourneySmoke(){
   if((await store.list()).records[0]?.version!==snapshot[0].version)throw Error('Deferred recovery was modified');
   await openLab();await click('#component-recovery-restore');
   await until('restored design requires measurement',"Number(document.querySelector('#lab-padding').value)==="+padding+"&&!document.querySelector('#lab-measure').disabled&&document.querySelector('#lab-library-replace').disabled");
-  await click('#lab-measure');
+  if(await raw("document.querySelector('#lab-measure')?.hidden===true"))await click('#lab-view-options-toggle');await click('#lab-measure');
   await until('restored design measured',"!document.querySelector('#lab-library-replace').disabled");
   if(await readFile(themePath,'utf8')!==savedTheme)throw Error('Recovery implicitly changed registered component');
   await click('#lab-cancel');await until('discarded close',"!document.querySelector('#lab-measure')");
@@ -2454,11 +2460,21 @@ async function smoke(){
   await until("document.querySelector('#lab-quick-lock').getAttribute('aria-pressed')==='true'&&document.querySelector('#lab-quick-color').disabled&&document.querySelector('#lab-quick-remove').disabled");
   await exec("document.querySelector('#lab-quick-lock').click()");
   await until("!document.querySelector('#lab-quick-color').disabled");
+  await until("document.querySelector('#lab-spacing-fields').hidden&&document.querySelector('#lab-view-options').hidden&&document.querySelector('#lab-measure').hidden");
+  await exec("document.querySelector('#lab-spacing-toggle').click()");
+  await until("!document.querySelector('#lab-spacing-fields').hidden");
   const spacingStart=await exec("Number(document.querySelector('#lab-visual-padding').value)");
   await exec("document.querySelector('#lab-visual-padding').dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true,cancelable:true}))");
   await until("Number(document.querySelector('#lab-visual-padding').value)==="+(spacingStart+500)+"&&Number(document.querySelector('#lab-padding').value)==="+((spacingStart+500)/1000)+"&&!document.querySelector('#lab-apply').disabled");
   await exec("document.querySelector('#lab-undo').click()");
   await until("Number(document.querySelector('#lab-visual-padding').value)==="+spacingStart+"&&Number(document.querySelector('#lab-padding').value)==="+(spacingStart/1000)+"&&!document.querySelector('#lab-apply').disabled");
+  await exec("document.querySelector('#lab-spacing-toggle').click()");
+  await until("document.querySelector('#lab-spacing-fields').hidden&&!!document.querySelector('#lab-zoom').getClientRects().length");
+  await exec("document.querySelector('#lab-view-options-toggle').click()");
+  await until("!document.querySelector('#lab-view-options').hidden&&!document.querySelector('#lab-measure').hidden");
+  await exec("document.querySelector('#lab-view-options-toggle').click()");
+  await until("document.querySelector('#lab-measure').hidden");
+
 
   await exec("document.querySelector('#lab-add-menu').click()");
   await until("!document.querySelector('#lab-add-options').hidden&&!!document.querySelector('#lab-add-label').getClientRects().length");
@@ -2480,6 +2496,8 @@ async function smoke(){
     if(await exec("innerWidth<=650")){
       await until("(()=>{const a=document.querySelector('.lab-layers').getBoundingClientRect(),b=document.querySelector('.lab-canvas').getBoundingClientRect(),c=document.querySelector('.lab-inspector').getBoundingClientRect();return a.bottom<=b.top+1&&b.bottom<=c.top+1;})()");
     }
+    await exec("document.querySelector('#lab-view-options-toggle').click()");
+    await until("!document.querySelector('#lab-measure').hidden");
     await exec("document.querySelector('#lab-measure').scrollIntoView({block:'center',inline:'nearest'})");
     await until("(()=>{const r=document.querySelector('#lab-measure').getBoundingClientRect(),g=document.querySelector('.lab-grid-three').getBoundingClientRect();return r.top>=g.top-1&&r.bottom<=g.bottom+1;})()");
     await exec("document.querySelector('#lab-measure').click()");
