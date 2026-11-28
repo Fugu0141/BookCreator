@@ -30,12 +30,12 @@ function CandidatePaper({element,firstPage}){
   const mount=useRef(null);
   useLayoutEffect(()=>{
     const node=mount.current;if(!node)return;
-    node.replaceChildren(element);
+    element.inert=true;node.replaceChildren(element);
     const target=element.shadowRoot?.querySelector('[data-page="'+firstPage+'"]');
     if(target)node.scrollTop=target.getBoundingClientRect().top-node.getBoundingClientRect().top+node.scrollTop;
     return ()=>{if(element.parentNode===node)element.remove();};
   },[element,firstPage]);
-  return <div id="book-il-candidate-paper" ref={mount} inert={true} aria-label="改善後の実測紙面" style={{overflow:'auto',maxHeight:'42vh',background:'#e7edf2',padding:8}}/>;
+  return <div id="book-il-candidate-paper" ref={mount} tabIndex={0} aria-label="改善後の実測紙面" style={{overflow:'auto',maxHeight:'42vh',background:'#e7edf2',padding:8}}/>;
 }
 
 export function BookILQualityReview({context,blocked}){
