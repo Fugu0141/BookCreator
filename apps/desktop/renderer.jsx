@@ -661,7 +661,7 @@ function App(){
     const mathOptions=mathCacheEnabled?mathCaches.current:{};
     const retainedMode=retainedPreview&&scope==='manuscript'&&!pageCache&&!reusePaperPages;
     const scanSession=retainedMode?manuscriptSession.current:undefined;
-    let preparationMode='main',workerComputeMs=null,preparationWork=null;
+    let preparationMode='main',workerComputeMs=null,workerRequestMs=null,preparationWork=null;
     let diagnostics=[],documents=[],provisional=null,checkpoint=null,preparationMs=null,preparationYieldMs=null,phase='read';
     const diagnosticTarget=paperTarget(scope,file);
     try{
@@ -675,12 +675,16 @@ function App(){
       if(retainedMode&&workerPreparation){
         phase='prepare-worker';
         let response;
+        const workerStarted=performance.now();
         try{response=await preparationClient.current.prepare(preparationPayload(input,documents),true);}
         catch{preparationMode='fallback';}
+        finally{workerRequestMs=performance.now()-workerStarted;}
+        // Keep numeric timings even when a newer edit superseded this request.
+        if(response?.type==='prepared')workerComputeMs=response.preparationMs;
         if(!current()||(!response&&preparationMode!=='fallback'))return;
         if(response){
           if(response.type==='error')throw Object.assign(Error(response.error.message),{code:response.error.code});
-          prepared=response.prepared;preparationWork=response.work;workerComputeMs=response.preparationMs;preparationMode='worker';
+          prepared=response.prepared;preparationWork=response.work;preparationMode='worker';
           if(!preparationWork||!Number.isFinite(workerComputeMs)||workerComputeMs<0)throw Error('Invalid preparation worker diagnostics');
           if(prepared.options&&(prepared.options.revision!==input.rev||prepared.options.fingerprint!==input.fingerprint))throw Error('Stale preparation worker result');
         }
@@ -699,7 +703,7 @@ function App(){
       const options=prepared.options;
       validateLayoutOptions(options,input.fonts);
       preparationMs=performance.now()-preparationStarted;
-      // Host preparation is synchronous and outside the Engine's slice budget.
+      // Host preparation work (including Worker transport) is outside the Engine's slice budget.
       // Let queued input run before acquiring the physical measurement lane.
       if(automatic&&retainedMode){
         phase='prepare-yield';
@@ -765,7 +769,7 @@ function App(){
       if(host){
         delete host.dataset.retainedWork;
         if(retainedMode&&!sparseFallback&&result.paginationWork&&result.measurementWork){
-          host.dataset.retainedWork=JSON.stringify({pagination:result.paginationWork,measurement:result.measurementWork,images:result.imageWork,...preparationWork,priorityPages,firstVisitedPage,provisionalCount,directSinglePage,checkpoint:checkpoint?.snapshot(),cancelledJobs:cancelledPreviewLog.take(diagnosticTarget),hostTiming:{preparationMode,workerComputeMs,preparationMs,preparationYieldMs,publicationMs:performance.now()-presentationStarted,publicationStages}});
+          host.dataset.retainedWork=JSON.stringify({pagination:result.paginationWork,measurement:result.measurementWork,images:result.imageWork,...preparationWork,priorityPages,firstVisitedPage,provisionalCount,directSinglePage,checkpoint:checkpoint?.snapshot(),cancelledJobs:cancelledPreviewLog.take(diagnosticTarget),hostTiming:{preparationMode,workerComputeMs,workerRequestMs,preparationMs,preparationYieldMs,publicationMs:performance.now()-presentationStarted,publicationStages}});
         }
       }
       const {pages,retained}=publication;
@@ -779,7 +783,7 @@ function App(){
     finally{
       provisional?.clear();
       const elapsedMs=performance.now()-startedAt;
-      if(retainedMode&&automatic&&outcome==='cancelled')cancelledPreviewLog.record(diagnosticTarget,{phase,elapsedMs,preparationMs,preparationYieldMs,checkpoint:checkpoint?.snapshot()??null});
+      if(retainedMode&&automatic&&outcome==='cancelled')cancelledPreviewLog.record(diagnosticTarget,{phase,elapsedMs,preparationMs,preparationYieldMs,workerRequestMs,workerComputeMs,checkpoint:checkpoint?.snapshot()??null});
       performanceMetrics.record({stage:'layout',category:scope,outcome,waitMs:startedAt-requestedAt,runMs:elapsedMs});if(layoutScheduler.isCurrent(job))dispatchLayout({type:'finish'});
     }
   }
