@@ -2,7 +2,7 @@ import {parsePreviewInline,inlineSourceRange,type InlineSourceMap,type Component
 import {compileStudyBlock,compileCustomStudyBlock,createStudyNumbering,studyKindName,type StudyNumber,type StudyAnswer} from './study-blocks.js';
 import {compileHeadingDesign,compileParagraphDesign,validateHeadingLevels,compileNamedSlotRequests,resolveNamedSlotPresence,multilineTextOptions,type HeadingDesign,type HeadingLevel,type HeadingLevels,type HeadingContext,type StudyDesigns,type ComponentLibrary,validateComponentLibrary} from './preview-component.js';
 import {resolvePreviewTypography,type PreviewTypography} from './preview-typography.js';
-import {prepareManuscript,createEquationResolver,type Manuscript,type PreparationDependencies,type Scan,type SemanticItem} from './manuscript-poc.js';
+import {prepareManuscript,createEquationResolverFactory,type Manuscript,type PreparationDependencies,type Scan,type SemanticItem} from './manuscript-poc.js';
 function resolveStudy(item:SemanticItem,body:ReturnType<typeof resolvePreviewTypography>['body'],designs?:StudyDesigns,library?:ComponentLibrary,number?:StudyNumber,answer?:StudyAnswer){
   if(item.componentId){
     const entry=library?.entries.find(e=>e.id===item.componentId);
@@ -22,7 +22,7 @@ function slotRequests(item:SemanticItem,compiled:ReturnType<typeof compileHeadin
   })};
 }
 function equationResolver<S extends Scan>(items:readonly SemanticItem[],deps:PreparationDependencies<S>){
-  return (documentId:string)=>createEquationResolver(items,deps,documentId);
+  return createEquationResolverFactory(items,deps);
 }
 function primaryInline(text:string,sourceStart:number,validateMath?:(formula:string)=>unknown,resolveReference?:(token:string,offset:number)=>string,allowDisplay=false,validateDisplayMath?: (formula:string)=>unknown,componentEquations?:readonly ComponentEquation[]){
   const inline=parsePreviewInline(text,sourceStart,validateMath,resolveReference,allowDisplay,validateDisplayMath,componentEquations);

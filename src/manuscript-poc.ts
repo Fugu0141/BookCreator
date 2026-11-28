@@ -259,15 +259,28 @@ export function numberedEquationTargets(items:readonly SemanticItem[]){
   ]);
 }
 
+/** One immutable target index per prepared manuscript snapshot. Resolver
+ * closures are cheap and shared by all primary text and named slots in a file.
+ * Never reuse across preparation generations: numbering may change globally. */
+export function createEquationResolverFactory<S extends Scan>(items:readonly SemanticItem[],deps:PreparationDependencies<S>){
+  const parse=deps.parseReference;
+  if(!parse)return (_documentId:string)=>undefined;
+  const targets=new Map(numberedEquationTargets(items).map(t=>[t.id,t.number]));
+  const resolvers=new Map<string,(token:string,offset:number)=>string>();
+  return (documentId:string)=>{
+    const existing=resolvers.get(documentId);if(existing)return existing;
+    const resolve=(token:string,offset:number)=>{
+      const parsed=parse.call(deps,token,documentId,offset),ref=parsed.reference,number=ref&&targets.get(ref.target);
+      if(!ref||parsed.diagnostics.length||!number||!['number','label-number'].includes(ref.format))throw RangeError('Unresolved equation reference');
+      return ref.format==='number'?number:'式 ('+number+')';
+    };
+    resolvers.set(documentId,resolve);
+    return resolve;
+  };
+}
 /** Resolve validated equation references consistently in preview and editing. */
 export function createEquationResolver<S extends Scan>(items:readonly SemanticItem[],deps:PreparationDependencies<S>,documentId:string){
-  if(!deps.parseReference)return undefined;
-  const targets=new Map(numberedEquationTargets(items).map(t=>[t.id,t.number]));
-  return (token:string,offset:number)=>{
-    const parsed=deps.parseReference!(token,documentId,offset),ref=parsed.reference,number=ref&&targets.get(ref.target);
-    if(!ref||parsed.diagnostics.length||!number||!['number','label-number'].includes(ref.format))throw RangeError('Unresolved equation reference');
-    return ref.format==='number'?number:'式 ('+number+')';
-  };
+  return createEquationResolverFactory(items,deps)(documentId);
 }
 
 export function compileMeasuredManuscript<S extends Scan>(documents:readonly Manuscript[],revision:string,fingerprint:string,content:Input['content'],deps:Dependencies<S>):{input?:Input;items:SemanticItem[];diagnostics:Issue[];publicationReady:false} {
