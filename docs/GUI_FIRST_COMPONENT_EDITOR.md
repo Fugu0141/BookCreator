@@ -68,3 +68,7 @@ Paragraph Labの共通化、左レイヤー/ライブラリの折りたたみ、
 前headのDesktop/Windowsビルドで発生したプレビュー表示のJSX閉じ括弧漏れを修正。最新CIは未確認。
 
 GUI-AREA Engine first: LayoutEngine PR #69 (https://github.com/Fugu0141/BookCreator_LayoutEngine/pull/69) introduces opt-in heightMode: auto, height as minimum (0 means pure auto), preserves fixed-height mode, measures occupied child bottom plus padding with page/100mm bounds. BookCreator integration will follow verified Engine merge. No implicit child relocation or overlap avoidance yet. #244 previous Desktop succeeded, Windows recovery smoke failed reaching precision controls after asynchronous editor opening; await editor mount before testing panel visibility. Latest CI pending.
+
+### GUI-AREA: 自動高さのGUI・保存形式への接続
+
+LayoutEngine #69 はCore checks・Browser measurement smoke test成功後に統合（5b52fbf83c613b72c898e0a032472fcf535d7f1a）。BookCreatorの4ワークフローのEngine参照をこのコミットへ更新。Canvasグループの定義だけに任意のheightMode: autoを許し、height=0で内容追従、正値で最小高さ付き自動拡張。固定高さはheightModeを持たない従来形式を維持する。GUIでは高さモードを選択し、計測済みの占有高さを表示する。自動モードのグループは固定高さハンドルを無効化し、通常配置に戻す際は高さ関連の属性を除去する。既存の固定高さフィット操作とundoは維持。保存定義検証・コンパイルとUIモード切替/実測/undoの試験を追加。BookCreatorの最新CI・Windows実機は未確認。幅の割合指定、位置の自動調整、重なり回避は後続。
