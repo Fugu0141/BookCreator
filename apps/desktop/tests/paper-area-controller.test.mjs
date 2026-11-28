@@ -50,3 +50,13 @@ test('area proposals preserve other explicit IL inputs and reject dual ownership
   latest={...plan(),baseIntents:[{...base,placement:{mode:'fixed',fixed:{page:0,x:0,y:0}}}]};
   assert.equal(c.begin(selection,geometry),null);
 });
+
+test('stored trailing gap merges with other placement inputs without stealing ownership',()=>{
+  const initial={schemaVersion:1,entries:[{documentId:'ch',persistentId:'q-1',spaceAfter:6000}]};
+  const base={documentId:'ch',blockKey:'10',placement:{spaceBefore:1000,sizeConstraints:{maxHeight:200000}}};
+  let latest={...plan(),baseIntents:[base]};
+  const c=createPaperAreaController(initial,()=>latest);
+  assert.deepEqual(c.bind().intents,[{...base,placement:{...base.placement,spaceAfter:6000}}]);
+  latest={...plan(),baseIntents:[{...base,placement:{spaceAfter:1000}}]};
+  assert.equal(c.bind().status,'conflict');
+});

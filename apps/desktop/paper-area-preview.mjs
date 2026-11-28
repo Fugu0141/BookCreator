@@ -27,8 +27,8 @@ export function verifySavedAreaPreview(prepared,result){
   const byKey=new Map(il.fragments.map(f=>[JSON.stringify([f.origin.documentId,f.origin.blockKey]),f]));
   for(const intent of bound.intents){
     const placement=byKey.get(JSON.stringify([intent.documentId,intent.blockKey]))?.placement;
-    const rect=placement?.occupiedRect??placement?.rect,c=intent.placement.sizeConstraints;
-    if(!rect||!Number.isSafeInteger(rect.width)||!Number.isSafeInteger(rect.height)||rect.width<Math.ceil(prepared.options.width*(c.minWidthPercent??0)/100)||rect.height<Math.ceil(prepared.options.height*(c.minHeightPercent??0)/100))throw Error('指定した占有領域が組版結果に確保されていません。');
+    const rect=placement?.occupiedRect??placement?.rect,c=intent.placement.sizeConstraints??{},gap=intent.placement.spaceAfter??0;
+    if(!rect||!Number.isSafeInteger(rect.width)||!Number.isSafeInteger(rect.height)||rect.width<Math.ceil(prepared.options.width*(c.minWidthPercent??0)/100)||rect.height<Math.ceil(prepared.options.height*(c.minHeightPercent??0)/100)+gap||(gap>0&&(!Number.isSafeInteger(placement?.rect?.height)||rect.height<placement.rect.height+gap)))throw Error('指定した占有領域が組版結果に確保されていません。');
   }
 }
 

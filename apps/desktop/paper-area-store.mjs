@@ -1,6 +1,9 @@
 // Persist only explicit area intent, never a measured blockKey (currently a
 // source offset), revision, geometry, or the result of automatic layout.
-const fields=['minWidthPercent','minHeightPercent'];
+const sizeFields=['minWidthPercent','minHeightPercent'];
+const fields=[...sizeFields,'spaceAfter'];
+const axisFields={width:'minWidthPercent',height:'minHeightPercent',gap:'spaceAfter'};
+export const MAX_PAPER_TRAILING_SPACE=1000000; // micrometres (1 m), also bounded by IL page height
 const record=v=>v!==null&&typeof v==='object'&&!Array.isArray(v)&&[Object.prototype,null].includes(Object.getPrototypeOf(v));
 const id=v=>typeof v==='string'&&v.length>0&&v.length<=256&&!/[\u0000-\u001f\u007f]/.test(v);
 const key=(documentId,persistentId)=>JSON.stringify([documentId,persistentId]);
@@ -14,7 +17,7 @@ export function validatePaperAreaDocument(value){
     if(seen.has(k))invalid();seen.add(k);
     const clean={documentId:entry.documentId,persistentId:entry.persistentId};
     for(const field of fields)if(Object.hasOwn(entry,field)){
-      if(!percent(entry[field]))invalid();clean[field]=entry[field];
+      if(!(field==='spaceAfter'?Number.isSafeInteger(entry[field])&&entry[field]>0&&entry[field]<=MAX_PAPER_TRAILING_SPACE:percent(entry[field])))invalid();clean[field]=entry[field];
     }
     if(Object.keys(clean).length===2)invalid();
     return Object.freeze(clean);
@@ -31,8 +34,8 @@ export function decodePaperAreaDocument(text){
 }
 export function setPaperAreaValue(document,{documentId,persistentId,axis,value}){
   const current=validatePaperAreaDocument(document);
-  const field=axis==='width'?fields[0]:axis==='height'?fields[1]:null;
-  if(!id(documentId)||!id(persistentId)||!field||!Number.isSafeInteger(value)||value<0||value>100)invalid();
+  const field=Object.hasOwn(axisFields,axis)?axisFields[axis]:null;
+  if(!id(documentId)||!id(persistentId)||!field||!Number.isSafeInteger(value)||value<0||value>(axis==='gap'?MAX_PAPER_TRAILING_SPACE:100))invalid();
   const entries=current.entries.slice(),at=entries.findIndex(e=>e.documentId===documentId&&e.persistentId===persistentId);
   const entry=at<0?{documentId,persistentId}:{...entries[at]};
   if((entry[field]??0)===value)return current;
@@ -41,11 +44,11 @@ export function setPaperAreaValue(document,{documentId,persistentId,axis,value})
   if(fields.some(f=>Object.hasOwn(entry,f)))entries.push(entry);
   return validatePaperAreaDocument({schemaVersion:1,entries});
 }
-// Apply a two-axis GUI proposal atomically in memory before any disk write.
+// Apply a multi-field GUI proposal atomically in memory before any disk write.
 export function setPaperAreaValues(document,{documentId,persistentId,values}){
-  if(!record(values)||!Object.keys(values).length||Object.keys(values).some(k=>!['width','height'].includes(k)))invalid();
+  if(!record(values)||!Object.keys(values).length||Object.keys(values).some(k=>!Object.hasOwn(axisFields,k)))invalid();
   let next=validatePaperAreaDocument(document);
-  for(const axis of ['width','height'])if(Object.hasOwn(values,axis)){
+  for(const axis of Object.keys(axisFields))if(Object.hasOwn(values,axis)){
     next=setPaperAreaValue(next,{documentId,persistentId,axis,value:values[axis]});
   }
   return next;
@@ -74,8 +77,8 @@ export function bindPaperAreaDocument(document,fragments){
     const {documentId,blockKey}=matches[0],k=key(documentId,blockKey);
     if(counts.get(k)!==1||used.has(k)){diagnostics.push({...identity,code:'AREA_AMBIGUOUS'});continue;}
     used.add(k);
-    const sizeConstraints=Object.fromEntries(fields.filter(f=>Object.hasOwn(entry,f)).map(f=>[f,entry[f]]));
-    intents.push({documentId,blockKey,placement:{sizeConstraints}});
+    const sizeConstraints=Object.fromEntries(sizeFields.filter(f=>Object.hasOwn(entry,f)).map(f=>[f,entry[f]]));
+    intents.push({documentId,blockKey,placement:{...(Object.keys(sizeConstraints).length?{sizeConstraints}:{}),...(entry.spaceAfter?{spaceAfter:entry.spaceAfter}:{})}});
   }
   return diagnostics.length?{status:'conflict',intents:[],diagnostics}:{status:'ready',intents,diagnostics:[]};
 }

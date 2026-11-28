@@ -55,3 +55,12 @@ test('draft-owned caches are reused, never page templates or normal preview cach
   }
   await assert.rejects(()=>measureInlineAreaProposal(context,{height:50},()=>{throw Error('must not measure');},()=>true,{paragraphCache:shared}),/must not be shared/);
 });
+
+test('trailing whitespace must be reserved beyond both measured content and minimum height',()=>{
+  const stored={revision:'saved',document:{schemaVersion:1,entries:[{documentId:'a',persistentId:'q',minHeightPercent:30,spaceAfter:200}]}};
+  const p=prepareSavedAreaPreview(options,stored,{whole:false,documentId:'a'});
+  const result=height=>({intelligentLayout:{status:'placed',revision:'r1',fingerprint:'f1',fragments:[{origin:origin('a','40','q'),placement:{rect:{width:1000,height:700},occupiedRect:{width:1000,height}}}]}});
+  assert.doesNotThrow(()=>verifySavedAreaPreview(p,result(900)));
+  assert.throws(()=>verifySavedAreaPreview(p,result(800)));
+  assert.throws(()=>verifySavedAreaPreview(p,result(899)));
+});
