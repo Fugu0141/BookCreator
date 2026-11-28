@@ -1,5 +1,6 @@
 import {projectBlocks} from './structured-blocks.mjs';
 import {projectStructuredEditor} from './structured-projection.mjs';
+import {resolvePaperBlock} from './paper-block-selection.mjs';
 import {slottedStudyTemplate,isCustomComponentId,namedSlotDefinitions} from '../../dist/index.js';
 import {projectStudy} from './structured-study.mjs';
 
@@ -158,4 +159,26 @@ export function planPaperRangeMove(source,{source:expectedSource,index,target},{
   const after=projectBlocks(next,scan,parseInline);
   if(after.diagnostics.length||after.rows.length!==expected.length||after.rows.some((r,i)=>!same(r,expected[i])))throw Error('周囲の構造が変化するため操作を中止しました。');
   return next;
+}
+
+
+// A whole-book move is still a single manuscript edit. Require a complete
+// source range from the measured binding and never cross section boundaries.
+export function resolveBookPaperMove(source,range,{scan,parseInline}){
+  if(typeof source!=='string')return null;
+  const model=projectStructuredEditor(source,scan,parseInline);
+  if(model.diagnostics.length)return null;
+  const selected=resolvePaperBlock(model.rows,range);
+  if(!selected)return null;
+  const {row,index}=selected;
+  if(range.start!==row.range.start||range.end>row.range.end)return null;
+  const bounds=paperMoveBounds(source,model.rows,index);
+  if(!bounds)return null;
+  return {index,bounds,up:index>bounds.min,down:index<bounds.max};
+}
+export function planBookPaperMove(source,{expectedSource,range,action},deps){
+  if(source!==expectedSource)throw Error('全冊紙面の計測後に原稿が変更されました。');
+  const selected=resolveBookPaperMove(source,range,deps);
+  if(!selected||!['up','down'].includes(action)||!selected[action])throw Error('このブロックは原稿内で移動できません。');
+  return planPaperRangeMove(source,{source,index:selected.index,target:selected.index+(action==='up'?-1:1)},deps);
 }
