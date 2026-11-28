@@ -9,7 +9,7 @@ const stageNames={measurement:'実測レーン',layout:'組版要求',read:'読�
 const categoryNames={manuscript:'選択原稿',book:'全冊',component:'部品',paragraph:'段落',catalog:'カタログ',source:'原稿',image:'画像',other:'その他'};
 const ms=v=>v===null?'—':v.toFixed(1);
 const mib=v=>(v/1024).toFixed(1)+' MiB';
-export function PerformancePanel({retainedPreview,onRetainedPreview,sparsePaperPages,onSparsePaperPages,reusePaperPages,onReusePaperPages,readMemory,readCache,cacheEnabled,onCacheEnabled,readMathCaches,mathCacheEnabled,onMathCacheEnabled,readParagraphCache,paragraphCacheEnabled,onParagraphCacheEnabled,readPageCache,pageCacheEnabled,onPageCacheEnabled,cacheBlocked,onClose}){
+export function PerformancePanel({directSinglePage,onDirectSinglePage,retainedPreview,onRetainedPreview,sparsePaperPages,onSparsePaperPages,reusePaperPages,onReusePaperPages,readMemory,readCache,cacheEnabled,onCacheEnabled,readMathCaches,mathCacheEnabled,onMathCacheEnabled,readParagraphCache,paragraphCacheEnabled,onParagraphCacheEnabled,readPageCache,pageCacheEnabled,onPageCacheEnabled,cacheBlocked,onClose}){
   const [editor,setEditor]=useState(()=>editorCommitMetrics.snapshot());
   const [rows,setRows]=useState(()=>performanceMetrics.snapshot());
   const [phaseRows,setPhaseRows]=useState(()=>previewPhaseMetrics.snapshot());
@@ -46,6 +46,7 @@ export function PerformancePanel({retainedPreview,onRetainedPreview,sparsePaperP
     </div>
     <label><input id="performance-retained-preview" type="checkbox" checked={retainedPreview} disabled={cacheBlocked} onChange={e=>onRetainedPreview(e.target.checked)}/>保持型リアルタイム組版（選択原稿・既定ON）</label>
     <small>保持型で再利用可能な選択原稿の紙面がある場合、執筆中の入力合流を100msから16msへ短縮します。初回・全冊などは100msのままです。OFFにすると従来の組版方式へ戻ります。</small>
+    <label><input id="performance-direct-single-page" type="checkbox" checked={directSinglePage} disabled={cacheBlocked||!retainedPreview} onChange={e=>onDirectSinglePage(e.target.checked)}/>単一ページ更新は直接確定表示（比較試験・既定OFF）</label>
     <label><input id="performance-sparse-paper-pages" type="checkbox" checked={sparsePaperPages} disabled={cacheBlocked} onChange={e=>onSparsePaperPages(e.target.checked)}/>未変更ページのDOM生成を省略（試験機能）</label>
     <label><input id="performance-reuse-paper-pages" type="checkbox" checked={reusePaperPages} disabled={cacheBlocked} onChange={e=>onReusePaperPages(e.target.checked)}/>表示中の未変更ページを維持（試験機能）</label>
     <p className="muted">直近 {rows.length} / 200 件。成功時の中央値・最大値（ms）。組版要求には入力合流時間を含みません。実測・読取は組版要求の内訳と重なるため合算しないでください。</p>
