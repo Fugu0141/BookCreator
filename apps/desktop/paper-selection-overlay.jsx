@@ -1,9 +1,9 @@
 import React,{useLayoutEffect,useRef,useState} from 'react';
 import {clipPaperRect,placePaperPropertyPanel,paperPositionFromDrag,paperPositionFromPagePointer,resolvePaperSelectionNodes} from './paper-selection-geometry.mjs';
-import {createFullRetainedTextPagePreview,createParagraphMeasurementCache,createMathCompilationCache,createDisplayMathGeometryCache,createInlineMathGeometryCache} from '../../../BookCreator_LayoutEngine/dist/index.js';
+import {createIntelligentGeometryDraftSession,createFullRetainedTextPagePreview,createParagraphMeasurementCache,createMathCompilationCache,createDisplayMathGeometryCache,createInlineMathGeometryCache} from '../../../BookCreator_LayoutEngine/dist/index.js';
 import {measurementLane} from './measurement-lane.mjs';
 import {createPreviewCheckpoint} from './preview-checkpoint.mjs';
-import {createBookPositionPreviewSession} from './paper-area-preview.mjs';
+import {createBookPositionPreviewSession,measureBookPositionGeometry} from './paper-area-preview.mjs';
 
 // Both frames are siblings of the measured viewport, never part of its DOM.
 // They cannot enter sparse-page snapshots or the printable page tree.
@@ -79,14 +79,19 @@ export function PaperSelectionOverlay({viewport,node,enabled,getDrop,onMove}){
 export function BookPositionOverlay({viewport,node,context,bounds,onCommit,onClose,preferredMode=false}){
   const [geometry,setGeometry]=useState(null),[proposal,setProposal]=useState(null),[ghost,setGhost]=useState(null),[invalid,setInvalid]=useState(false);
   const [tx,setTx]=useState('5'),[ty,setTy]=useState('5');
-  const [live,setLive]=useState(null),liveMount=useRef(null),draft=useRef(null);
+  const [live,setLive]=useState(null),[quick,setQuick]=useState(null),[dragging,setDragging]=useState(false),liveMount=useRef(null),draft=useRef(null);
   const gesture=useRef(null),latest=useRef(null);latest.current={context,proposal,onClose};
   useLayoutEffect(()=>{
     const session=createBookPositionPreviewSession(),caches={paragraphCache:createParagraphMeasurementCache(document),mathCache:createMathCompilationCache(),displayMathCache:createDisplayMathGeometryCache(document),...(context.options.inlineMathCache?{inlineMathCache:createInlineMathGeometryCache(document)}:{})};
-    draft.current={session,caches};
-    return ()=>{draft.current=null;session.clear();for(const cache of Object.values(caches))cache.clear();};
-  },[node,context.selection.revision,context.selection.fingerprint]);
-  const cancel=()=>{const g=gesture.current;gesture.current=null;setGhost(null);setInvalid(false);if(g?.node.hasPointerCapture(g.id))g.node.releasePointerCapture(g.id);};
+    let geometrySession;
+    if(context.geometryBase){
+      try{geometrySession=createIntelligentGeometryDraftSession(document,context.geometryBase,createPreviewCheckpoint({current:context.current}));}
+      catch(error){console.warn('Geometry-only preview unavailable',error);}
+    }
+    draft.current={session,caches,geometrySession};
+    return ()=>{draft.current=null;geometrySession?.close();session.clear();for(const cache of Object.values(caches))cache.clear();};
+  },[node,context.selection.revision,context.selection.fingerprint,context.geometryBase]);
+  const cancel=()=>{const g=gesture.current;gesture.current=null;setDragging(false);setGhost(null);setInvalid(false);if(g?.node.hasPointerCapture(g.id))g.node.releasePointerCapture(g.id);};
   useLayoutEffect(()=>{
     const v=viewport.current,body=node?.closest('[data-page]')?.querySelector('[data-content-guide]');
     if(!v||!body||!node)return;
@@ -141,7 +146,23 @@ export function BookPositionOverlay({viewport,node,context,bounds,onCommit,onClo
   const tolerance={x:parseTolerance(tx,body.width),y:parseTolerance(ty,body.height)},validTolerance=tolerance.x!==null&&tolerance.y!==null;
   const displayChanged=display.page!==context.position.page||display.x!==context.position.x||display.y!==context.position.y;
   const action=preferredMode?'preferred':'move';
-  const liveKey=geometry&&!invalid&&context.current()&&(preferredMode?validTolerance:displayChanged)?JSON.stringify([action,display.page,display.x,display.y,preferredMode?tolerance.x:null,preferredMode?tolerance.y:null]):null;
+  const quickMode=dragging&&!!context.geometryBase;
+  const proposalKey=geometry&&!invalid&&context.current()&&(preferredMode?validTolerance:displayChanged)?JSON.stringify([action,display.page,display.x,display.y,preferredMode?tolerance.x:null,preferredMode?tolerance.y:null]):null;
+  const liveKey=quickMode?null:proposalKey;
+  const quickKey=quickMode&&ghost?proposalKey:null;
+  useLayoutEffect(()=>{
+    setQuick(null);
+    const owner=draft.current,session=owner?.geometrySession,candidate=latest.current.context;
+    if(!quickKey||!session){session?.cancel();return;}
+    let cancelled=false;
+    const current=()=>!cancelled&&draft.current===owner&&candidate.current();
+    const [kind,page,x,y,tx,ty]=JSON.parse(quickKey),position={page,x,y},values=kind==='preferred'?{position,tolerance:{x:tx,y:ty}}:position;
+    const frame=requestAnimationFrame(()=>{
+      if(!current())return;
+      void measureBookPositionGeometry(candidate,kind,values,session,current).then(result=>{if(current()&&result&&session.isCurrent(result.generation))setQuick({key:quickKey,result});}).catch(error=>{if(current())setQuick({key:quickKey,error:String(error.message??error)});});
+    });
+    return ()=>{cancelled=true;cancelAnimationFrame(frame);};
+  },[quickKey,node,context.geometryBase]);
   // A quiet interval coalesces rapid pointer events. The guide itself still
   // follows every pointer event; stale real paper is never painted as current.
   useLayoutEffect(()=>{
@@ -168,19 +189,28 @@ export function BookPositionOverlay({viewport,node,context,bounds,onCommit,onClo
   },[shown]);
   if(!geometry)return null;
   const {visible,host}=geometry;
+  const quickResult=quickKey&&quick?.key===quickKey?quick.result:null;
+  const quickFrames=(quickResult?.changed??[]).flatMap(f=>{
+    const page=geometry.pages.get(f.page);if(!page)return [];
+    const x=page.left+f.rect.x/body.width*page.width,y=page.top+f.rect.y/body.height*page.height;
+    const rect=clipPaperRect({left:x,top:y,right:x+f.rect.width/body.width*page.width,bottom:y+f.rect.height/body.height*page.height},visible);
+    return rect?[{...f,rect}]:[];
+  });
   const placement=shown?.intelligentLayout?.fragments.find(f=>f.origin.documentId===context.selection.documentId&&f.origin.blockKey===context.selection.blockKey)?.placement;
   return <>
     {shown&&<div className="paper-inline-live" aria-hidden="true" inert={true} style={{left:visible.left,top:visible.top,width:visible.right-visible.left,height:visible.bottom-visible.top}}><div ref={liveMount} style={{position:'absolute',left:host.left,top:host.top,width:host.width,transformOrigin:'top left',transform:'scale('+host.sx+','+host.sy+')'}}/></div>}
     {handleRect&&<div className="paper-selection-frame" style={handleRect}>
       <button id="book-paper-position-drag" type="button" className="paper-block-drag" aria-label="位置をドラッグ（矢印キーでも移動）" title={preferredMode?'同一ページ内で希望位置を指定':'表示中の別ページへもドラッグ可能。矢印キーは1 mm、Shiftで5 mm'}
-        onPointerDown={e=>{if(e.button!==0||!e.isPrimary||gesture.current||!context.current())return;e.preventDefault();e.currentTarget.focus({preventScroll:true});try{e.currentTarget.setPointerCapture(e.pointerId);}catch{return;}const page=preferredMode?geometry.body:geometry.pages.get(position.page);if(!page){e.currentTarget.releasePointerCapture(e.pointerId);return;}gesture.current={id:e.pointerId,x:e.clientX,y:e.clientY,position,node:e.currentTarget,grab:{x:(e.clientX-page.left)/page.width*body.width-position.x,y:(e.clientY-page.top)/page.height*body.height-position.y}};}}
+        onPointerDown={e=>{if(e.button!==0||!e.isPrimary||gesture.current||!context.current())return;e.preventDefault();e.currentTarget.focus({preventScroll:true});try{e.currentTarget.setPointerCapture(e.pointerId);}catch{return;}const page=preferredMode?geometry.body:geometry.pages.get(position.page);if(!page){e.currentTarget.releasePointerCapture(e.pointerId);return;}setDragging(true);gesture.current={id:e.pointerId,x:e.clientX,y:e.clientY,position,node:e.currentTarget,grab:{x:(e.clientX-page.left)/page.width*body.width-position.x,y:(e.clientY-page.top)/page.height*body.height-position.y}};}}
         onPointerMove={e=>{if(gesture.current?.id!==e.pointerId)return;const next=get(e);setGhost(next);setInvalid(!next);}}
         onPointerUp={finish} onPointerCancel={cancel} onLostPointerCapture={cancel}
         onKeyDown={e=>{const dir={ArrowLeft:[-1,0],ArrowRight:[1,0],ArrowUp:[0,-1],ArrowDown:[0,1]}[e.key];if(!dir||!context.current()||gesture.current||e.ctrlKey||e.metaKey||e.altKey)return;e.preventDefault();e.stopPropagation();const step=e.shiftKey?5000:1000;const next={page:position.page,x:position.x+dir[0]*step,y:position.y+dir[1]*step};if(next.x>=0&&next.y>=0&&next.x<=bounds.maxX&&next.y<=bounds.maxY)setProposal(next);}}>✥</button>
     </div>}
+    {quickFrames.map(f=><div key={f.key} className={'book-geometry-draft-frame'+(f.selected?' is-selected':'')} aria-hidden="true" style={f.rect}/>)}
     {rect&&<div className="paper-drop-guide" aria-hidden="true" style={rect}/>}
     <div className="paper-inline-area-toolbar" style={panel} role="group" aria-label={preferredMode?'希望位置の移動案':'固定位置の移動案'}>
       <small role="status">{invalid?'本文領域外には移動できません。':display.page+1+'ページ · X '+display.x/1000+' / Y '+display.y/1000+' mm（未確定）'}</small>
+      {quickMode&&<small className="paper-inline-live-status" role="status">{invalid?'':quick?.key===quickKey&&quick.error?'配置案が成立しません：'+quick.error:quickResult?'軽量配置案 · 移動 '+quickResult.changed.length+'件 · '+quickResult.pageCount+'ページ（未確定）':'配置ガイド（ドロップ後に実測）'}</small>}
       {liveKey&&<small className="paper-inline-live-status" role="status">{shown?(placement?.preference==='fallback'?'実測配置案：希望範囲外（未保存）':'実測配置案（未保存）'):live?.key===liveKey&&live.error?'配置できません：'+live.error:live?.key===liveKey?'配置変更なし':'配置を計算中…'}</small>}
       {crossPage&&<label>移動先ページ <select id="book-paper-position-page" value={position.page} disabled={!!gesture.current} onChange={e=>{if(!context.current()||gesture.current)return;const page=Number(e.target.value);if(Number.isSafeInteger(page)&&page>=0&&page<pageCount)setProposal({...position,page});}}>{Array.from({length:pageCount},(_,i)=><option key={i} value={i}>{i+1}ページ</option>)}</select></label>}
       {crossPage&&!handleRect&&<small>移動先が画面外です。ページ番号と座標を確認してください。</small>}
