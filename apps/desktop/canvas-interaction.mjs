@@ -134,14 +134,38 @@ export function installCanvasDrag(root,{lookup,onSelect,onActive,onCommit,smartS
       for(const [name,fn] of [['focus',focus],['keydown',key],['pointerdown',down],['pointermove',move],['pointerup',up],['pointercancel',cancel],['lostpointercapture',cancel]]){el.addEventListener(name,fn);cleanups.push(()=>el.removeEventListener(name,fn));}
     }
   }
+  // Flow-layout nodes are selectable on the real measured paper as well.
+  // Selection does not convert them to absolute positioning or alter geometry.
+  for(const el of root.querySelectorAll('[data-component-node]')){
+    const id=el.dataset.componentNode;
+    if(!id||!lookup(id)||el.hasAttribute('data-lab-draggable'))continue;
+    el.dataset.labSelectable='true';
+    el.tabIndex=0;
+    el.removeAttribute('aria-hidden');
+    el.setAttribute('aria-label',id+'：選択');
+    el.style.cursor='pointer';
+    const select=()=>{if(!disposed)onSelect(id);};
+    const down=e=>{
+      if(disposed||e.button!==0||!e.isPrimary)return;
+      e.preventDefault();e.stopPropagation();
+      el.focus({preventScroll:true});select();
+    };
+    const key=e=>{
+      if(disposed||!['Enter',' '].includes(e.key)||e.ctrlKey||e.metaKey||e.altKey)return;
+      e.preventDefault();e.stopPropagation();select();
+    };
+    for(const [name,fn] of [['pointerdown',down],['focus',select],['keydown',key]]){
+      el.addEventListener(name,fn);cleanups.push(()=>el.removeEventListener(name,fn));
+    }
+  }
   return ()=>{disposed=true;end(false);for(const cleanup of cleanups)cleanup();};
 }
 export function highlightCanvasSelection(root,id,isLocked=()=>false){
   const ids=Array.isArray(id)?id:[id];
-  for(const el of root.querySelectorAll('[data-lab-draggable]')){
+  for(const el of root.querySelectorAll('[data-lab-draggable],[data-lab-selectable]')){
     const selected=ids.includes(el.dataset.componentNode);
     const locked=isLocked(el.dataset.componentNode);
-    el.dataset.labLocked=String(locked);el.style.cursor=locked?'not-allowed':'grab';
+    el.dataset.labLocked=String(locked);el.style.cursor=locked?'not-allowed':el.hasAttribute('data-lab-draggable')?'grab':'pointer';
     el.style.outline=selected?(locked?'2px dashed #64748b':'2px solid #2679c7'):'';
     el.style.outlineOffset=selected?'-1px':'';
     for(const child of el.children)if(child.dataset.labResizeHandle)child.style.display=selected&&!locked&&ids.length===1?'block':'none';
@@ -149,5 +173,5 @@ export function highlightCanvasSelection(root,id,isLocked=()=>false){
 }
 
 export function focusCanvasSelection(root,id){
-  for(const el of root.querySelectorAll('[data-lab-draggable]'))if(el.dataset.componentNode===id){el.focus({preventScroll:true});return;}
+  for(const el of root.querySelectorAll('[data-lab-draggable],[data-lab-selectable]'))if(el.dataset.componentNode===id){el.focus({preventScroll:true});return;}
 }
