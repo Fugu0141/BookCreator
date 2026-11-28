@@ -717,7 +717,8 @@ function App(){
         if(!textarea.current?.getClientRects().length){if(routeBlockRef.current||composing.current){setStatus('編集中の操作を完了してから原稿に戻ってください。');return;}setMode('writing');setEditorView('source');setShowSettings(false);setShowPaper(true);setCompactPane('editor');requestAnimationFrame(reveal);}else reveal();
       }};
       if(!current()||!preview.current)return;
-      let publication=sparse&&result?display.publishSparse(preview.current,target,result,lease,(root,pages)=>describeMeasuredPaper(result,options,adapters,{root,pages})):null;
+      const publicationStages=retainedMode?{}:undefined;
+      let publication=sparse&&result?display.publishSparse(preview.current,target,result,lease,(root,pages)=>describeMeasuredPaper(result,options,adapters,{root,pages}),publicationStages):null;
       let sparseFallback=false;
       if(sparse&&!publication){
         phase='fallback';sparseFallback=true;display.forgetSparseBase();
@@ -734,7 +735,7 @@ function App(){
       if(host){
         delete host.dataset.retainedWork;
         if(retainedMode&&!sparseFallback&&result.paginationWork&&result.measurementWork){
-          host.dataset.retainedWork=JSON.stringify({pagination:result.paginationWork,measurement:result.measurementWork,scan:{hits:scanAfter.hits-scanBefore.hits,misses:scanAfter.misses-scanBefore.misses},priorityPages,firstVisitedPage,provisionalCount,checkpoint:checkpoint?.snapshot(),cancelledJobs:cancelledPreviewLog.take(diagnosticTarget),hostTiming:{preparationMs,preparationYieldMs,publicationMs:performance.now()-presentationStarted}});
+          host.dataset.retainedWork=JSON.stringify({pagination:result.paginationWork,measurement:result.measurementWork,scan:{hits:scanAfter.hits-scanBefore.hits,misses:scanAfter.misses-scanBefore.misses},priorityPages,firstVisitedPage,provisionalCount,checkpoint:checkpoint?.snapshot(),cancelledJobs:cancelledPreviewLog.take(diagnosticTarget),hostTiming:{preparationMs,preparationYieldMs,publicationMs:performance.now()-presentationStarted,publicationStages}});
         }
       }
       const {pages,retained}=publication;

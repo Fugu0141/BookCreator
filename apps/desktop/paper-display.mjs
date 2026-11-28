@@ -65,27 +65,37 @@ export function createPaperDisplay(){
   // A sparse result is usable only against the exact published lease. Never
   // attach a partial host. The caller supplies a synchronous metadata adapter
   // which binds the latest source ranges to the final ordered nodes.
-  function publishSparse(viewport,key,result,lease,describe){
+  function publishSparse(viewport,key,result,lease,describe,timing){
+    const started=timing?performance.now():0;
     provisional.clear();
     const omitted=result.pageDelta?.reusedPageIndices?.length;
     const base=getSparseBase(viewport,key);
     if(omitted&&(!base||base!==lease))return null;
     const assembly=prepareSparsePaperAssembly(omitted?host.shadowRoot:null,result);
     if(!assembly)return null;
+    const assembled=timing?performance.now():0;
     const same=!!host&&target===key&&host.parentNode===viewport;
     const top=same?viewport.scrollTop:0,left=same?viewport.scrollLeft:0;
     const next=result.changedElement;
+    // Report only complete transactions. Commit includes scroll restoration,
+    // host attributes and the new lease, not browser paint.
+    const report=(described)=>{
+      if(timing)Object.assign(timing,{assemblyMs:assembled-started,describeMs:described-assembled,commitMs:performance.now()-described});
+    };
     try{
       if(!assembly.reused){
         const pages=describe(next.shadowRoot,assembly.pages);
+        const described=timing?performance.now():0;
         const retained=publish(viewport,key,next);
         host.dataset.sparsePaper='true';host.dataset.generatedPages=String(assembly.pages.length);
         sparseBase=Object.freeze({host,snapshot:result.pageDelta.snapshot});
+        report(described);
         return {retained,pages};
       }
       const root=host.shadowRoot;
       // The host remains inert while all mappings and DOM are updated.
       const pages=describe(root,assembly.pages);
+      const described=timing?performance.now():0;
       const old=Array.from(root.children);
       for(const page of assembly.pages){
         if(page.reuse)continue;
@@ -98,6 +108,7 @@ export function createPaperDisplay(){
       host.dataset.paperFreshness='current';host.inert=false;
       sparseBase=Object.freeze({host,snapshot:result.pageDelta.snapshot});
       viewport.scrollTop=top;viewport.scrollLeft=left;
+      report(described);
       return {retained:true,pages};
     }catch{
       // Incomplete candidate cannot serve as a full fallback. Discard an
