@@ -11,6 +11,7 @@ import {MAX_PAPER_TRAILING_SPACE} from './paper-area-store.mjs';
 export function PaperInlineArea({viewport,node,context,onCommit}){
   const [geometry,setGeometry]=useState(null),[proposal,setProposal]=useState({}),[ghost,setGhost]=useState(null);
   const active=useRef(null),liveMount=useRef(null);
+  const isGap=axis=>axis==='before'||axis==='gap';
   const [live,setLive]=useState(null);
   // Private to this mounted block / revision. No DOM page cache or
   // normal-paper cache is borrowed, even when the user cancels.
@@ -48,7 +49,7 @@ export function PaperInlineArea({viewport,node,context,onCommit}){
       if(!clipped||!b.width||!b.height){setGeometry(null);return;}
       const hr=host.getBoundingClientRect();
       setGeometry({full,clipped,bounds,host:{left:hr.left-left,top:hr.top-top,width:host.offsetWidth,sx,sy},bodyWidth:b.width,bodyHeight:b.height,contentWidth:r.width,contentHeight:r.height,
-        rightVisible:Math.abs(clipped.left+clipped.width-full.right)<1,bottomVisible:Math.abs(clipped.top+clipped.height-full.bottom)<1});
+        topVisible:Math.abs(clipped.top-full.top)<1,rightVisible:Math.abs(clipped.left+clipped.width-full.right)<1,bottomVisible:Math.abs(clipped.top+clipped.height-full.bottom)<1});
     };
     const observer=new ResizeObserver(update);observer.observe(v);observer.observe(block);observer.observe(body);
     const escape=e=>{if(e.key==='Escape'){if(active.current){e.preventDefault();cancel();}else if(Object.keys(latest.current.proposal).length){e.preventDefault();setProposal({});}}};
@@ -59,7 +60,7 @@ export function PaperInlineArea({viewport,node,context,onCommit}){
   },[viewport,node,context.target.documentId,context.target.blockKey,context.target.revision,context.target.fingerprint]);
   function begin(e,axis){
     if(e.button!==0||!e.isPrimary||active.current||!geometry||!context.current()||context.disabled)return;
-    const gesture=axis==='gap'?beginPaperGapDrag({target,current:target,placement,value:proposal.gap??storedValue('gap'),bodyPx:geometry.bodyHeight,bodyHeight:context.height,originPx:e.clientY}):beginPaperAreaDrag({target,current:target,placement,axis,occupiedPx:axis==='width'?geometry.full.width:geometry.full.height,bodyPx:axis==='width'?geometry.bodyWidth:geometry.bodyHeight,originPx:axis==='width'?e.clientX:e.clientY});
+    const gesture=isGap(axis)?beginPaperGapDrag({target,current:target,placement,value:proposal[axis]??storedValue(axis),bodyPx:geometry.bodyHeight,bodyHeight:context.height,originPx:e.clientY,side:axis==='before'?'before':'after'}):beginPaperAreaDrag({target,current:target,placement,axis,occupiedPx:axis==='width'?geometry.full.width:geometry.full.height,bodyPx:axis==='width'?geometry.bodyWidth:geometry.bodyHeight,originPx:axis==='width'?e.clientX:e.clientY});
     if(!gesture)return;
     e.preventDefault();e.currentTarget.focus({preventScroll:true});
     try{e.currentTarget.setPointerCapture(e.pointerId);}catch{return;}
@@ -67,14 +68,14 @@ export function PaperInlineArea({viewport,node,context,onCommit}){
   }
   function move(e){
     const g=active.current;if(!g||g.id!==e.pointerId)return;
-    const p=g.axis==='gap'?previewPaperGapDrag(g.gesture,e.clientY):previewPaperAreaDrag(g.gesture,g.axis==='width'?e.clientX:e.clientY);
+    const p=isGap(g.axis)?previewPaperGapDrag(g.gesture,e.clientY):previewPaperAreaDrag(g.gesture,g.axis==='width'?e.clientX:e.clientY);
     if(p)setGhost({axis:g.axis,...p});
   }
   function finish(e){
     const g=active.current;if(!g||g.id!==e.pointerId)return;
-    if(g.axis==='gap'){
+    if(isGap(g.axis)){
       const value=context.current()&&!context.disabled?finishPaperGapDrag(g.gesture,{current:target,placement,pointerPx:e.clientY}):null;
-      cancel();if(value!==null)propose('gap',value);return;
+      cancel();if(value!==null)propose(g.axis,value);return;
     }
     const p=previewPaperAreaDrag(g.gesture,g.axis==='width'?e.clientX:e.clientY);
     // Compare against the pending axis, not just the persisted value, so a
@@ -92,10 +93,10 @@ export function PaperInlineArea({viewport,node,context,onCommit}){
     if(context.disabled||active.current||!context.current()||!geometry||e.ctrlKey||e.metaKey||e.altKey)return;
     const delta=axis==='width'?({ArrowLeft:-1,ArrowRight:1})[e.key]:({ArrowUp:-1,ArrowDown:1})[e.key];
     if(!delta)return;e.preventDefault();e.stopPropagation();
-    if(axis==='gap'){
+    if(isGap(axis)){
       const max=Math.floor(Math.min(context.height,MAX_PAPER_TRAILING_SPACE)/1000)*1000;
-      const start=proposal.gap??storedValue('gap'),value=Math.max(0,Math.min(max,start+delta*(e.shiftKey?5000:1000)));
-      if(value!==start)propose('gap',value);return;
+      const start=proposal[axis]??storedValue(axis),value=Math.max(0,Math.min(max,start+(axis==='before'?-delta:delta)*(e.shiftKey?5000:1000)));
+      if(value!==start)propose(axis,value);return;
     }
     const extent=axis==='width'?geometry.bodyWidth:geometry.bodyHeight,actual=axis==='width'?geometry.full.width:geometry.full.height;
     const start=proposal[axis]||Math.round(actual/extent*100);
@@ -136,6 +137,8 @@ export function PaperInlineArea({viewport,node,context,onCommit}){
   const height=extent('height',geometry.bodyHeight,geometry.contentHeight,full.height);
   const gap=preview.gap??storedValue('gap'),gapPx=gap/context.height*geometry.bodyHeight;
   const before=preview.before??storedValue('before'),beforePx=before/context.height*geometry.bodyHeight;
+  const beforeStart=full.top-beforePx;
+  const beforeHandleVisible=geometry.topVisible&&(active.current?.axis==='before'||beforeStart>=bounds.top-1);
   const beforeRect=beforePx>0?clipPaperRect({left:full.left,top:full.top-beforePx,right:full.left+width,bottom:full.top,width,height:beforePx},bounds):null;
   const gapEnd=full.top+height+gapPx;
   const gapHandleVisible=geometry.bottomVisible&&(active.current?.axis==='gap'||gapEnd<=bounds.bottom+1);
@@ -151,7 +154,7 @@ export function PaperInlineArea({viewport,node,context,onCommit}){
     <div className="paper-inline-area-frame" style={style(clipped)}>
       {['width','height'].map(axis=>(axis==='width'?geometry.rightVisible:geometry.bottomVisible)&&<button key={axis} id={'paper-inline-area-'+axis} type="button" className={'paper-area-handle '+axis} aria-label={axis==='width'?'横の最小占有率を調整':'縦の最小占有率を調整'} disabled={context.disabled} onPointerDown={e=>begin(e,axis)} onPointerMove={move} onPointerUp={finish} onPointerCancel={e=>{if(active.current?.id===e.pointerId)cancel();}} onLostPointerCapture={e=>{if(active.current?.id===e.pointerId)cancel();}} onKeyDown={e=>keyAdjust(e,axis)}/>)}
     </div>
-    {gapHandleVisible&&<button id="paper-inline-gap-handle" type="button" className="paper-inline-gap-handle" style={{left:clipped.left+Math.min(18,clipped.width/4),top:Math.max(bounds.top+8,Math.min(gapEnd+(gap===0?9:0),bounds.bottom-8))}} aria-label={'後ろの余白を調整（'+gap/1000+' mm）'} title="上下にドラッグして後ろの余白を調整" disabled={context.disabled} onPointerDown={e=>begin(e,'gap')} onPointerMove={move} onPointerUp={finish} onPointerCancel={e=>{if(active.current?.id===e.pointerId)cancel();}} onLostPointerCapture={e=>{if(active.current?.id===e.pointerId)cancel();}} onKeyDown={e=>keyAdjust(e,'gap')}>↕</button>}
+    {[['before',beforeHandleVisible,before,beforeStart,-9,'前'],['gap',gapHandleVisible,gap,gapEnd,9,'後']].map(([axis,visible,value,edge,offset,label])=>visible&&<button key={axis} id={axis==='before'?'paper-inline-gap-before-handle':'paper-inline-gap-handle'} type="button" className="paper-inline-gap-handle" style={{left:clipped.left+Math.min(18,clipped.width/4),top:Math.max(bounds.top+8,Math.min(edge+(value===0?offset:0),bounds.bottom-8))}} aria-label={label+'の余白を調整（'+value/1000+' mm）'} title={axis==='before'?'上にドラッグして前の余白を増やす':'下にドラッグして後ろの余白を増やす'} disabled={context.disabled} onPointerDown={e=>begin(e,axis)} onPointerMove={move} onPointerUp={finish} onPointerCancel={e=>{if(active.current?.id===e.pointerId)cancel();}} onLostPointerCapture={e=>{if(active.current?.id===e.pointerId)cancel();}} onKeyDown={e=>keyAdjust(e,axis)}>{label}↕</button>)}
     <div className="paper-inline-area-toolbar" style={{left:Math.max(bounds.left,Math.min(clipped.left,bounds.right-260)),top:Math.max(bounds.top,Math.min(clipped.bottom+10,bounds.bottom-150))}}>
       <small aria-live="polite">横 {label('width')} · 縦 {label('height')}{pending||ghost?'（未確定）':''}</small>
       {canPreview&&<small className="paper-inline-live-status" role="status">{shown?'実測配置案（未保存）':live?.key===liveKey&&live.error?'配置できません：'+live.error:live?.key===liveKey?'配置変更なし':'配置を計算中…'}</small>}
