@@ -25,7 +25,7 @@ export async function benchmarkRetainedEdits({raw,click,until,ready,paperSignatu
     await raw("("+installInputProbe.toString()+")("+JSON.stringify({values,intervalMs:35})+")");
     try{
       await until('retained benchmark input committed',ready('manuscript')+"&&window.__bcRetainedEditBenchmark.probe.finalMs!==null&&document.querySelector('#source').value==="+JSON.stringify(value));
-      return await raw("(()=>{const h=document.querySelector('#preview > div'),{probe:p,initialHost,initialPages}=window.__bcRetainedEditBenchmark,nodes=Array.from(h.shadowRoot.children);return {...p,pages:nodes.length,identity:{sameHost:h===initialHost,reusedFromInitial:nodes.filter((n,i)=>n===initialPages[i]).length,reported:Number(h.dataset.reusedPages),generated:h.dataset.generatedPages===undefined?null:Number(h.dataset.generatedPages)},componentPages:nodes.flatMap((node,index)=>node.querySelector('[data-component]')?[{index,retained:node===initialPages[index]}]:[]),equationPages:nodes.flatMap((node,index)=>node.querySelector('[data-display-math]')?[{index,labels:Array.from(node.querySelectorAll('[data-equation-number]'),e=>e.textContent),retained:node===initialPages[index]}]:[]),work:h.dataset.retainedWork?JSON.parse(h.dataset.retainedWork):null,focus:document.activeElement.id==='source',scrollTop:h.parentNode.scrollTop,scrollLeft:h.parentNode.scrollLeft,clean:!h.dataset.provisionalPages&&!h.shadowRoot.querySelector('[data-provisional-layer]')};})()");
+      return await raw("(()=>{const h=document.querySelector('#preview > div'),{probe:p,initialHost,initialPages}=window.__bcRetainedEditBenchmark,nodes=Array.from(h.shadowRoot.children);return {...p,pages:nodes.length,identity:{sameHost:h===initialHost,reusedFromInitial:nodes.filter((n,i)=>n===initialPages[i]).length,reported:Number(h.dataset.reusedPages),generated:h.dataset.generatedPages===undefined?null:Number(h.dataset.generatedPages)},listPages:nodes.flatMap((node,index)=>node.querySelector('[data-list-item]')?[{index,markers:Array.from(node.querySelectorAll('[data-list-marker]'),e=>e.textContent),retained:node===initialPages[index]}]:[]),componentPages:nodes.flatMap((node,index)=>node.querySelector('[data-component]')?[{index,retained:node===initialPages[index]}]:[]),equationPages:nodes.flatMap((node,index)=>node.querySelector('[data-display-math]')?[{index,labels:Array.from(node.querySelectorAll('[data-equation-number]'),e=>e.textContent),retained:node===initialPages[index]}]:[]),work:h.dataset.retainedWork?JSON.parse(h.dataset.retainedWork):null,focus:document.activeElement.id==='source',scrollTop:h.parentNode.scrollTop,scrollLeft:h.parentNode.scrollLeft,clean:!h.dataset.provisionalPages&&!h.shadowRoot.querySelector('[data-provisional-layer]')};})()");
     }finally{await raw("(()=>{const p=window.__bcRetainedEditBenchmark;if(p){p.observer.disconnect();p.timers.forEach(t=>clearTimeout(t));}delete window.__bcRetainedEditBenchmark;})()");}
   }
   const samples=[];
@@ -51,7 +51,7 @@ export async function benchmarkRetainedEdits({raw,click,until,ready,paperSignatu
         if(retained&&(!sample.work||sample.work.measurement.reusedBlocks<1||sample.work.pagination.reusedBlocks<1))throw Error('Retained benchmark did not reuse measured/placed blocks');
         if(retained){
           const identity=sample.identity;
-          if(identity.reusedFromInitial<12||!sample.componentPages.some(p=>p.retained))throw Error('Mixed fixture did not retain unchanged component pages: '+JSON.stringify({case:item.id,pair,identity,componentPages:sample.componentPages}));
+          if(identity.reusedFromInitial!==sample.pages-1||sample.componentPages.filter(p=>p.retained).length!==sample.componentPages.length-1)throw Error('Mixed fixture did not retain unchanged component pages: '+JSON.stringify({case:item.id,pair,identity,componentPages:sample.componentPages}));
           if(!identity.sameHost||!Number.isSafeInteger(identity.reported)||identity.reported<1||!Number.isSafeInteger(identity.generated)||identity.generated<0||identity.reported+identity.generated!==sample.pages||identity.reusedFromInitial<1||sample.intermediatePublications===0&&identity.reported!==identity.reusedFromInitial)throw Error('Retained inline-math page DOM reuse missing or inconsistent: '+JSON.stringify({case:item.id,pair,identity,pages:sample.pages,intermediatePublications:sample.intermediatePublications}));
           if(!Number.isSafeInteger(sample.work.measurement.sharedSnapshotEntries)||sample.work.measurement.sharedSnapshotEntries<1||sample.work.measurement.sharedSnapshotEntries>sample.work.measurement.reusedBlocks)throw Error('Retained benchmark did not share measurement snapshots');
           if(!['preparationMs','publicationMs'].every(key=>Number.isFinite(sample.work.hostTiming?.[key])&&sample.work.hostTiming[key]>=0))throw Error('Missing host timing diagnostics');
@@ -105,6 +105,24 @@ export async function benchmarkRetainedEdits({raw,click,until,ready,paperSignatu
   await edit(large.source);
   if(await paperSignature()!==original||await readFile(join(root,'manuscript',large.id+'.md'),'utf8')!==large.source)throw Error('Standalone equation benchmark restore failed');
   console.log('BENCH numbered retained '+JSON.stringify({edit:{identity:retainedEdit.identity,pages:retainedEdit.equationPages},renumber:{identity:retainedRenumber.identity,pages:retainedRenumber.equationPages}}));
+  await setRetained(false);
+  // Two independently paginated lists. The change is a marker-only edit.
+  const listSource=(number=3)=>large.source+'\n::pagebreak{side="any"}\n\n'+number+'. 最初の項目。\n\n::pagebreak{side="any"}\n\n- 変更しない項目。\n';
+  const listBase=listSource(),listEdit=listSource(4);
+  const listBefore=await edit(listBase),listBaseSignature=await paperSignature();
+  const listFull=await edit(listEdit),listEditSignature=await paperSignature();
+  if(listBefore.listPages.length!==2||listFull.listPages.length!==2||listBefore.listPages[0].markers.join('')!=='3.'||listFull.listPages[0].markers.join('')!=='4.'||listEditSignature===listBaseSignature)throw Error('Invalid retained list fixture '+JSON.stringify({before:listBefore.listPages,after:listFull.listPages}));
+  await edit(listBase);
+  await setRetained(true);
+  await raw("document.querySelector('#preview > div').dataset.paperProbe='old'");
+  await click('#preview-button');
+  await until('list retained prime',ready('manuscript')+"&&document.querySelector('#preview > div').dataset.paperProbe!=='old'&&!!document.querySelector('#preview > div').dataset.retainedWork");
+  if(await paperSignature()!==listBaseSignature)throw Error('List retained prime mismatch');
+  const listRetained=await edit(listEdit);
+  if(await paperSignature()!==listEditSignature||!listRetained.identity.sameHost||listRetained.listPages.length!==2||listRetained.listPages[0].retained||!listRetained.listPages[1].retained)throw Error('List marker edit did not preserve unaffected list page: '+JSON.stringify(listRetained.listPages));
+  await edit(large.source);
+  if(await paperSignature()!==original||await readFile(join(root,'manuscript',large.id+'.md'),'utf8')!==large.source)throw Error('List benchmark restore failed');
+  console.log('BENCH list retained '+JSON.stringify({identity:listRetained.identity,pages:listRetained.listPages}));
   await setRetained(false);
   const summaries=cases.map(({id})=>summarizeRetainedEditSamples(id,samples.filter(s=>s.case===id)));
   const burst=summarizeBurstInputSamples(samples.filter(s=>s.case==='burst'));
