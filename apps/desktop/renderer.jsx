@@ -41,7 +41,8 @@ import {describeMeasuredPaper} from './measured-paper.mjs';
 import {createLayoutViewStore} from './layout-view-store.mjs';
 import {LayoutPageToolbar} from './layout-page-toolbar.jsx';
 import {createWorkspacePreviewLifecycle} from './workspace-preview-lifecycle.mjs';
-import {manuscriptDirty,activeStructuredHistory,planStructuredCommit,planStructuredHistoryMove} from './manuscript-state.mjs';
+import {manuscriptDirty,activeStructuredHistory} from './manuscript-state.mjs';
+import {captureStructuredCommand,assertStructuredCommandCurrent,commitStructuredCommand,moveStructuredHistory} from './structured-command.mjs';
 import {createManuscriptStore} from './manuscript-store.mjs';
 import {persistManuscript as persistManuscriptTransaction} from './manuscript-persistence.mjs';
 import {SourceEditor} from './source-editor.jsx';
@@ -534,7 +535,9 @@ function App(){
       const command=captureDraftCommand(commandDeps,draft);
       if(!command)throw Error('原稿が変更されました。参照選択を開き直してください。');
       const {file,text}=command;
+      if(draft.structured)assertStructuredCommandCurrent(structuredCommandDeps(),draft.structuredOrigin);
       const documents=await referenceDocuments(text,file);
+      if(draft.structured)assertStructuredCommandCurrent(structuredCommandDeps(),draft.structuredOrigin);
       if(!isDraftCommandCurrent(commandDeps,command)||JSON.stringify(documents)!==JSON.stringify(draft.documents))throw Error('書籍が変更されました。参照選択を開き直してください。');
       if(draft.richReference){
         const structuredDraft=structuredDraftStore.getSnapshot();
@@ -544,7 +547,7 @@ function App(){
         const stagedDocs=documents.map(d=>d.documentId===file.id?{...d,source:staged}:d);
         const plan=planEquationReference(stagedDocs,file.id,draft.start,draft.end,draft.targetId,draft.format,deps);
         const next=applyPatches(staged,[plan.patch]);
-        setReferenceDraft(null);setStructuredDraft(null);commitStructured(next);setStatus('本文と数式参照を反映しました（未保存）。');return;
+        commitStructured(next,draft.structuredOrigin);setReferenceDraft(null);setStructuredDraft(null);setStatus('本文と数式参照を反映しました（未保存）。');return;
       }
       if(draft.mixedRequest){
         const structuredDraft=structuredDraftStore.getSnapshot();
@@ -556,11 +559,11 @@ function App(){
         const next=planMixedReference(text,structuredDraft,{...draft.mixedRequest,targetId:draft.targetId,format:draft.format},options);
         const afterTargets=equationReferenceTargets(documents.map(d=>d.documentId===file.id?{...d,source:next}:d),deps);
         if(JSON.stringify(beforeTargets)!==JSON.stringify(afterTargets))throw Error('数式の採番が変化するため反映できません。');
-        setReferenceDraft(null);setStructuredDraft(null);commitStructured(next);setStatus('本文と数式参照を反映しました（未保存）。');return;
+        commitStructured(next,draft.structuredOrigin);setReferenceDraft(null);setStructuredDraft(null);setStatus('本文と数式参照を反映しました（未保存）。');return;
       }
       const plan=planEquationReference(documents,file.id,draft.start,draft.end,draft.targetId,draft.format,deps);
       const next=applyPatches(text,[plan.patch]);
-      setReferenceDraft(null);if(draft.structured){setStructuredDraft(null);commitStructured(next);setStatus('数式参照を挿入しました（未保存）。参照を含む本文の追加編集はソース編集で行えます。');return;}edit(next);setStatus('数式参照を挿入しました（未保存）。');
+      setReferenceDraft(null);if(draft.structured){commitStructured(next,draft.structuredOrigin);setStructuredDraft(null);setStatus('数式参照を挿入しました（未保存）。参照を含む本文の追加編集はソース編集で行えます。');return;}edit(next);setStatus('数式参照を挿入しました（未保存）。');
       queueSourceCommandSelection(command,plan,next);
     });
   }
@@ -874,130 +877,172 @@ function App(){
   function openStructuredSource(range){if(routeBlocked||!file)return;pendingSource.current={job:generation.current,id:file.id,range};switchEditorView('source');}
   useEffect(()=>{const p=pendingSource.current;if(!p||editorView!=='source'||mode!=='writing')return;pendingSource.current=null;if(p.job!==generation.current||p.id!==file?.id)return;textarea.current?.focus();textarea.current?.setSelectionRange(p.range.start,p.range.end);syncSelection();},[editorView,mode,file?.id]);
   const currentHistory=activeStructuredHistory(manuscript);
-  function commitStructured(next){const history=planStructuredCommit(manuscript,next);if(history)edit(next,history);}
-  function restoreStructured(action){if(routeBlocked||!file?.editable)return;const history=planStructuredHistoryMove(manuscript,action);if(!history)return;edit(history.current,history);setStatus(action==='undo'?'構造編集を元に戻しました。':'構造編集をやり直しました。');}
-  function performBlockOperation(request){if(routeBlocked||!file?.editable||editorView!=='structured'||mode!=='writing')return;try{const next=planBlockOperation(text,request,{scan:scanDocument,parseInline:parseStructuredInline,applyPatches,validateMath:parseDisplayMath,theme});commitStructured(next);setStatus('ブロック操作を反映しました。');return next;}catch(e){setStatus(String(e.message??e));}}
+  function structuredCommandDeps(){return {store:manuscriptStore,drafts:structuredDraftStore,generation};}
+  function commitStructured(next,command){return commitStructuredCommand(structuredCommandDeps(),command,next,edit);}
+  function restoreStructured(action){if(routeBlocked||working.current)return;if(!moveStructuredHistory(manuscriptStore,action,edit))return;setStatus(action==='undo'?'構造編集を元に戻しました。':'構造編集をやり直しました。');}
+  function performBlockOperation(request){if(routeBlocked||working.current||editorView!=='structured'||mode!=='writing')return;try{const command=captureStructuredCommand(structuredCommandDeps(),request.source);if(!command)return;const next=planBlockOperation(command.text,request,{scan:scanDocument,parseInline:parseStructuredInline,applyPatches,validateMath:parseDisplayMath,theme});commitStructured(next,command);setStatus('ブロック操作を反映しました。');return next;}catch(e){setStatus(String(e.message??e));}}
   function structuredNumbering(source,row){
-    if(routeBlocked||working.current||!file?.editable||source!==text||editorView!=='structured'||mode!=='writing')return;
-    const job=generation.current;
+    if(routeBlocked||working.current||editorView!=='structured'||mode!=='writing')return;
+    const command=captureStructuredCommand(structuredCommandDeps(),source);
+    if(!command)return;
+    const {file,text,job}=command;
+
     void io(async()=>{
-      const documents=await referenceDocuments(text);
-      if(job!==generation.current||source!==text)throw Error('原稿が変更されました。');
+      const documents=await referenceDocuments(text,file);
+      assertStructuredCommandCurrent(structuredCommandDeps(),command);
       const target=inspectDisplayMath(text,row.range.start,row.range.end,scanDocument);
       if(target.mode!=='edit'||target.blockStart!==row.range.start||target.blockEnd!==row.range.end)throw Error('数式の位置が変更されました。');
       const enabled=!target.numbered;
       const plan=planEquationNumbering(documents,file.id,target.start,target.end,enabled,enabled&&!target.equationId?'eq-'+crypto.randomUUID():undefined,deps);
-      commitStructured(applyPatches(text,[plan.patch]));setStatus(enabled?'数式の採番を有効にしました（未保存）。':'数式の採番を解除しました（未保存）。');
+      commitStructured(applyPatches(text,[plan.patch]),command);setStatus(enabled?'数式の採番を有効にしました（未保存）。':'数式の採番を解除しました（未保存）。');
     });
   }
   function openRichReference(draft,rawOffset){
-    if(busy||working.current||structuredComposing||referenceDraft||!file?.editable||draft!==structuredDraftStore.getSnapshot()||draft.source!==text||draft.inlineEdit||draft.richError||!draft.rich||draft.row.kind!=='paragraph')return;
-    const job=generation.current;
+    if(!draft||busy||working.current||structuredComposing||referenceDraft||draft.inlineEdit||draft.richError||!draft.rich||draft.row.kind!=='paragraph')return;
+    const command=captureStructuredCommand(structuredCommandDeps(),draft.source,draft);
+    if(!command)return;
+    const {file,text,job}=command;
+
     void io(async()=>{
       const staged=planStructuredEdit(text,draft.row,draft.value,{scan:scanDocument,applyPatches,validateMath:parseDisplayMath,parseInline:parseStructuredInline});
       const row=projectBlocks(staged,scanDocument,parseStructuredInline).rows.find(r=>r.range.start===draft.row.range.start);
       const offset=structuredReferenceOffset(staged,row,draft.value,rawOffset,rawOffset);
-      const documents=await referenceDocuments(text);
-      if(job!==generation.current)throw Error('原稿が変更されました。');
+      const documents=await referenceDocuments(text,file);
+      assertStructuredCommandCurrent(structuredCommandDeps(),command);
       const stagedDocs=documents.map(d=>d.documentId===file.id?{...d,source:staged}:d);
       const targets=equationReferenceTargets(stagedDocs,deps);
       if(!targets.length)throw Error('ID付きの番号付き数式がありません。');
       planEquationReference(stagedDocs,file.id,offset,offset,targets[0].id,'label-number',deps);
-      setReferenceDraft({start:offset,end:offset,job,fileId:file.id,revision:file.revision,source:text,documents,targets,targetId:targets[0].id,format:'label-number',structured:true,richReference:draft,staged});
+      setReferenceDraft({structuredOrigin:command,start:offset,end:offset,job,fileId:file.id,revision:file.revision,source:text,documents,targets,targetId:targets[0].id,format:'label-number',structured:true,richReference:draft,staged});
     });
   }
   function applyMixedRange(draft,request){
-    if(busy||working.current||structuredComposing||referenceDraft||!file?.editable||draft!==structuredDraftStore.getSnapshot()||draft.source!==text||draft.inlineEdit?.mode!=='range'||request.mode!=='range')return;
-    const job=generation.current;
+    if(!draft||busy||working.current||structuredComposing||referenceDraft||draft.inlineEdit?.mode!=='range'||request.mode!=='range')return;
+    const command=captureStructuredCommand(structuredCommandDeps(),draft.source,draft);
+    if(!command)return;
+    const {file,text,job}=command;
+
     void io(async()=>{
       const options={scan:scanDocument,parseInline:parseStructuredInline,applyPatches,project:projectBlocks};
-      const staged=planMixedEdit(text,draft,options),next=planMixedRange(text,draft,request,options),documents=await referenceDocuments(text);
-      if(job!==generation.current)throw Error('原稿が変更されました。');
+      const staged=planMixedEdit(text,draft,options),next=planMixedRange(text,draft,request,options),documents=await referenceDocuments(text,file);
+      assertStructuredCommandCurrent(structuredCommandDeps(),command);
       const withSource=source=>documents.map(d=>d.documentId===file.id?{...d,source}:d);
       const before=equationReferenceTargets(withSource(staged),deps),after=equationReferenceTargets(withSource(next),deps);
       if(JSON.stringify(before)!==JSON.stringify(after))throw Error('数式の採番対象が変化するため反映できません。');
-      commitStructured(next);setStructuredDraft(null);setStatus('選択範囲を反映しました（未保存）。');
+      commitStructured(next,command);setStructuredDraft(null);setStatus('選択範囲を反映しました（未保存）。');
     });
   }
   function removeMixedAtom(draft,request){
-    if(busy||working.current||structuredComposing||referenceDraft||!file?.editable||draft!==structuredDraftStore.getSnapshot()||draft.source!==text||draft.inlineEdit!==request||request.mode!=='delete')return;
-    const job=generation.current;
+    if(!draft||busy||working.current||structuredComposing||referenceDraft||draft.inlineEdit!==request||request.mode!=='delete')return;
+    const command=captureStructuredCommand(structuredCommandDeps(),draft.source,draft);
+    if(!command)return;
+    const {file,text,job}=command;
+
     void io(async()=>{
       const options={scan:scanDocument,parseInline:parseStructuredInline,applyPatches,project:projectBlocks};
-      const staged=planMixedEdit(text,draft,options),next=planMixedRemoval(text,draft,request,options),documents=await referenceDocuments(text);
-      if(job!==generation.current)throw Error('原稿が変更されました。');
+      const staged=planMixedEdit(text,draft,options),next=planMixedRemoval(text,draft,request,options),documents=await referenceDocuments(text,file);
+      assertStructuredCommandCurrent(structuredCommandDeps(),command);
       const withSource=source=>documents.map(d=>d.documentId===file.id?{...d,source}:d);
       const before=equationReferenceTargets(withSource(staged),deps),after=equationReferenceTargets(withSource(next),deps);
       if(JSON.stringify(before)!==JSON.stringify(after))throw Error('数式の採番対象が変化するため削除できません。');
-      commitStructured(next);setStructuredDraft(null);
+      commitStructured(next,command);setStructuredDraft(null);
       const row=projectBlocks(next,scanDocument,parseStructuredInline).rows.find(r=>r.range.start===draft.row.range.start);
       setStatus(row?.mixed?'本文と削除を反映しました（未保存）。':'本文と削除を反映しました。文章編集で続けられます。');
     });
   }
   function openMixedReference(draft,request){
-    if(busy||working.current||structuredComposing||referenceDraft||!file?.editable||draft!==structuredDraftStore.getSnapshot()||draft.source!==text||draft.inlineEdit)return;
-    const job=generation.current;
+    if(!draft||busy||working.current||structuredComposing||referenceDraft||draft.inlineEdit)return;
+    const command=captureStructuredCommand(structuredCommandDeps(),draft.source,draft);
+    if(!command)return;
+    const {file,text,job}=command;
+
     void io(async()=>{
       const options={scan:scanDocument,parseInline:parseStructuredInline,applyPatches,project:projectBlocks};
-      const staged=planMixedEdit(text,draft,options),documents=await referenceDocuments(text);
-      if(job!==generation.current)throw Error('原稿が変更されました。');
+      const staged=planMixedEdit(text,draft,options),documents=await referenceDocuments(text,file);
+      assertStructuredCommandCurrent(structuredCommandDeps(),command);
       const targets=equationReferenceTargets(documents.map(d=>d.documentId===file.id?{...d,source:staged}:d),deps);
       if(!targets.length)throw Error('ID付きの番号付き数式がありません。');
       const targetId=request.mode==='edit'?request.targetId:targets[0].id,format=request.format??'label-number';
       if(!targets.some(t=>t.id===targetId))throw Error('現在の参照先が見つかりません。');
       planMixedReference(text,draft,{...request,targetId,format},options);
-      setReferenceDraft({job,fileId:file.id,revision:file.revision,source:text,documents,targets,targetId,format,structured:true,mixedRequest:request,mixedDraft:draft});
+      setReferenceDraft({structuredOrigin:command,job,fileId:file.id,revision:file.revision,source:text,documents,targets,targetId,format,structured:true,mixedRequest:request,mixedDraft:draft});
     });
   }
   function openStructuredReference(draft,start,end){
-    if(busy||working.current||structuredComposing||referenceDraft||!file?.editable||draft!==structuredDraftStore.getSnapshot()||draft.source!==text||draft.inlineEdit)return;
-    const job=generation.current;
+    if(!draft||busy||working.current||structuredComposing||referenceDraft||draft.inlineEdit)return;
+    const command=captureStructuredCommand(structuredCommandDeps(),draft.source,draft);
+    if(!command)return;
+    const {file,text,job}=command;
+
     try{
       const offset=structuredReferenceOffset(text,draft.row,draft.value,start,end);
       void io(async()=>{
-        const documents=await referenceDocuments(text);
-        if(job!==generation.current)throw Error('原稿が変更されました。');
+        const documents=await referenceDocuments(text,file);
+        assertStructuredCommandCurrent(structuredCommandDeps(),command);
         const targets=equationReferenceTargets(documents,deps);
         if(!targets.length)throw Error('ID付きの番号付き数式がありません。');
         planEquationReference(documents,file.id,offset,offset,targets[0].id,'label-number',deps);
-        setReferenceDraft({start:offset,end:offset,job,fileId:file.id,revision:file.revision,source:text,documents,targets,targetId:targets[0].id,format:'label-number',structured:true});
+        setReferenceDraft({structuredOrigin:command,start:offset,end:offset,job,fileId:file.id,revision:file.revision,source:text,documents,targets,targetId:targets[0].id,format:'label-number',structured:true});
       });
     }catch(e){setStatus(String(e.message??e));}
   }
   function openStudyLinks(source,row){
-    if(routeBlocked||working.current||!file?.editable||source!==text||editorView!=='structured'||mode!=='writing')return;
-    const job=generation.current;
+    if(routeBlocked||working.current||editorView!=='structured'||mode!=='writing')return;
+    const command=captureStructuredCommand(structuredCommandDeps(),source);
+    if(!command)return;
+    const {file,text,job}=command;
+
     void io(async()=>{
-      const documents=await referenceDocuments(text);
-      if(job!==generation.current)throw Error('原稿が変更されました。');
+      const documents=await referenceDocuments(text,file);
+      assertStructuredCommandCurrent(structuredCommandDeps(),command);
       const info=inspectStudyLinks(documents,file.id,row.range,deps,theme?.library);
-      setStudyLinkDraft({source,job,fileId:file.id,revision:file.revision,range:row.range,documents,info,id:info.id,answerTo:info.answerTo});
+      setStudyLinkDraft({structuredOrigin:command,source,job,fileId:file.id,revision:file.revision,range:row.range,documents,info,id:info.id,answerTo:info.answerTo});
     });
   }
   function applyStudyLinks(){
     const draft=studyLinkDraft;
-    if(!draft||busy||working.current||!file?.editable||draft.fileId!==file.id||draft.revision!==file.revision||draft.source!==text||draft.job!==generation.current)return;
+    if(!draft||busy||working.current)return;
+    const command=draft.structuredOrigin;
+    if(!command)return;
+    const {file,text}=command;
+    if(draft.fileId!==file.id||draft.revision!==file.revision)return;
     void io(async()=>{
-      const documents=await referenceDocuments(text);
-      if(draft.job!==generation.current||JSON.stringify(documents)!==JSON.stringify(draft.documents))throw Error('書籍が変更されました。関連付けを開き直してください。');
+      assertStructuredCommandCurrent(structuredCommandDeps(),command);
+      const documents=await referenceDocuments(text,file);
+      assertStructuredCommandCurrent(structuredCommandDeps(),command);
+      if(JSON.stringify(documents)!==JSON.stringify(draft.documents))throw Error('書籍が変更されました。関連付けを開き直してください。');
       const next=planStudyLinks(documents,file.id,draft.range,{id:draft.id,answerTo:draft.answerTo},{deps,library:theme?.library,applyPatches});
-      setStudyLinkDraft(null);commitStructured(next);setStatus('教材部品のID・関連付けを反映しました（未保存）。');
+      setStudyLinkDraft(null);commitStructured(next,command);setStatus('教材部品のID・関連付けを反映しました（未保存）。');
     });
   }
   function structuredListAction(source,row,request){
-    if(routeBlocked||working.current||!file?.editable||source!==text||editorView!=='structured'||mode!=='writing')return;
-    try{const next=planListAction(text,row,request,{scan:scanDocument,parseInline:parseStructuredInline,applyPatches,project:projectBlocks});commitStructured(next);setStatus('リスト操作を反映しました（未保存）。');}catch(e){setStatus(String(e.message??e));}
+    if(routeBlocked||working.current||editorView!=='structured'||mode!=='writing')return;
+    const command=captureStructuredCommand(structuredCommandDeps(),source);
+    if(!command)return;
+    const {file,text,job}=command;
+
+    try{const next=planListAction(text,row,request,{scan:scanDocument,parseInline:parseStructuredInline,applyPatches,project:projectBlocks});commitStructured(next,command);setStatus('リスト操作を反映しました（未保存）。');}catch(e){setStatus(String(e.message??e));}
   }
   function splitStructuredDraft(draft,start,end){
-    if(busy||working.current||structuredComposing||!file?.editable||draft!==structuredDraftStore.getSnapshot()||draft.source!==text||draft.richError||draft.inlineEdit||draft.row.kind!=='paragraph'||start!==end)return;
+    if(!draft||busy||working.current||structuredComposing||draft.richError||draft.inlineEdit||draft.row.kind!=='paragraph'||start!==end)return;
+    const command=captureStructuredCommand(structuredCommandDeps(),draft.source,draft);
+    if(!command)return;
+    const {file,text,job}=command;
+
     try{
       const intermediate=planStructuredEdit(text,draft.row,draft.value,{scan:scanDocument,applyPatches,validateMath:parseDisplayMath,parseInline:parseStructuredInline});
       const rows=projectBlocks(intermediate,scanDocument,parseStructuredInline).rows,index=rows.findIndex(r=>r.range.start===draft.row.range.start);
       const next=planBlockOperation(intermediate,{source:intermediate,action:'split',index,offset:start},{scan:scanDocument,parseInline:parseStructuredInline,applyPatches,validateMath:parseDisplayMath,theme});
-      commitStructured(next);setStructuredDraft(null);setStatus('段落を分割しました（未保存）。');
+      commitStructured(next,command);setStructuredDraft(null);setStatus('段落を分割しました（未保存）。');
     }catch(e){setStatus(String(e.message??e));}
   }
-  function applyStructured(draft){if(busy||structuredComposing||!file?.editable||draft!==structuredDraftStore.getSnapshot()||draft.inlineEdit||draft.richError||draft.source!==text)return;try{const next=draft.mixed?planMixedEdit(text,draft,{scan:scanDocument,parseInline:parseStructuredInline,applyPatches,project:projectBlocks}):draft.list?planListDraft(text,draft,{scan:scanDocument,parseInline:parseStructuredInline,applyPatches,project:projectBlocks}):draft.equation?planStructuredEquation(text,draft.row,draft.value,{scan:scanDocument,applyPatches,validateMath:parseDisplayMath}):draft.study?planStudyEdit(text,draft.study,draft.values,{scan:scanDocument,applyPatches}):planStructuredEdit(text,draft.row,draft.value,{scan:scanDocument,applyPatches,validateMath:parseDisplayMath,parseInline:parseStructuredInline,level:draft.level});if(next===text)return;commitStructured(next);setStructuredDraft(null);setStatus('ブロックの変更を反映しました（未保存）。');}catch(e){setStatus(String(e.message??e));}}
+  function applyStructured(draft){
+    if(!draft||busy||working.current||structuredComposing||draft.inlineEdit||draft.richError)return;
+    const command=captureStructuredCommand(structuredCommandDeps(),draft.source,draft);
+    if(!command)return;
+    const {file,text,job}=command;
+    try{const next=draft.mixed?planMixedEdit(text,draft,{scan:scanDocument,parseInline:parseStructuredInline,applyPatches,project:projectBlocks}):draft.list?planListDraft(text,draft,{scan:scanDocument,parseInline:parseStructuredInline,applyPatches,project:projectBlocks}):draft.equation?planStructuredEquation(text,draft.row,draft.value,{scan:scanDocument,applyPatches,validateMath:parseDisplayMath}):draft.study?planStudyEdit(text,draft.study,draft.values,{scan:scanDocument,applyPatches}):planStructuredEdit(text,draft.row,draft.value,{scan:scanDocument,applyPatches,validateMath:parseDisplayMath,parseInline:parseStructuredInline,level:draft.level});if(next===text)return;commitStructured(next,command);setStructuredDraft(null);setStatus('ブロックの変更を反映しました（未保存）。');}catch(e){setStatus(String(e.message??e));}
+  }
   const componentBaseDisabled=routeBlocked||!validPaper(page)||themeDirty;
   const headingDisabled=componentBaseDisabled||!theme?.componentEditable;
   const paragraphDisabled=componentBaseDisabled||!theme?.paragraphEditable;
