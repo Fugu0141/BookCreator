@@ -19,7 +19,7 @@ export function PaperAreaLab({context,onClose}){
     const bind=controller.bind();
     if(!bind||bind.status!=='ready'){setStatus('対象の部品を特定できません。');setBusy(false);return;}
     setBusy(true);setStatus('配置を計算しています…');setGhost(null);
-    const {measurementCache,paragraphCache,pageCache,inlineMathCache,displayMathCache,mathCompilationCache,...options}=context.options;
+    const {measurementCache,paragraphCache,pageCache,inlineMathCache,displayMathCache,mathCache,...options}=context.options;
     void measurementLane.run(()=>createPlainTextPagePreview(document,{...options,intelligentLayout:{intents:bind.intents}}),{current,category:'paper-area'}).then(result=>{
       if(cancelled||!current()||!result)return;
       const il=result.intelligentLayout;
@@ -71,6 +71,18 @@ export function PaperAreaLab({context,onClose}){
     const result=controller.finish(g.handle,g.axis==='width'?e.clientX:e.clientY);
     cancel();if(result)setDraft(result);
   }
+  function keyAdjust(e,axis){
+    if(busy||!rect||active.current||e.ctrlKey||e.metaKey||e.altKey)return;
+    const delta=({ArrowLeft:-1,ArrowDown:-1,ArrowRight:1,ArrowUp:1})[e.key];
+    if(!delta)return;
+    const extent=axis==='width'?rect.bodyWidth:rect.bodyHeight,occupied=axis==='width'?rect.width:rect.height;
+    const handle=controller.begin(selection,{axis,occupiedPx:occupied,bodyPx:extent,originPx:0});
+    if(!handle)return;
+    e.preventDefault();e.stopPropagation();
+    const value=Math.max(1,Math.min(100,Math.round(occupied/extent*100)+delta*(e.shiftKey?5:1)));
+    const result=controller.set(selection,axis,value,draft.version);
+    if(result)setDraft(result);
+  }
   const clear=axis=>{if(controller.clear(selection,axis,draft.version))update();};
   return <section className="paper-area-lab" id="paper-area-lab" aria-label="個別占有領域の試験編集">
     <header><h3>個別占有領域（試験）</h3><button type="button" id="paper-area-close" onClick={onClose}>閉じる</button></header>
@@ -86,7 +98,7 @@ export function PaperAreaLab({context,onClose}){
       <div ref={surface} className="paper-area-lab-surface">
         <div ref={mount} id="paper-area-preview"/>
         {rect&&<div ref={frame} className="paper-area-lab-frame" style={{left:rect.left,top:rect.top,width:ghost?.axis==='width'?ghost.extentPx:rect.width,height:ghost?.axis==='height'?ghost.extentPx:rect.height}} data-ghost={!!ghost}>
-          {['width','height'].map(axis=><button key={axis} type="button" id={'paper-area-handle-'+axis} className={'paper-area-handle '+axis} aria-label={axis==='width'?'横の最小占有率を調整':'縦の最小占有率を調整'} disabled={busy} onPointerDown={e=>start(e,axis)} onPointerMove={move} onPointerUp={finish} onPointerCancel={cancel} onLostPointerCapture={()=>{if(active.current)cancel();}}/>)}
+          {['width','height'].map(axis=><button key={axis} type="button" id={'paper-area-handle-'+axis} className={'paper-area-handle '+axis} aria-label={axis==='width'?'横の最小占有率を調整':'縦の最小占有率を調整'} disabled={busy} onKeyDown={e=>keyAdjust(e,axis)} onPointerDown={e=>start(e,axis)} onPointerMove={move} onPointerUp={finish} onPointerCancel={cancel} onLostPointerCapture={()=>{if(active.current)cancel();}}/>)}
         </div>}
       </div>
     </div>
