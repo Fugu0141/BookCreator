@@ -46,10 +46,10 @@ export function PaperSelectionOverlay({viewport,node,enabled,getDrop,onMove}){
   useLayoutEffect(()=>{if(!enabled)cancel();},[enabled]);
   return <>
     <div ref={frame} id="paper-selection-frame" className="paper-selection-frame" hidden>
-      {enabled&&<button ref={handle} id="paper-block-drag" className="paper-block-drag" type="button" aria-label="ブロックをドラッグして隣へ移動（上下矢印キーでも操作）" title="隣のブロックへドラッグ"
+      {enabled&&<button ref={handle} id="paper-block-drag" className="paper-block-drag" type="button" aria-label="ブロックをドラッグして移動（上下矢印キーでも操作）" title="移動先のブロックへドラッグ"
         onPointerDown={e=>{if(e.button!==0||!e.isPrimary||gesture.current)return;e.preventDefault();e.currentTarget.focus();e.currentTarget.setPointerCapture(e.pointerId);gesture.current={id:e.pointerId,x:e.clientX,y:e.clientY};}}
         onPointerMove={e=>{if(gesture.current?.id!==e.pointerId)return;show(guide.current,targetAt(e)?.node);}}
-        onPointerUp={e=>{if(gesture.current?.id!==e.pointerId)return;const target=targetAt(e);cancel();if(target)latest.current.onMove(target.action);}}
+        onPointerUp={e=>{if(gesture.current?.id!==e.pointerId)return;const target=targetAt(e);cancel();if(target)latest.current.onMove(target.target);}}
         onPointerCancel={e=>{if(gesture.current?.id===e.pointerId)cancel();}}
         onLostPointerCapture={e=>{if(gesture.current?.id===e.pointerId)cancel();}}
         onKeyDown={e=>{if(e.key==='ArrowUp'||e.key==='ArrowDown'){e.preventDefault();latest.current.onMove(e.key==='ArrowUp'?'up':'down');}}}>↕</button>}
