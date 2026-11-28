@@ -2582,6 +2582,19 @@ async function smoke(){
   await exec("(()=>{const e=document.querySelector('#lab-group-direction');e.value='canvas';e.dispatchEvent(new Event('change',{bubbles:true}));})()");
   await until("!!document.querySelector('#lab-canvas-height')&&!document.querySelector('#lab-fit-canvas').disabled");
   const initialAreaHeight=await exec("Number(document.querySelector('#lab-canvas-height').value)");
+  const setAreaMode=mode=>exec("(()=>{const e=document.querySelector('#lab-area-mode');e.value="+JSON.stringify(mode)+";e.dispatchEvent(new Event('change',{bubbles:true}));})()");
+  await setAreaMode('auto');
+  await until("document.querySelector('#lab-area-mode').value==='auto'&&!document.querySelector('#lab-apply').disabled&&!document.querySelector('#lab-canvas-height')");
+  const autoHeight=await exec("parseFloat(document.querySelector('#lab-preview > div').shadowRoot.querySelector('[data-component-canvas]').style.height)");
+  if(!Number.isFinite(autoHeight)||autoHeight<=0||autoHeight>initialAreaHeight*96/25.4+.02)throw Error('Automatic occupied height incorrect');
+  await setAreaMode('minimum');
+  await until("document.querySelector('#lab-area-mode').value==='minimum'&&!document.querySelector('#lab-apply').disabled");
+  if(!await exec("Number(document.querySelector('#lab-area-minimum').value)>0"))throw Error('Minimum height mode lost its floor');
+  await exec("document.querySelector('#lab-undo').click()");
+  await until("document.querySelector('#lab-area-mode').value==='auto'&&!document.querySelector('#lab-apply').disabled");
+  await exec("document.querySelector('#lab-undo').click()");
+  await until("document.querySelector('#lab-area-mode').value==='fixed'&&Number(document.querySelector('#lab-canvas-height').value)==="+initialAreaHeight+"&&!document.querySelector('#lab-apply').disabled");
+
   const fitAreaHeight=await exec("(()=>{const c=document.querySelector('#lab-preview > div').shadowRoot.querySelector('[data-component-canvas]'),pad=Number(document.querySelector('#lab-group-padding').value)*1000,um=v=>Math.round(parseFloat(v)*25400/96);return (pad+Math.max(...[...c.children].filter(e=>e.dataset.componentNode).map(e=>um(e.style.top)+um(e.style.height))))/1000;})()");
   await exec("document.querySelector('#lab-fit-canvas').click()");
   await until("Number(document.querySelector('#lab-canvas-height').value)==="+fitAreaHeight+"&&!document.querySelector('#lab-apply').disabled");
