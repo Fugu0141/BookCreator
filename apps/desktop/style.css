@@ -794,3 +794,14 @@ body{font-family:BCFont_NotoSansJP,system-ui,sans-serif}.font-control,.typograph
 .book-position-coordinates{width:100%;display:grid;gap:4px;border-top:1px solid #d0dae2;padding-top:4px;}
 .book-position-coordinates>small{font-size:11px;}
 .book-position-coordinates .controls{flex-wrap:wrap;}
+
+.book-paper-properties{display:grid;gap:8px;padding-bottom:12px;margin-bottom:12px;border-bottom:1px solid #d0dae2;}
+.book-paper-properties h2,.book-paper-properties h3{margin:0;font-size:14px;}
+.book-paper-properties h3{font-size:12px;color:#536878;}
+.book-property-label{margin:0;overflow-wrap:anywhere;font-size:12px;}
+.book-property-section{display:grid;gap:4px;border:1px solid #d0dae2;border-radius:5px;padding:6px;min-width:0;}
+.book-property-section dl{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 8px;margin:0;}
+.book-property-section dt,.book-property-section dd{margin:0;font-size:12px;}
+.book-property-section small{font-size:11px;overflow-wrap:anywhere;}
+.book-property-section button{font-size:12px;min-height:26px;padding:4px 6px;}
+.book-property-section .controls{flex-wrap:wrap;}

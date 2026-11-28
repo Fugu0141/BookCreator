@@ -498,7 +498,8 @@ async function benchmarkBookPositionDrag({win,raw,click,until,ready,paperSignatu
       await raw(target+".scrollIntoView({block:'center',inline:'center'})");
       await raw("new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))");
       await raw(target+".click()");
-      await click('#book-paper-preferred-mode');
+      await until('selected inspector',"document.querySelector('#book-paper-properties')?.dataset.placementMode==='automatic'");
+      await click('#book-inspector-preferred');
       if(!await raw("document.querySelector('.book-paper-toolbar')?.dataset.tool==='preferred'&&!document.querySelector('#book-paper-position-mode')&&!document.querySelector('#book-paper-fixed-toggle')&&!document.querySelector('#book-paper-group-mode')&&!document.querySelector('#book-paper-area-undo')&&!document.querySelector('#book-paper-block-up')"))throw Error('Unrelated tools exposed during preferred position editing');
       await until('drag handle',"document.querySelector('#book-paper-position-drag')?.dataset.geometryAvailable==='true'");
       await raw("new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))");
@@ -550,6 +551,8 @@ async function benchmarkBookPositionDrag({win,raw,click,until,ready,paperSignatu
     await until('coordinate retained on viewport resize',"document.querySelector('#book-paper-coordinate-y')?.value==="+JSON.stringify(nextY)+"&&!!document.querySelector('[data-position-phase=paper-ready]')");
     await click('#book-paper-preferred-mode');
     await until('coordinate draft closed',"!document.querySelector('#book-paper-coordinate-y')&&!document.querySelector('.paper-inline-live')");
+    await click('#book-inspector-area');
+    await until('inspector opens existing size controls',"document.querySelector('#paper-inline-details')?.getAttribute('aria-expanded')==='true'&&!document.querySelector('#paper-inline-properties')?.hidden");
     if(await paperSignature()!==baseline||await readFile(path,'utf8')!==source)throw Error('Cancelled coordinate edit changed published paper or manuscript');
     await readFile(join(root,'layouts','paper-area.json')).then(()=>{throw Error('Unsaved drag persisted paper intent');},e=>{if(e.code!=='ENOENT')throw e;});
     const median=values=>{const v=[...values].sort((a,b)=>a-b);return (v[1]+v[2])/2;};

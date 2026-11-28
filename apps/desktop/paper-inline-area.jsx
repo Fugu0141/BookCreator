@@ -8,7 +8,7 @@ import {MAX_PAPER_TRAILING_SPACE} from './paper-area-store.mjs';
 
 // Separate from the measured shadow tree, just like the reorder overlay.
 // The preview is local to the gesture; a confirmed save is handled by App.
-export function PaperInlineArea({viewport,node,context,onCommit,previewOnly=false,onPendingChange}){
+export function PaperInlineArea({viewport,node,context,onCommit,previewOnly=false,onPendingChange,detailsRequest}){
   const [geometry,setGeometry]=useState(null),[proposal,setProposal]=useState({}),[ghost,setGhost]=useState(null);
   const active=useRef(null),liveMount=useRef(null);
   const isGap=axis=>axis==='before'||axis==='gap';
@@ -24,6 +24,9 @@ export function PaperInlineArea({viewport,node,context,onCommit,previewOnly=fals
     return ()=>{draftCaches.current=null;for(const cache of Object.values(caches))cache.clear();};
   },[node,context.target.revision,context.target.fingerprint]);
   const {target,placement}=context;
+  useLayoutEffect(()=>{
+    if(detailsRequest&&detailsRequest.job===context.job&&detailsRequest.documentId===target.documentId&&detailsRequest.blockKey===target.blockKey&&context.current())setDetails(true);
+  },[detailsRequest,context.job,target.documentId,target.blockKey]);
   const stored=placement.sizeConstraints??{};
   const latest=useRef(null);latest.current={proposal,context,numberText};
   const storedValue=axis=>axis==='before'?(placement.spaceBefore??0):axis==='gap'?(placement.spaceAfter??0):(stored[axis==='width'?'minWidthPercent':'minHeightPercent']??0);
