@@ -821,7 +821,7 @@ function App(){
       }
       const {pages,retained}=publication;
       const bookLease=whole&&areaPrepared?captureBookAreaLease({snapshot,file,raw,dirty:manuscriptStore.getMetadata().dirty,themeDirty,settingsDirty,themeRevision:theme?.revision,settingsRevision:savedSettings?.revision}):null;
-      paperAreaContext.current=(scope==='manuscript'||whole&&!!areaPrepared)&&result.plan.completeness==='full'&&!result.plan.diagnostics.some(d=>d.severity==='error')?{job,scope,bookLease,bookSources:bookLease?snapshot:null,options:previewOptions,plan:{revision:options.revision,fingerprint:options.fingerprint,fragments:result.intelligentLayout?.fragments??result.slices.map(slice=>({origin:slice.origin}))},areaPrepared,areaSnapshot,current}:null;
+      paperAreaContext.current=(scope==='manuscript'||whole&&!!areaPrepared)&&result.plan.completeness==='full'&&!result.plan.diagnostics.some(d=>d.severity==='error')?{job,scope,bookLease,bookSources:bookLease?snapshot:null,options:previewOptions,plan:{revision:options.revision,fingerprint:options.fingerprint,pageCount:result.plan.pages.length,fragments:result.intelligentLayout?.fragments??result.slices.map(slice=>({origin:slice.origin}))},areaPrepared,areaSnapshot,current}:null;
       const pageNumber=retained?Math.max(1,Math.min(activePage,pages.length)):1;
       trialPdfSnapshot.current=!applySavedAreas&&whole&&snapshot&&result.plan.completeness==='full'&&!result.plan.diagnostics.some(d=>d.severity==='error')&&!manuscriptStore.getMetadata().dirty&&!themeDirty&&!settingsDirty&&
         (!file||snapshot.some(d=>d.documentId===file.id&&d.revision===file.revision&&d.source===raw))?
