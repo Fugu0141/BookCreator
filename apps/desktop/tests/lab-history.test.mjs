@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHistory,commitHistory,undoHistory,redoHistory} from '../lab-history.mjs';
-import {dragPosition,nudgePosition,resizeSize,flowDropIndex} from '../canvas-interaction.mjs';
+import {dragPosition,nudgePosition,resizeSize,flowDropIndex,flowResizeLimits} from '../canvas-interaction.mjs';
 test('history preserves original and redo, new edits discard future',()=>{
   const initial={children:[{id:'a',x:0,y:0}]},a=createHistory(initial),b=commitHistory(a,{children:[{id:'a',x:3000,y:500}]}),c=commitHistory(b,{children:[{id:'a',x:8000,y:1500}]});
   assert.equal(undoHistory(c).present,b.present);
@@ -50,4 +50,14 @@ test('flow reordering crosses measured sibling centres and clamps at either end'
   assert.equal(flowDropIndex(2,centers,-100),0);
   assert.equal(flowDropIndex(1,[10,10,90],99),1);
   assert.equal(flowDropIndex(1,centers,NaN),1);
+});
+
+test('flow resize respects fixed sizes, sibling budget and auto-sized slots',()=>{
+  assert.deepEqual(flowResizeLimits({type:'rect',width:2000,height:16000},'row',90000,100000,20000),{fixedWidth:true,fixedHeight:true,minWidth:1,maxWidth:70000,minHeight:1,maxHeight:100000});
+  assert.equal(flowResizeLimits({type:'content'},'row',90000,100000),null);
+  const fill=flowResizeLimits({type:'image',width:'fill',height:12000},'column',90000,100000);
+  assert.equal(fill.fixedWidth,false);assert.equal(fill.fixedHeight,true);assert.equal(fill.maxWidth,90000);
+  const label=flowResizeLimits({type:'label',width:20000},'row',90000,100000,80000);
+  assert.equal(label.maxWidth,20000);assert.equal(label.fixedHeight,false);
+  assert.equal(flowResizeLimits({type:'group',width:20000,padding:10000,direction:'column'},'column',20000,100000),null);
 });
