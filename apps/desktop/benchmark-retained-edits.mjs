@@ -225,10 +225,43 @@ export async function benchmarkRetainedEdits({raw,click,until,ready,paperSignatu
   await setWorker(false);await setRetained(false);
   const workerComparison={...summarizeBurstInputSamples(workerRows),preparation:summarizePreparationTiming(workerRows)};
   console.log('BENCH preparation worker '+JSON.stringify({version:1,arms:{uncached:'main',warm:'worker'},comparison:workerComparison,samples:workerRows}));
+  // The default 16ms window remains the control. Keep worker and direct
+  // publication disabled to isolate the input coalescing change.
+  const windowRows=[];
+  async function setShortWindow(enabled){
+    await click('#performance-toggle');
+    const query="document.querySelector('#performance-short-warm-window').checked";
+    if(await raw(query)!==enabled)await click('#performance-short-warm-window');
+    if(await raw(query)!==enabled||await raw("document.querySelector('#performance-worker-preparation').checked||document.querySelector('#performance-direct-single-page').checked"))throw Error('Short window comparison mode mismatch');
+    await click('#performance-close');
+  }
+  for(const item of [cases[0],burstCase]){
+    const edited=large.source.replace(item.from,item.to),values=item.steps?.map(to=>large.source.replace(item.from,to))??[edited];
+    let oracle;
+    for(const {pair,order} of cacheComparisonPlan()){
+      for(const arm of order){
+        await setRetained(false);await setRetained(true);await setShortWindow(arm==='warm');
+        await raw("document.querySelector('#preview > div').dataset.paperProbe='old'");
+        await click('#preview-button');
+        await until('short window comparison prime',ready('manuscript')+"&&document.querySelector('#preview > div').dataset.paperProbe!=='old'&&!!document.querySelector('#preview > div').dataset.retainedWork");
+        if(await paperSignature()!==original)throw Error('Short window prime mismatch');
+        const s=await edit(edited,values),signature=await paperSignature();
+        if(signature===original||(oracle!==undefined&&signature!==oracle)||!s.focus||!s.clean||!s.identity.sameHost||s.identity.reusedFromInitial!==s.pages-1||s.work?.hostTiming?.preparationMode!=='main')throw Error('Short window parity or reuse failed');
+        oracle=signature;
+        windowRows.push({case:item.id,pair,arm,finalMs:s.finalMs,provisionalMs:s.provisionalMs,identity:s.identity,work:s.work,
+          ...(item.id==='burst'?{burst:{dispatchOffsetsMs:s.dispatchOffsetsMs,timerLagMs:s.timerLagMs,dispatchWorkMs:s.dispatchWorkMs,intermediatePublications:s.intermediatePublications,totalMs:s.totalMs}}:{})});
+        await edit(large.source);
+        if(await paperSignature()!==original||await readFile(join(root,'manuscript',large.id+'.md'),'utf8')!==large.source)throw Error('Short window fixture restore failed');
+      }
+    }
+  }
+  await setShortWindow(false);await setRetained(false);
+  const windowComparison={text:summarizeCacheComparison(windowRows.filter(r=>r.case==='text').map(r=>({label:'cache-pair-'+r.pair+'-'+r.arm,scope:'manuscript',elapsedMs:r.finalMs})),'manuscript'),burst:summarizeBurstInputSamples(windowRows.filter(r=>r.case==='burst'))};
+  console.log('BENCH short warm window '+JSON.stringify({version:1,arms:{uncached:'16ms',warm:'8ms'},comparison:windowComparison,samples:windowRows}));
   const summaries=cases.map(({id})=>summarizeRetainedEditSamples(id,samples.filter(s=>s.case===id)));
   const burst=summarizeBurstInputSamples(samples.filter(s=>s.case==='burst'));
   console.log('BENCH retained '+JSON.stringify({version:2,summaries,samples,burst}));
-  return {summaries,samples,burst,directComparison,workerComparison,workerRows};
+  return {summaries,samples,burst,directComparison,workerComparison,workerRows,windowComparison};
 }
 
 export function summarizeRetainedEditSamples(id,rows){
