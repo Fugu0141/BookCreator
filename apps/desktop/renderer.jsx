@@ -132,7 +132,7 @@ function App(){
   const [retainedPreview,setRetainedPreview]=useState(true);
   const [directSinglePage,setDirectSinglePage]=useState(false);
   const [workerPreparation,setWorkerPreparation]=useState(false);
-  const [shortWarmWindow,setShortWarmWindow]=useState(false);
+  const [shortWarmWindow,setShortWarmWindow]=useState(true);
   const preparationClient=useRef(null);
   if(!preparationClient.current)preparationClient.current=createPreparationClient();
   useEffect(()=>()=>preparationClient.current.reset(),[]);

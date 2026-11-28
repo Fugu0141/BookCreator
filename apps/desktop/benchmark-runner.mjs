@@ -65,6 +65,10 @@ export async function runBookBenchmark(win,app,root,fixture){
   // Preserve the historical full baseline; the retained comparison primes each arm explicitly.
   await click('#performance-toggle');
   if(!await raw("document.querySelector('#performance-retained-preview').checked"))throw Error('Retained preview must start enabled');
+  if(!await raw("document.querySelector('#performance-short-warm-window').checked"))throw Error('Short warm window must start enabled');
+  // Keep historical comparison arms at 16ms until the dedicated window trial.
+  await click('#performance-short-warm-window');
+  if(await raw("document.querySelector('#performance-short-warm-window').checked"))throw Error('Historical 16ms control was not selected');
   await click('#performance-retained-preview');await click('#performance-close');
   for(const c of fixture.chapters){
     await measure(c.id+'-open','manuscript',()=>click('[data-section='+c.id+']'),"document.querySelector('#source').value==="+JSON.stringify(c.source));
