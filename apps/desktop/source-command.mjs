@@ -23,3 +23,21 @@ export function applySourceCommand(deps,command,plan,applyPatches,commit){
   commit(next);
   return {planned,next};
 }
+
+// Modal drafts own their original range, not the live textarea selection.
+// The user can move focus into a formula field without invalidating that range.
+export function captureDraftCommand(deps,draft){
+  const {store,textarea,generation,composing}=deps;
+  const {file,text}=store.getSnapshot(),node=textarea.current;
+  if(!draft||!file?.editable||!node||composing.current||
+     file.id!==draft.fileId||file.revision!==draft.revision||text!==draft.source||
+     generation.current!==draft.job||node.value!==text||
+     (draft.origin&&draft.origin.file!==file)||(draft.origin&&draft.origin.node!==node))return null;
+  return {file,text,node,job:draft.job,start:draft.start,end:draft.end};
+}
+export function isDraftCommandCurrent({store,textarea,generation,composing},command){
+  if(!command)return false;
+  const {file,text}=store.getSnapshot();
+  return file===command.file&&text===command.text&&textarea.current===command.node&&
+    generation.current===command.job&&!composing.current&&command.node.value===text;
+}
