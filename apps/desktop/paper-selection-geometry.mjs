@@ -54,3 +54,16 @@ export function resolvePaperSelectionNodes(nodes,documentId,blockKeys){
   }
   return blockKeys.flatMap((key,index)=>matches.has(key)&&!duplicate.has(key)?[{key,index,node:matches.get(key)}]:[]);
 }
+
+
+// Keep the user's actual preferred intent, not the fallback placement.
+// When it cannot be edited under the current same-page/footprint contract,
+// require explicit rebasing instead of silently substituting measured values.
+export function preferredPositionEditStart(position,bounds,body,stored){
+  const defaults={x:Math.min(5000,body.width),y:Math.min(5000,body.height)};
+  if(!stored)return {position,tolerance:defaults,requiresRebase:false};
+  const p=stored.position,t=stored.tolerance;
+  const positionValid=p?.page===position.page&&Number.isSafeInteger(p.x)&&Number.isSafeInteger(p.y)&&p.x>=0&&p.y>=0&&p.x<=bounds.maxX&&p.y<=bounds.maxY;
+  const toleranceValid=Number.isSafeInteger(t?.x)&&Number.isSafeInteger(t?.y)&&t.x>=0&&t.y>=0&&t.x<=body.width&&t.y<=body.height;
+  return {position:positionValid?p:position,tolerance:t,requiresRebase:!positionValid||!toleranceValid};
+}
