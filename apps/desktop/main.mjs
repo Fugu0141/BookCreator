@@ -2421,6 +2421,23 @@ async function smoke(){
   await exec("document.querySelector('#component-lab').click()");
   await until("!!document.querySelector('#lab-measure')");
   await until("document.querySelector('#lab-precision-panel').hidden&&!document.querySelector('#lab-padding').getClientRects().length&&document.querySelector('#lab-precision-toggle').getAttribute('aria-expanded')==='false'");
+  await until("document.querySelector('#lab-preview').dataset.previewConfirmed==='true'");
+  await exec("document.querySelector('#lab-component-area-toggle').click()");
+  await until("!document.querySelector('#lab-component-area-fields').hidden&&!!document.querySelector('#lab-preview > div').shadowRoot.querySelector('[data-lab-component-area-handle=width]')");
+  const originalArea=await exec("(()=>{const el=document.querySelector('#lab-preview > div').shadowRoot.querySelector('[data-component]');return {width:parseFloat(el.style.width),height:parseFloat(el.style.height)};})()");
+  await exec("document.querySelector('#lab-component-area-fields .lab-area-presets button:nth-child(2)').click()");
+  await until("Number(document.querySelector('#lab-width-percent').value)===75&&!document.querySelector('#lab-apply').disabled");
+  if(!await exec("Math.abs(parseFloat(document.querySelector('#lab-preview > div').shadowRoot.querySelector('[data-component]').style.width)-"+originalArea.width+"*.75)<.03"))throw Error('Visual width preset failed to resize measured component');
+  await exec("document.querySelector('#lab-height-percent').closest('.lab-area-slider').nextElementSibling.querySelector('button:nth-child(3)').click()");
+  await until("Number(document.querySelector('#lab-height-percent').value)===50&&!document.querySelector('#lab-apply').disabled");
+  if(!await exec("parseFloat(document.querySelector('#lab-preview > div').shadowRoot.querySelector('[data-component]').style.height)>"+originalArea.height))throw Error('Visual height preset did not reserve space');
+  await until("!!document.querySelector('#lab-preview > div').shadowRoot.querySelector('[data-lab-component-area-handle=width]')");
+  await exec("document.querySelector('#lab-preview > div').shadowRoot.querySelector('[data-lab-component-area-handle=width]').dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true,cancelable:true}))");
+  await until("Number(document.querySelector('#lab-width-percent').value)===76&&!document.querySelector('#lab-apply').disabled");
+  for(let i=0;i<3;i++){await exec("document.querySelector('#lab-undo').click()");await until("!document.querySelector('#lab-apply').disabled");}
+  await until("Number(document.querySelector('#lab-width-percent').value)===100&&Number(document.querySelector('#lab-height-percent').value)===0");
+  await exec("document.querySelector('#lab-component-area-toggle').click()");
+  await until("document.querySelector('#lab-component-area-fields').hidden&&!document.querySelector('#lab-preview > div').shadowRoot.querySelector('[data-lab-component-area-handle]')");
   const wideCanvas=await exec("document.querySelector('.lab-canvas').getBoundingClientRect().width");
   await until("!document.querySelector('#lab-layer-fields').hidden&&document.querySelector('#lab-library-fields').hidden");
   await exec("document.querySelector('#lab-library-toggle').click()");
