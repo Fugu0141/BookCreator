@@ -99,3 +99,20 @@ test('default handoff gives already queued input a real task boundary',async()=>
   hold.resolve();await first;await input;await queued;await latest;
   assert.deepEqual(started,['new']);
 });
+
+test('supersession aborts active signal after gate invalidation but waits for physical release',async()=>{
+  const tasks=[],hold=deferred(),scheduler=createLayoutScheduler({scheduleHandoff:fn=>tasks.push(fn)});
+  let oldSignal,aborted=0,started=false;
+  const first=scheduler.submit(async(id,signal)=>{oldSignal=signal;signal.addEventListener('abort',()=>{assert.equal(scheduler.isCurrent(id),false);aborted++;});await hold.promise;});
+  const next=scheduler.submit((id,signal)=>{started=true;assert.equal(signal.aborted,false);assert.equal(scheduler.isCurrent(id),true);});
+  assert.equal(oldSignal.aborted,true);assert.equal(aborted,1);assert.equal(started,false);
+  hold.resolve();await first;assert.equal(tasks.length,1);assert.equal(started,false);
+  tasks.shift()();await next;assert.equal(started,true);
+});
+test('invalidate aborts active job without aborting independent scheduler',async()=>{
+  const a=createLayoutScheduler(),b=createLayoutScheduler(),hold=deferred();let sa,sb;
+  const first=a.submit((id,signal)=>{sa=signal;return hold.promise;});
+  const second=b.submit((id,signal)=>{sb=signal;return hold.promise;});
+  a.invalidate();assert.equal(sa.aborted,true);assert.equal(sb.aborted,false);
+  hold.resolve();await Promise.all([first,second]);
+});

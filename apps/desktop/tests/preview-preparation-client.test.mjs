@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createPreparationClient} from '../preview-preparation-client.mjs';
+import {createLayoutScheduler} from '../layout-scheduler.mjs';
 function prepared(id,overrides={}){
   return {type:'prepared',id,prepared:{diagnostics:[]},preparationMs:1,
     work:{scan:{hits:0,misses:0},inline:{hits:0,misses:0,bypasses:0}},...overrides};
@@ -73,4 +74,28 @@ test('diagnostic-only and non-retained replies remain valid',async()=>{
   const b=client.prepare({},false);
   workers[0].onmessage({data:prepared(2,{work:null})});
   assert.equal((await b).work,null);
+});
+
+test('aborting pending preparation releases timeout and ignores stale messages',async()=>{
+  const {client,workers,timers}=setup(),controller=new AbortController();
+  const first=client.prepare({},true,controller.signal),old=workers[0],late=old.onmessage;
+  controller.abort();assert.equal(await first,undefined);assert.equal(old.closed,true);assert.equal(timers.size,0);
+  assert.equal(await client.prepare({},true,controller.signal),undefined);assert.equal(workers.length,1);
+  const latest=client.prepare({},true);late({data:prepared(1)});workers[1].onmessage({data:prepared(2)});
+  assert.equal((await latest).id,2);assert.equal(timers.size,0);
+});
+test('completed preparation detaches cancellation and preserves idle worker cache',async()=>{
+  const {client,workers}=setup(),controller=new AbortController();
+  const first=client.prepare({},true,controller.signal);workers[0].onmessage({data:prepared(1)});await first;
+  const next=client.prepare({},true);controller.abort();assert.notEqual(workers[0].closed,true);
+  workers[0].onmessage({data:prepared(2)});assert.equal((await next).id,2);assert.equal(workers.length,1);
+});
+test('latest scheduler request can start without waiting for obsolete worker response',async()=>{
+  const {client,workers,timers}=setup(),tasks=[],scheduler=createLayoutScheduler({scheduleHandoff:fn=>tasks.push(fn)});
+  const first=scheduler.submit((id,signal)=>client.prepare({},true,signal));
+  const stale=workers[0].onmessage;
+  const latest=scheduler.submit((id,signal)=>client.prepare({},true,signal));
+  assert.equal(await first,undefined);assert.equal(workers[0].closed,true);assert.equal(tasks.length,1);
+  tasks.shift()();stale({data:prepared(1)});workers[1].onmessage({data:prepared(2)});
+  assert.equal((await latest).id,2);assert.equal(timers.size,0);
 });

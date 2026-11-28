@@ -651,9 +651,9 @@ function App(){
     if(!automatic){editPreviewTracker.reset();if(mode==='writing'||mode==='layout')setPreviewScopeOverride({mode,scope});if(mode==='writing'&&compactWriting)setCompactPane('paper');else setShowPaper(true);}
     const retained=retainLayoutHost(false,scope,source.file);dispatchLayout({type:'begin',scope,retained});if(!automatic)setStatus('実測組版中…');
     const requestedAt=performance.now();
-    return layoutScheduler.submit(job=>renderRequest(job,whole,scope,automatic,requestedAt,source));
+    return layoutScheduler.submit((job,signal)=>renderRequest(job,whole,scope,automatic,requestedAt,source,signal));
   }
-  async function renderRequest(job,whole,scope,automatic,requestedAt,source){
+  async function renderRequest(job,whole,scope,automatic,requestedAt,source,signal){
     const {file,text:raw}=source;
     const startedAt=performance.now();let outcome='cancelled';
     const measurementCache=cacheEnabled&&!paragraphCacheEnabled?textCache.current:undefined;
@@ -677,7 +677,7 @@ function App(){
         phase='prepare-worker';
         let response;
         const workerStarted=performance.now();
-        try{response=await preparationClient.current.prepare(preparationPayload(input,documents),true);}
+        try{response=await preparationClient.current.prepare(preparationPayload(input,documents),true,signal);}
         catch{preparationMode='fallback';}
         finally{workerRequestMs=performance.now()-workerStarted;}
         // Keep numeric timings even when a newer edit superseded this request.
