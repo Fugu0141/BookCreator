@@ -23,7 +23,16 @@ export function describeMeasuredPaper(result,options,{previewSourceRange,paperTh
   const bindings=new WeakMap();
   const root=assembly?.root??result.element.shadowRoot;
   const pageRecords=assembly?assembly.pages:[...root.querySelectorAll('[data-page]')].map(node=>({node,reuse:false,fragments:[...node.querySelectorAll('[data-block]')]}));
-  const sourceBlocks=new Map(options.sections.flatMap(s=>s.blocks.filter(b=>!('kind' in b)).map(b=>[JSON.stringify([b.origin.documentId,b.origin.blockKey]),b])));
+  // Index by the two origin fields directly. Avoid temporary flatMap arrays
+  // and serializing a composite key for every source block and fragment.
+  const sourceBlocks=new Map();
+  for(const {blocks} of options.sections)for(const block of blocks){
+    if('kind' in block)continue;
+    const {documentId,blockKey}=block.origin;
+    let document=sourceBlocks.get(documentId);
+    if(!document){document=new Map();sourceBlocks.set(documentId,document);}
+    document.set(blockKey,block);
+  }
   let cursor=0;
   const pages=pageRecords.map(({node:page,reuse,fragments},index)=>{
     const documents=new Set();
@@ -36,7 +45,7 @@ export function describeMeasuredPaper(result,options,{previewSourceRange,paperTh
         if(node.style.cursor!=='pointer')node.style.cursor='pointer';
         bindings.set(node,{documentId:slice.origin.documentId,range});
       };
-      const block=sourceBlocks.get(JSON.stringify([slice.origin.documentId,slice.origin.blockKey]));
+      const block=sourceBlocks.get(slice.origin.documentId)?.get(slice.origin.blockKey);
       bind(el,previewSourceRange(block,slice));
       const topology=navigationNodes(el,reuse);
       for(const {node,textStart,textEnd,name} of topology.math){
