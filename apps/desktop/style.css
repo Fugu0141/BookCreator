@@ -728,3 +728,5 @@ body{font-family:BCFont_NotoSansJP,system-ui,sans-serif}.font-control,.typograph
 
 .paper-inline-gap-handle{position:fixed;z-index:23;transform:translate(-50%,-50%);pointer-events:auto;touch-action:none;cursor:ns-resize;width:24px;height:16px;min-height:0;padding:0;line-height:12px;font-size:12px;color:#85530d;background:#fff6de;border:2px solid #c58a2c;border-radius:4px;box-sizing:border-box;}
 .paper-inline-gap-handle:focus-visible{outline:2px solid #3478b7;outline-offset:2px;}
+
+.paper-inline-gap-handle{width:32px;font-size:10px;white-space:nowrap;}
