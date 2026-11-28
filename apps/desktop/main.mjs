@@ -226,6 +226,15 @@ async function run(){
       return {ok:true,value};
     }catch(e){return {ok:false,error:{code:e.code??'ERROR',message:String(e.message??e)}};}
   });
+  ipcMain.handle('bookcreator:readPreviewPaperArea',async(event,...args)=>{
+    try{
+      sender(event);checkArgs(args,1);
+      const [token]=args,current=requireWorkspace();
+      if(typeof token!=='string'||token!==settingsToken)throw Error('Invalid preview session');
+      const value=await previewReadLane.read(token+':area',()=>!busy&&!closing&&workspace===current&&settingsToken===token,()=>current.readBookPaperArea());
+      return {ok:true,value};
+    }catch(e){return {ok:false,error:{code:e.code??'ERROR',message:String(e.message??e)}};}
+  });
   ipcMain.handle('bookcreator:readPreviewImage',async(event,...args)=>{
     try{
       sender(event);checkArgs(args,2);
