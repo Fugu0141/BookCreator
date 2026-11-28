@@ -55,6 +55,7 @@ document.querySelector('#sample-math').addEventListener('click',()=>{
 if(new URLSearchParams(location.search).has('smoke')){
   const report=document.querySelector('#smoke');
   try{
+    report.textContent='RUNNING initial pages';
     await render();
     if(!latest||latest.plan.pages.length<2||latest.publicationReady!==false)throw Error('Expected multi-page experimental preview');
     const fragment=latest.element.shadowRoot.querySelector('[data-block]');
@@ -62,6 +63,7 @@ if(new URLSearchParams(location.search).has('smoke')){
     fragment.click();
     if(source.selectionStart!==slice.start||source.selectionEnd!==slice.end||source.value.slice(slice.start,slice.end)!==fragment.textContent)throw Error('Source mapping mismatch');
     const pages=latest.plan.pages.length;
+    report.textContent='RUNNING display math';
     const formula='\\frac{a^2}{b}';
     source.value='導入。\n\n$$\n'+formula+'\n$$\n\n結び。';
     source.dispatchEvent(new Event('input'));await render();
@@ -71,6 +73,7 @@ if(new URLSearchParams(location.search).has('smoke')){
     if(source.value.slice(source.selectionStart,source.selectionEnd)!==formula)throw Error('Display math source mapping mismatch');
     source.value='$$\n\\input{secret}\n$$\n';source.dispatchEvent(new Event('input'));await render();
     if(latest||target.children.length)throw Error('Unsafe formula rendered');
+    report.textContent='RUNNING inline math';
     const inlineFormula='$\\frac{1}{2}$';
     source.value='**係数** '+inlineFormula+' を用いる。';
     source.dispatchEvent(new Event('input'));await render();
@@ -78,6 +81,7 @@ if(new URLSearchParams(location.search).has('smoke')){
     if(!atom?.querySelector('math mfrac'))throw Error('Inline formula not rendered: '+status.textContent);
     atom.click();
     if(source.value.slice(source.selectionStart,source.selectionEnd)!==inlineFormula)throw Error('Inline formula envelope selection mismatch');
+    report.textContent='RUNNING equation reference';
     const refToken=':ref{target="eq-demo"}',eqFormula='\\frac{a}{b}';
     source.value='参照 '+refToken+'。\n\n:::layout{#eq-demo numbered="true"}\n$$\n'+eqFormula+'\n$$\n:::\n';
     source.dispatchEvent(new Event('input'));await render();
@@ -91,6 +95,7 @@ if(new URLSearchParams(location.search).has('smoke')){
     await render();if(latest||target.children.length)throw Error('Unsupported input rendered');
     // Exercise the same three-document textbook as the node integration suite,
     // using the actual browser measurement and MathML rendering path.
+    report.textContent='RUNNING textbook';
     const docs=makeMathTextbook();
     const textbook=prepareBookBrowserPreview(docs,'textbook','textbook-smoke',mathSize,deps,undefined,undefined,undefined,undefined,undefined,makeLibrary(defaultHeadingDesign));
     if(!textbook.options)throw Error('Textbook compilation failed: '+JSON.stringify(textbook.diagnostics));
@@ -102,6 +107,7 @@ if(new URLSearchParams(location.search).has('smoke')){
     if(paper.plan.pages.length<3||paper.publicationReady!==false)throw Error('Textbook must use multi-page experimental output');
     if(root.querySelectorAll('math mtable').length<3||!root.querySelector('math mfrac')||!root.querySelector('[data-named-slot=hint] [data-equation-number]'))throw Error('Textbook math layout missing');
     if(!root.textContent.includes('次章の定義は 式 (2.1)')||!root.textContent.includes('式 (2.2)'))throw Error('Textbook reference label missing');
+    report.textContent='RUNNING interactive sample';
     source.value=mathSample;width.value='140';height.value='180';invalidate();await render();
     const sampleRoot=latest?.element.shadowRoot;
     if(!sampleRoot||sampleRoot.querySelectorAll('[data-equation-number]').length!==2||!sampleRoot.textContent.includes('式 (1.1)'))throw Error('Interactive math sample failed: '+status.textContent);
