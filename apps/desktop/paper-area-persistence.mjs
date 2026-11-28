@@ -56,15 +56,16 @@ export function paperAreaPersistence(root,{checkManifest,readManuscript}){
       await checkManifest();await readManuscript(id);
       return scoped(await readAll(),id);
     },
-    async save(id,sourceRevision,expectedRevision,value,verifyBook=async()=>{}){
+    async save(id,sourceRevision,expectedRevision,value,verifyBook){
       if(busy)fail('BUSY','Another paper area write is in progress');
       busy=true;let temp;
       try{
         const doc=validatePaperAreaDocument(value);
         if(doc.entries.some(e=>e.documentId!==id))fail('INPUT','Cross-manuscript paper area edit');
         await verifySource(id,sourceRevision);
-        await verifyBook();
+        await verifyBook?.();
         const old=await readAll();
+        if(!verifyBook&&(doc.entries.some(e=>e.bookFixed)||old.document.entries.some(e=>e.documentId===id&&e.bookFixed)))fail('INPUT','Absolute page locks require full-book verification');
         if(old.revision!==expectedRevision)fail('CONFLICT','Paper area file changed externally');
         const merged=validatePaperAreaDocument({schemaVersion:1,entries:[...old.document.entries.filter(e=>e.documentId!==id),...doc.entries]});
         if(encodePaperAreaDocument(merged)===encodePaperAreaDocument(old.document))return scoped(old,id);
@@ -74,7 +75,7 @@ export function paperAreaPersistence(root,{checkManifest,readManuscript}){
         const f=await open(temp,'wx',old.mode??0o644);
         try{await f.writeFile(bytes);await f.chmod(old.mode??0o644);await f.sync();}finally{await f.close();}
         await verifySource(id,sourceRevision);
-        await verifyBook();
+        await verifyBook?.();
         if((await readAll()).revision!==expectedRevision)fail('CONFLICT','Paper area file changed before replacement');
         // For a first save, link refuses to overwrite an unexpected new file.
         // Existing-file replacement uses the same checked atomic rename pattern
