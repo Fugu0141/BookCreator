@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {describeMeasuredPaper} from '../measured-paper.mjs';
+import {paperBlockRangeForNode} from '../paper-navigation.mjs';
 
 test('measured paper builds page metadata and delegates source navigation',()=>{
   const listeners={},page={querySelectorAll:()=>[block]};
@@ -119,4 +120,19 @@ test('reused page metadata is shared only with matching document order and page 
   assert.notEqual(shifted,changed);assert.equal(shifted.number,2);
   assert.equal(publish([b,a,b],true,true),shifted);
   assert.notEqual(publish([b,a,b],false,true),shifted);
+});
+
+test('block origin is separate from the inline navigation range and follows reused nodes',()=>{
+  const root={host:{inert:false},addEventListener(){}};
+  const node={style:{},querySelectorAll:()=>[],getRootNode:()=>root};
+  const page={};
+  function publish(start,reuse){
+    const origin={documentId:'a',blockKey:'k',range:{start,end:start+12}};
+    describeMeasuredPaper({slices:[{origin}]},{sections:[{blocks:[{origin}]}]},{
+      previewSourceRange:()=>({start:start+2,end:start+4}),paperThumbnail:()=>null,onNavigate(){}
+    },{root,pages:[{node:page,reuse,fragments:[node]}]});
+  }
+  publish(10,false);assert.deepEqual(paperBlockRangeForNode(node),{start:10,end:22});
+  publish(50,true);assert.deepEqual(paperBlockRangeForNode(node),{start:50,end:62});
+  root.host.inert=true;assert.equal(paperBlockRangeForNode(node),null);
 });
