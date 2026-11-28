@@ -2438,6 +2438,26 @@ async function smoke(){
   await until("document.querySelector('#lab-precision-panel').hidden&&Math.abs(document.querySelector('.lab-canvas').getBoundingClientRect().width-"+wideCanvas+")<1");
 
   await until("document.querySelector('#lab-add-options').hidden&&document.querySelector('#lab-property-appearance').hidden===false&&document.querySelector('#lab-property-layout').hidden&&document.querySelector('#lab-property-details').hidden");
+  // Occupied area controls are independent: height reserves blank paper without scaling the children.
+  await until("!document.querySelector('#lab-apply').disabled&&document.querySelector('#lab-occupancy-panel').hidden");
+  const occupancyGeometry=()=>exec("(()=>{const r=document.querySelector('#lab-preview > div').shadowRoot,c=r.querySelector('[data-component]'),n=c.querySelector('[data-content-slot]');return {width:parseFloat(c.style.width),height:parseFloat(c.style.height),textHeight:n.style.height,textWidth:n.style.width,textTop:n.style.top};})()");
+  const naturalArea=await occupancyGeometry();
+  await exec("document.querySelector('#lab-occupancy-toggle').click()");
+  await until("!document.querySelector('#lab-occupancy-panel').hidden&&document.querySelector('#lab-occupancy-width').value==='100'&&document.querySelector('#lab-occupancy-height').value==='0'");
+  await exec("document.querySelector('[data-lab-occupancy-axis=lab-occupancy-height][data-lab-occupancy-preset=50]').click()");
+  await until("document.querySelector('#lab-occupancy-height').value==='50'&&!document.querySelector('#lab-apply').disabled");
+  const tallArea=await occupancyGeometry();
+  if(tallArea.height<=naturalArea.height||tallArea.width!==naturalArea.width||tallArea.textHeight!==naturalArea.textHeight||tallArea.textWidth!==naturalArea.textWidth||tallArea.textTop!==naturalArea.textTop)throw Error('Vertical occupancy did not reserve empty space independently');
+  await exec("document.querySelector('[data-lab-occupancy-axis=lab-occupancy-width][data-lab-occupancy-preset=75]').click()");
+  await until("document.querySelector('#lab-occupancy-width').value==='75'&&!document.querySelector('#lab-apply').disabled");
+  const narrowArea=await occupancyGeometry();
+  if(Math.abs(narrowArea.width-naturalArea.width*.75)>.02||narrowArea.height<tallArea.height)throw Error('Horizontal and vertical occupancy not independent');
+  await exec("document.querySelector('#lab-undo').click()");
+  await until("document.querySelector('#lab-occupancy-width').value==='100'&&!document.querySelector('#lab-apply').disabled");
+  await exec("document.querySelector('#lab-undo').click()");
+  await until("document.querySelector('#lab-occupancy-height').value==='0'&&!document.querySelector('#lab-apply').disabled");
+  await exec("document.querySelector('#lab-occupancy-toggle').click()");
+  await until("document.querySelector('#lab-occupancy-panel').hidden");
   // Row/column parts must be selectable from the measured canvas, not only the layer list.
   await until("!!document.querySelector('#lab-preview > div')?.shadowRoot?.querySelector('[data-component-node=content][data-lab-selectable]')");
   await exec("(()=>{const el=document.querySelector('#lab-preview > div').shadowRoot.querySelector('[data-component-node=content]');el.dispatchEvent(new PointerEvent('pointerdown',{button:0,pointerId:1,isPrimary:true,bubbles:true}));el.dispatchEvent(new PointerEvent('pointerup',{button:0,pointerId:1,isPrimary:true,bubbles:true}));})()");

@@ -17,6 +17,7 @@ export interface HeadingDesign {
   schemaVersion:1;
   fontSize:number; lineHeight:number; font?:ComponentFont; paragraphGap?:number;
   direction:'row'|'column'; gap:number; padding:number; background:string; textColor:string;
+  widthPercent?:number; minHeightPercent?:number;
   children:HeadingChild[];
 }
 export type HeadingLevel='1'|'2'|'3'|'4'|'5'|'6';
@@ -36,7 +37,8 @@ function validateFont(v:unknown){
 }
 export function validateHeadingDesign(value:unknown,scope:'heading'|'study'|'paragraph'='heading'):HeadingDesign{
   const fail=()=>{throw RangeError('Invalid experimental heading component');};
-  if(!record(value)||!exact(value,['schemaVersion','fontSize','lineHeight','direction','gap','padding','background','textColor','children'],['font',...(scope==='heading'?[]:['paragraphGap'])])||value.schemaVersion!==1||!len(value.fontSize,2000,30000)||!line(value.lineHeight)||!['row','column'].includes(String(value.direction))||!len(value.gap)||!len(value.padding)||!color(value.background)||!color(value.textColor)||!Array.isArray(value.children)||value.children.length<1||value.children.length>8)throw fail();
+  if(!record(value)||!exact(value,['schemaVersion','fontSize','lineHeight','direction','gap','padding','background','textColor','children'],['font',...(scope==='heading'?[]:['paragraphGap']),...(scope==='paragraph'?[]:['widthPercent','minHeightPercent'])])||value.schemaVersion!==1||!len(value.fontSize,2000,30000)||!line(value.lineHeight)||!['row','column'].includes(String(value.direction))||!len(value.gap)||!len(value.padding)||!color(value.background)||!color(value.textColor)||!Array.isArray(value.children)||value.children.length<1||value.children.length>8)throw fail();
+  for(const key of ['widthPercent','minHeightPercent'])if(Object.hasOwn(value,key)&&!len(value[key],1,100))throw fail();
   if(Object.hasOwn(value,'font'))validateFont(value.font);
   if(Object.hasOwn(value,'paragraphGap')&&!len(value.paragraphGap,0,30000))throw fail();
   const ids=new Set<string>(),names=new Set<string>();let slots=0,count=0;
