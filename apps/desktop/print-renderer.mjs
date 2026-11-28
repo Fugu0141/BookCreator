@@ -1,10 +1,10 @@
 import {prepareTrialPrint} from '../../dist/index.js';
-import {createPlainTextPagePreview} from '../../../BookCreator_LayoutEngine/dist/index.js';
+import {createTrialPrintPreviewForLayout,assertIntelligentPrintTicketMatchesPlan} from '../../../BookCreator_LayoutEngine/dist/index.js';
 import {assertMatchingPrintPlan} from './trial-print-plan.mjs';
 
 // A separate, single-use document, without editor state or preload IPC.
 let started=false;
-globalThis.renderTrialPrint=async ({options,expectedPlan,fonts=[]})=>{
+globalThis.renderTrialPrint=async ({options,expectedPlan,fonts=[],intelligentTicket})=>{
   if(started)throw Error('Print document has already been used');
   started=true;
   if(!options?.paper||!Array.isArray(options.sections)||!Array.isArray(fonts)||fonts.length>128)throw Error('Invalid print snapshot');
@@ -23,11 +23,12 @@ globalThis.renderTrialPrint=async ({options,expectedPlan,fonts=[]})=>{
     if(!image.size||image.size>16*1024*1024)throw Error('Invalid print image size');
     return image;
   };
-  const preview=await createPlainTextPagePreview(document,{...options,resolveImage});
+  if(intelligentTicket!==undefined)assertIntelligentPrintTicketMatchesPlan(intelligentTicket,expectedPlan,options.paper);
+  const preview=await createTrialPrintPreviewForLayout(document,{...options,resolveImage},intelligentTicket);
   assertMatchingPrintPlan(expectedPlan,preview.plan);
   const projection=prepareTrialPrint({revision:options.revision,fingerprint:options.fingerprint},preview,options.paper);
   const style=document.createElement('style');style.textContent=projection.css;document.head.append(style);
   document.body.replaceChildren(projection.element);
   await document.fonts.ready;
-  return {pageCount:projection.pageCount,revision:preview.plan.revision,fingerprint:preview.plan.fingerprint,publicationReady:false};
+  return {pageCount:projection.pageCount,revision:preview.plan.revision,fingerprint:preview.plan.fingerprint,publicationReady:false,intelligentLayoutVerified:intelligentTicket!==undefined};
 };
