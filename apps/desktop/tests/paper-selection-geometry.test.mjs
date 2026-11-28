@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {clipPaperRect,placePaperPropertyPanel,paperPositionFromDrag,paperPositionFromPagePointer,resolvePaperSelectionNodes} from '../paper-selection-geometry.mjs';
+import {clipPaperRect,placePaperPropertyPanel,paperPositionFromDrag,paperPositionFromPagePointer,resolvePaperSelectionNodes,preferredPositionEditStart} from '../paper-selection-geometry.mjs';
 const v={left:10,top:20,right:110,bottom:120};
 test('visible rectangle and partial clipping',()=>{
   assert.deepEqual(clipPaperRect({left:20,top:30,right:70,bottom:80},v),{left:20,top:30,width:50,height:50});
@@ -46,4 +46,17 @@ test('group selection frame nodes match exact document and block identities, ret
   assert.deepEqual(resolvePaperSelectionNodes([a,b],'ch',['a','a']),[]);
   const quoted=node('ch','a"]#unexpected');
   assert.deepEqual(resolvePaperSelectionNodes([quoted],'ch',['a"]#unexpected']),[{key:'a"]#unexpected',index:0,node:quoted}]);
+});
+
+
+test('preferred position editing preserves requested coordinates and tolerances instead of measured fallback',()=>{
+  const position={page:1,x:1000,y:3000},bounds={maxX:80000,maxY:150000},body={width:100000,height:200000};
+  const stored={position:{page:1,x:25000,y:35000},tolerance:{x:1234,y:0}};
+  assert.deepEqual(preferredPositionEditStart(position,bounds,body,stored),{...stored,requiresRebase:false});
+  for(const invalid of [{...stored,position:{...stored.position,page:0}},{...stored,position:{...stored.position,x:90000}},{...stored,tolerance:{x:100001,y:0}}]){
+    const start=preferredPositionEditStart(position,bounds,body,invalid);
+    assert.equal(start.requiresRebase,true);
+    assert.deepEqual(start.tolerance,invalid.tolerance);
+  }
+  assert.deepEqual(preferredPositionEditStart(position,bounds,body,undefined),{position,tolerance:{x:5000,y:5000},requiresRebase:false});
 });
