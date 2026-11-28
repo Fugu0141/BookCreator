@@ -476,6 +476,14 @@ async function benchmarkBookPositionDrag({win,raw,click,until,ready,paperSignatu
     const pages=await raw("document.querySelector('#preview > div').shadowRoot.querySelectorAll('[data-page]').length");
     if(pages<10)throw Error('Long-book drag fixture is too small: '+pages);
     const baseline=await paperSignature();
+    await click('#book-il-quality-open');
+    await until('retained quality summary',"Number(document.querySelector('#book-il-quality-summary')?.dataset.pages)==="+pages);
+    await until('explicit scope required',"document.querySelector('#book-il-propose')?.disabled===true");
+    await raw("(()=>{const e=document.querySelector('#book-il-scope');e.value='book';e.dispatchEvent(new Event('change',{bubbles:true}));})()");
+    await click('#book-il-propose');
+    await until('proposal estimate or rejection',"['review','rejected'].includes(document.querySelector('#book-il-proposal-result')?.dataset.status)");
+    await click('#book-il-quality-open');
+    if(await paperSignature()!==baseline||await readFile(path,'utf8')!==source)throw Error('Read-only IL review changed paper or manuscript');
     await click('#paper-edit-mode');
     const target="(()=>{const r=document.querySelector('#preview > div').shadowRoot;return [...r.querySelectorAll('[data-block]')].find(n=>n.dataset.document==='small'&&n.textContent.includes('例題の本文です。'));})()";
     const phase=p=>"(!!document.querySelector('[data-position-phase="+p+"]'))";
