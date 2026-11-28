@@ -471,27 +471,41 @@ async function benchmarkBookPositionDrag({win,raw,click,until,ready,paperSignatu
     await click('#paper-edit-mode');
     const target="(()=>{const r=document.querySelector('#preview > div').shadowRoot;return [...r.querySelectorAll('[data-block]')].find(n=>n.dataset.document==='small'&&n.textContent.includes('例題の本文です。'));})()";
     const phase=p=>"(!!document.querySelector('[data-position-phase="+p+"]'))";
+    const dragState=()=>raw("(()=>{const h=document.querySelector('#book-paper-position-drag'),r=h?.getBoundingClientRect();return {handle:h?{...h.dataset,rect:r?.toJSON()}:null,focused:document.hasFocus(),active:document.activeElement?.id,phase:[...document.querySelectorAll('[data-position-phase]')].map(e=>({phase:e.dataset.positionPhase,text:e.textContent}))};})()");
     const readTiming=async p=>{
-      await until('drag '+p,phase(p));
+      const failure=p.replace('-ready','-conflict');
+      await until('drag '+p,phase(p)+"||"+phase(failure));
+      const state=await dragState();
+      if(state.phase.some(x=>x.phase===failure))throw Error('Position draft conflict: '+JSON.stringify(state));
       const row=await raw("(()=>{const e=document.querySelector('[data-position-phase="+p+"]');return {elapsedMs:Number(e.dataset.elapsedMs),queueMs:Number(e.dataset.queueMs),measurementWork:e.dataset.measurementWork?JSON.parse(e.dataset.measurementWork):null};})()");
       if(![row.elapsedMs,row.queueMs].every(n=>Number.isFinite(n)&&n>=0))throw Error('Invalid position timing');
       return row;
     };
     const rows=[];
+    // Electron sendInputEvent requires a focused window. Keep the historical
+    // benchmark hidden until this final, genuinely interactive workload.
+    win.show();win.focus();win.webContents.focus();
+    await until('drag window focused','document.hasFocus()');
     for(let i=0;i<4;i++){
       await raw(target+".scrollIntoView({block:'center',inline:'center'})");
       await raw("new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))");
       await raw(target+".click()");
       await click('#book-paper-preferred-mode');
-      await until('drag handle',"!!document.querySelector('#book-paper-position-drag')?.getClientRects().length");
-      const point=await raw("(()=>{const r=document.querySelector('#book-paper-position-drag').getBoundingClientRect();return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)};})()");
-      const end={x:point.x,y:point.y+8+i*2};
+      await until('drag handle',"document.querySelector('#book-paper-position-drag')?.dataset.geometryAvailable==='true'");
+      await raw("new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))");
+      const probe=await raw("(()=>{const h=document.querySelector('#book-paper-position-drag'),r=h.getBoundingClientRect(),d=h.dataset;for(const fx of [.5,.25,.75])for(const fy of [.5,.25,.75]){const x=Math.round(r.left+r.width*fx),y=Math.round(r.top+r.height*fy);if(document.elementFromPoint(x,y)===h)return {point:{x,y},up:Number(d.originY)/Number(d.bodyHeight)*Number(d.bodyPixels),down:(Number(d.maxY)-Number(d.originY))/Number(d.bodyHeight)*Number(d.bodyPixels)};}return null;})()");
+      if(!probe)throw Error('Position drag handle is obscured: '+JSON.stringify(await dragState()));
+      const {point,up,down}=probe,step=8+i*2;
+      const delta=down>=step+1?step:up>=step+1?-step:0;
+      if(!delta)throw Error('No valid vertical movement in drag fixture: '+JSON.stringify(probe));
+      const end={x:point.x,y:point.y+delta};
       const started=performance.now();
       win.webContents.sendInputEvent({type:'mouseMove',...point});
       win.webContents.sendInputEvent({type:'mouseDown',...point,button:'left',clickCount:1});
       try{
-        win.webContents.sendInputEvent({type:'mouseMove',...end,button:'left'});
-        const geometry=await readTiming('geometry-ready');
+        await until('drag pointer captured',"document.querySelector('#book-paper-position-drag')?.dataset.dragging==='true'").catch(async e=>{throw Error(e.message+'; '+JSON.stringify(await dragState()));});
+        win.webContents.sendInputEvent({type:'mouseMove',...end,button:'left',modifiers:['leftButtonDown']});
+        const geometry=await readTiming('geometry-ready').catch(async e=>{throw Error(e.message+'; '+JSON.stringify(await dragState()));});
         const pointerToGuideMs=performance.now()-started;
         const drop=performance.now();
         win.webContents.sendInputEvent({type:'mouseUp',...end,button:'left',clickCount:1});
