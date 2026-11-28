@@ -2,7 +2,7 @@
 // No installer, auto-update, signing or public release; no source projects included.
 import {cp,mkdir,lstat,readdir,rename,rm,writeFile,readFile} from 'node:fs/promises';
 import {resolve,join,dirname} from 'node:path';
-import {fileURLToPath} from 'node:url';
+import {fileURLToPath,pathToFileURL} from 'node:url';
 import {createRequire} from 'node:module';
 const require=createRequire(import.meta.url);
 const here=dirname(fileURLToPath(import.meta.url));
@@ -24,7 +24,7 @@ try{
   await mkdir(desktop,{recursive:true});
   const pkg=JSON.parse(await readFile(join(here,'package.json'),'utf8'));
   await writeFile(join(appDir,'package.json'),JSON.stringify({name:'bookcreator-desktop',productName:'BookCreator',version:pkg.version,private:true,type:'module',main:'apps/desktop/main.mjs'},null,2));
-  for(const file of ['main.mjs','workspace.mjs','paper-area-persistence.mjs','paper-area-store.mjs','project-catalog.mjs','manuscript-recovery.mjs','settings-recovery.mjs','component-recovery.mjs','preview-read-lane.mjs','benchmark-fixture.mjs','benchmark-runner.mjs','recovery-hub.mjs','book-settings.mjs','project-fonts.mjs','project-images.mjs','bundled-math-font.mjs','preload.cjs','index.html','trial-pdf-output.mjs','trial-pdf-inspection.mjs','trial-pdf-export.mjs','print.html','trial-print-plan.mjs','trial-print-window.mjs','style.css']){
+  for(const file of ['main.mjs','workspace.mjs','paper-area-persistence.mjs','paper-area-store.mjs','paper-area-preview.mjs','project-catalog.mjs','manuscript-recovery.mjs','settings-recovery.mjs','component-recovery.mjs','preview-read-lane.mjs','benchmark-fixture.mjs','benchmark-runner.mjs','recovery-hub.mjs','book-settings.mjs','project-fonts.mjs','project-images.mjs','bundled-math-font.mjs','preload.cjs','index.html','trial-pdf-output.mjs','trial-pdf-inspection.mjs','trial-pdf-export.mjs','print.html','trial-print-plan.mjs','trial-print-window.mjs','style.css']){
     await cp(join(here,file),join(desktop,file));
   }
   await mkdir(join(desktop,'tests'));
@@ -56,6 +56,11 @@ try{
   for(const file of ['BookCreator.exe','resources/app/apps/desktop/build/renderer.js','resources/app/apps/desktop/print.html','resources/app/apps/desktop/build/print-renderer.js','resources/app/apps/desktop/build/fonts/STIXTwoMath-Regular.ttf','resources/app/apps/desktop/build/NotoSansJP-LICENSE.txt','resources/app/apps/desktop/build/STIXTwoMath-LICENSE.txt','resources/app/dist/preview-component.js']){
     if(!(await lstat(join(output,file))).isFile())throw Error('Missing package file: '+file);
   }
+  // Resolve the actual packaged main-process PDF module and its transitive
+  // dependencies before launching Electron. A missing ESM file can prevent
+  // startup before the smoke runner's error handler is even registered.
+  const printModule=await import(pathToFileURL(join(desktop,'trial-pdf-export.mjs')).href);
+  if(typeof printModule.exportSavedTrialPdf!=='function'||typeof printModule.assertSavedTrialLayout!=='function')throw Error('Packaged PDF module exports are incomplete');
   await writeFile(join(output,'README-START.txt'),'\uFEFFBookCreator Windows x64 開発プレビュー\r\n\r\nZIPをすべて展開し、BookCreator.exe をダブルクリックしてください。\r\n他のファイルや resources フォルダーは移動・削除しないでください。\r\nNode.js、Git のインストールは不要です。\r\n新規書籍はアプリの「新規作成」から、アプリ外の書き込み可能なフォルダーに作成してください。\r\n開発版・未署名・正式出版非対応です。重要な原稿にはバックアップを取ってください。\r\n更新時は新しいZIPを別フォルダーに展開し、旧版は動作確認後に整理してください。\r\n');
   console.log('Portable package: '+output);
 }catch(e){await rm(output,{recursive:true,force:true});throw e;}
