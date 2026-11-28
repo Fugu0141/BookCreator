@@ -53,7 +53,8 @@ test('sparse base lease is tied to a successful retained host and invalidated on
   const initial=make();
   const timing={};
   assert.deepEqual(display.publishSparse(viewport,'a',initial,null,()=>['page'],timing),{retained:false,pages:['page']});
-  assert.deepEqual(Object.keys(timing),['assemblyMs','describeMs','commitMs']);
+  assert.deepEqual(Object.keys(timing),['assemblyMs','describeMs','commitMs','scrollRestoreMs','otherCommitMs']);
+  assert.ok(Math.abs(timing.commitMs-timing.scrollRestoreMs-timing.otherCommitMs)<0.001);
   for(const value of Object.values(timing))assert.ok(Number.isFinite(value)&&value>=0);
   assert.equal(display.getSparseBase(viewport,'a'),null);
   assert.equal(display.retain(viewport,'a'),true);

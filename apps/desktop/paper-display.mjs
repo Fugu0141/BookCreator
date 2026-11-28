@@ -48,7 +48,7 @@ export function createPaperDisplay(){
     if(host.dataset.paperFreshness!=='previous')host.dataset.paperFreshness='previous';
     return true;
   }
-  function publish(viewport,key,next,{reusePages=false}={}){
+  function publish(viewport,key,next,{reusePages=false,scrollTiming}={}){
     forgetSparseBase();
     const same=!!host&&target===key&&host.parentNode===viewport;
     const top=same?viewport.scrollTop:0,left=same?viewport.scrollLeft:0;
@@ -59,7 +59,9 @@ export function createPaperDisplay(){
       next.dataset.reusedPages='0';next.dataset.sparsePaper='false';viewport.replaceChildren(next);
       target=key;host=next;
     }
+    const beforeScroll=scrollTiming?performance.now():0;
     viewport.scrollTop=top;viewport.scrollLeft=left;
+    if(scrollTiming)scrollTiming.restoreMs=performance.now()-beforeScroll;
     return same;
   }
   // A sparse result is usable only against the exact published lease. Never
@@ -77,19 +79,20 @@ export function createPaperDisplay(){
     const same=!!host&&target===key&&host.parentNode===viewport;
     const top=same?viewport.scrollTop:0,left=same?viewport.scrollLeft:0;
     const next=result.changedElement;
-    // Report only complete transactions. Commit includes scroll restoration,
-    // host attributes and the new lease, not browser paint.
-    const report=(described)=>{
-      if(timing)Object.assign(timing,{assemblyMs:assembled-started,describeMs:described-assembled,commitMs:performance.now()-described});
+    // Keep commitMs inclusive; scroll restoration is a measured subset.
+    // A scroll setter may synchronously flush pending style/layout.
+    const report=(described,scrollRestoreMs)=>{
+      if(timing){const commitMs=performance.now()-described;Object.assign(timing,{assemblyMs:assembled-started,describeMs:described-assembled,commitMs,scrollRestoreMs,otherCommitMs:Math.max(0,commitMs-scrollRestoreMs)});}
     };
     try{
       if(!assembly.reused){
         const pages=describe(next.shadowRoot,assembly.pages);
         const described=timing?performance.now():0;
-        const retained=publish(viewport,key,next);
+        const scrollTiming=timing?{}:undefined;
+        const retained=publish(viewport,key,next,{scrollTiming});
         host.dataset.sparsePaper='true';host.dataset.generatedPages=String(assembly.pages.length);
         sparseBase=Object.freeze({host,snapshot:result.pageDelta.snapshot});
-        report(described);
+        report(described,scrollTiming?.restoreMs??0);
         return {retained,pages};
       }
       const root=host.shadowRoot;
@@ -107,8 +110,9 @@ export function createPaperDisplay(){
       host.dataset.sparsePaper='true';host.dataset.generatedPages=String(assembly.pages.length-assembly.reused);
       host.dataset.paperFreshness='current';host.inert=false;
       sparseBase=Object.freeze({host,snapshot:result.pageDelta.snapshot});
+      const beforeScroll=timing?performance.now():0;
       viewport.scrollTop=top;viewport.scrollLeft=left;
-      report(described);
+      report(described,timing?performance.now()-beforeScroll:0);
       return {retained:true,pages};
     }catch{
       // Incomplete candidate cannot serve as a full fallback. Discard an
