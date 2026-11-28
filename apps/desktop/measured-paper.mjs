@@ -2,6 +2,21 @@ import {installPaperNavigation} from './paper-navigation.mjs';
 // A reused page preserves physical geometry; source bindings must still be
 // rebuilt. Weak keys keep geometry from extending the lifetime of old DOM.
 const thumbnailCache=new WeakMap();
+// A sparse lease guarantees that reused fragments retain their DOM structure.
+// Cache only node topology and local geometry offsets, never source ranges.
+const fragmentTopology=new WeakMap();
+function navigationNodes(fragment,reuse){
+  const cached=reuse?fragmentTopology.get(fragment):undefined;
+  if(cached)return cached;
+  const math=Array.from(fragment.querySelectorAll('[data-inline-math],[data-slot-display-math]'),node=>({
+    node,textStart:Number(node.dataset.mathStart),textEnd:Number(node.dataset.mathEnd),
+    name:node.closest('[data-named-slot]')?.dataset.namedSlot
+  }));
+  const slots=Array.from(fragment.querySelectorAll('[data-named-slot]'),node=>({node,name:node.dataset.namedSlot}));
+  const value={math,slots};
+  fragmentTopology.set(fragment,value);
+  return value;
+}
 // DOM adapter: measured paper metadata and source navigation bindings.
 // Does not own editor state or perform a file operation.
 export function describeMeasuredPaper(result,options,{previewSourceRange,paperThumbnail,onNavigate},assembly){
@@ -23,14 +38,13 @@ export function describeMeasuredPaper(result,options,{previewSourceRange,paperTh
       };
       const block=sourceBlocks.get(JSON.stringify([slice.origin.documentId,slice.origin.blockKey]));
       bind(el,previewSourceRange(block,slice));
-      for(const node of el.querySelectorAll('[data-inline-math],[data-slot-display-math]')){
-        const textStart=Number(node.dataset.mathStart),textEnd=Number(node.dataset.mathEnd);
-        const name=node.closest('[data-named-slot]')?.dataset.namedSlot;
+      const topology=navigationNodes(el,reuse);
+      for(const {node,textStart,textEnd,name} of topology.math){
         const local=name===undefined?slice:slice.namedSlots?.find(s=>s.name===name);
         if(local&&textStart>=local.textStart&&textEnd<=local.textEnd&&textEnd===textStart+1)bind(node,previewSourceRange(block,{textStart,textEnd},name));
       }
-      for(const node of el.querySelectorAll('[data-named-slot]')){
-        const named=slice.namedSlots?.find(s=>s.name===node.dataset.namedSlot);
+      for(const {node,name} of topology.slots){
+        const named=slice.namedSlots?.find(s=>s.name===name);
         if(named)bind(node,previewSourceRange(block,named,named.name));
       }
     }
