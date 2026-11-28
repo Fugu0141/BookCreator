@@ -58,3 +58,26 @@ test('history, editable, clearing, unsubscribe and workspace isolation',()=>{
   a.dispatch({type:'clear'});
   assert.equal(n,3);assert.equal(a.getSource().hasFile,false);assert.equal(b.getSnapshot().file,null);
 });
+
+test('workspace metadata stays stable across a sustained dirty typing burst while both editor projections stay current',()=>{
+  const store=createManuscriptStore();
+  store.dispatch({type:'install',file:file()});
+  store.dispatch({type:'edit',value:'first edit'});
+  const workspace=store.getMetadata();
+  let workspaceNotifications=0,editorNotifications=0,previewNotifications=0;
+  store.subscribeMetadata(()=>workspaceNotifications++);
+  store.subscribeSource(()=>editorNotifications++);
+  store.subscribePreviewInput(()=>previewNotifications++);
+  for(let i=0;i<100;i++)store.dispatch({type:'edit',value:'first edit '+i});
+  assert.equal(workspaceNotifications,0);
+  assert.equal(editorNotifications,100);
+  assert.equal(previewNotifications,100);
+  assert.equal(store.getMetadata(),workspace);
+  assert.equal(store.getSource().value,'first edit 99');
+  assert.equal(store.getPreviewInput().text,'first edit 99');
+  const pending=store.getSnapshot();
+  store.dispatch({type:'saved',file:pending.file,value:pending.text,revision:'r2'});
+  assert.equal(workspaceNotifications,1);
+  assert.equal(editorNotifications,100);
+  assert.equal(store.getMetadata().dirty,false);
+});
