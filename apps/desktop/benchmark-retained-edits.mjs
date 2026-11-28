@@ -186,10 +186,49 @@ export async function benchmarkRetainedEdits({raw,click,until,ready,paperSignatu
   await setDirect(false);await setRetained(false);
   const directComparison=summarizeBurstInputSamples(directRows);
   console.log('BENCH direct single page '+JSON.stringify({version:1,arms:{uncached:'streaming',warm:'direct'},comparison:directComparison,samples:directRows}));
+  // Compare the preparation boundary alone: both arms keep retained layout
+  // and streaming publication enabled; only the preparation worker changes.
+  const workerRows=[];
+  async function setWorker(enabled){
+    await click('#performance-toggle');
+    const query="document.querySelector('#performance-worker-preparation').checked";
+    if(await raw(query)!==enabled)await click('#performance-worker-preparation');
+    if(await raw(query)!==enabled)throw Error('Worker preparation comparison setting mismatch');
+    await click('#performance-close');
+  }
+  function checkPreparation(work,worker){
+    const timing=work?.hostTiming;
+    if(!timing||timing.preparationMode!==(worker?'worker':'main')||
+      !Number.isFinite(timing.preparationMs)||timing.preparationMs<0||
+      (worker?(!Number.isFinite(timing.workerComputeMs)||timing.workerComputeMs<0):timing.workerComputeMs!==null))throw Error('Worker comparison preparation path or timing invalid: '+JSON.stringify(timing));
+    return {hostMs:timing.preparationMs,computeMs:timing.workerComputeMs};
+  }
+  for(const {pair,order} of cacheComparisonPlan()){
+    for(const arm of order){
+      const worker=arm==='warm';
+      await setRetained(false);await setRetained(true);await setWorker(worker);
+      await raw("document.querySelector('#preview > div').dataset.paperProbe='old'");
+      await click('#preview-button');
+      await until('worker comparison prime',ready('manuscript')+"&&document.querySelector('#preview > div').dataset.paperProbe!=='old'&&!!document.querySelector('#preview > div').dataset.retainedWork");
+      if(await paperSignature()!==original)throw Error('Worker comparison prime mismatch');
+      const prime=checkPreparation(await raw("JSON.parse(document.querySelector('#preview > div').dataset.retainedWork)"),worker);
+      const s=await edit(burstEdit,burstValues);
+      const preparation=checkPreparation(s.work,worker);
+      if(await paperSignature()!==expectedBurstSignature||!s.focus||!s.clean||!s.identity.sameHost||s.identity.reusedFromInitial!==s.pages-1||
+        s.work.directSinglePage||!Number.isSafeInteger(s.work.inline?.hits)||s.work.inline.hits<1)throw Error('Worker comparison paper parity or retained reuse failed');
+      workerRows.push({pair,arm,finalMs:s.finalMs,provisionalMs:s.provisionalMs,identity:s.identity,preparation,prime,
+        burst:{dispatchOffsetsMs:s.dispatchOffsetsMs,timerLagMs:s.timerLagMs,dispatchWorkMs:s.dispatchWorkMs,intermediatePublications:s.intermediatePublications,totalMs:s.totalMs}});
+      await edit(large.source);
+      if(await paperSignature()!==original||await readFile(join(root,'manuscript',large.id+'.md'),'utf8')!==large.source)throw Error('Worker comparison restore failed');
+    }
+  }
+  await setWorker(false);await setRetained(false);
+  const workerComparison=summarizeBurstInputSamples(workerRows);
+  console.log('BENCH preparation worker '+JSON.stringify({version:1,arms:{uncached:'main',warm:'worker'},comparison:workerComparison,samples:workerRows}));
   const summaries=cases.map(({id})=>summarizeRetainedEditSamples(id,samples.filter(s=>s.case===id)));
   const burst=summarizeBurstInputSamples(samples.filter(s=>s.case==='burst'));
   console.log('BENCH retained '+JSON.stringify({version:2,summaries,samples,burst}));
-  return {summaries,samples,burst,directComparison};
+  return {summaries,samples,burst,directComparison,workerComparison,workerRows};
 }
 
 export function summarizeRetainedEditSamples(id,rows){
