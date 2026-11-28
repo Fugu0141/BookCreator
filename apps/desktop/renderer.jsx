@@ -1051,6 +1051,7 @@ function App(){
     const sourceRevision=file.revision,command=paperBlock.command;
     void io(async()=>{
       const stored=await unwrap(api.readPaperArea(token,id));
+      if(stored.document.entries.some(e=>e.bookFixed))throw Error('固定位置を含む原稿は全冊紙面で確認してください。');
       if(!candidate.current()||manuscriptStore.getPreviewInput().file?.id!==id)return;
       // A saved trial is bound to the persisted source revision. Unsaved
       // manuscript edits may be previewed, but must not be persisted as layout.
