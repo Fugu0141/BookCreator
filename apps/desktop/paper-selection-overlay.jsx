@@ -119,7 +119,7 @@ export function BookPositionOverlay({viewport,node,context,bounds,onCommit,onClo
         if(r.width>0&&r.height>0)pages.set(index,{page:index,left:r.left,top:r.top,width:r.width,height:r.height});
       }
       const hr=host.getBoundingClientRect();
-      setGeometry(clipped?{body:{left:b.left,top:b.top,width:b.width,height:b.height},pages,visible,clipped,host:{left:hr.left-left,top:hr.top-top,width:host.offsetWidth,sx,sy}}:null);
+      setGeometry({body:{left:b.left,top:b.top,width:b.width,height:b.height},pages,visible,clipped,host:{left:hr.left-left,top:hr.top-top,width:host.offsetWidth,sx,sy}});
     };
     const escape=e=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();if(gesture.current)cancel();else if(latest.current.coordinates)setCoordinates(null);else if(latest.current.proposal)setProposal(null);else latest.current.onClose();}};
     const blur=()=>{if(gesture.current)cancel();};
@@ -154,7 +154,7 @@ export function BookPositionOverlay({viewport,node,context,bounds,onCommit,onClo
   const rect=geometry?rectFor(display):null,handleRect=geometry?rectFor(position):null;
   const pageCount=context.plan.pageCount;
   const crossPage=!preferredMode&&Number.isSafeInteger(pageCount)&&pageCount>0&&pageCount<=512;
-  const panel=geometry?placeBookPositionPanel(geometry.clipped,handleRect?{left:handleRect.left+2,top:handleRect.top+2,width:32,height:32}:null,geometry.visible,{width:260,height:preferredMode?270:220}):null;
+  const panel=geometry?.clipped?placeBookPositionPanel(geometry.clipped,handleRect?{left:handleRect.left+2,top:handleRect.top+2,width:32,height:32}:null,geometry.visible,{width:260,height:preferredMode?270:220}):null;
   const changed=!!proposal&&(proposal.page!==context.position.page||proposal.x!==context.position.x||proposal.y!==context.position.y);
   const parseTolerance=parsePaperMillimetres;
   const tolerance={x:parseTolerance(tx,body.width),y:parseTolerance(ty,body.height)},validTolerance=tolerance.x!==null&&tolerance.y!==null;
@@ -217,7 +217,9 @@ export function BookPositionOverlay({viewport,node,context,bounds,onCommit,onClo
   });
   const placement=shown?.intelligentLayout?.fragments.find(f=>f.origin.documentId===context.selection.documentId&&f.origin.blockKey===context.selection.blockKey)?.placement;
   const positionPanel=<div className={'paper-inline-area-toolbar book-position-panel'+(docked?' paper-position-docked':'')} style={docked?undefined:panel} role="group" aria-label={preferredMode?'希望位置の移動案':'固定位置の移動案'}>
-      {dockTarget&&<button id="book-position-dock-toggle" type="button" className="secondary-action" disabled={dragging} onClick={()=>setDockRequested(v=>!v)}>{docked?'紙面上に戻す':'サイドバーで編集'}</button>}
+      {docked&&!geometry.clipped&&<small role="status">選択部品は画面外です。数値編集を続けられます。</small>}
+      {docked&&!geometry.clipped&&<button id="book-position-reveal" type="button" onClick={()=>{if(context.current())node.scrollIntoView({block:'center',inline:'center'});}}>選択部品へ戻る</button>}
+      {dockTarget&&<button id="book-position-dock-toggle" type="button" className="secondary-action" disabled={dragging||!geometry.clipped} onClick={()=>setDockRequested(v=>!v)}>{docked?'紙面上に戻す':'サイドバーで編集'}</button>}
       <small role="status">{needsRebase?'以前の希望位置は現在の本文領域では直接編集できません。':invalid?'本文領域外には移動できません。':display.page+1+'ページ · X '+display.x/1000+' / Y '+display.y/1000+' mm'+(preferredMode&&!preferenceChanged?'（保存済みの希望）':'（未確定）')}</small>
       {needsRebase&&<><small>保存済み：{stored.position.page+1}ページ X {stored.position.x/1000} / Y {stored.position.y/1000} mm、許容 ±{stored.tolerance.x/1000} / ±{stored.tolerance.y/1000} mm</small><button type="button" id="book-paper-preferred-rebase" onClick={()=>{if(!context.current())return;setProposal(null);setRebased(true);}}>現在の紙面を基準に再指定</button></>}
       {quickMode&&<small className="paper-inline-live-status" data-position-phase={quickResult?'geometry-ready':quick?.key===quickKey&&quick.error?'geometry-conflict':'geometry-pending'} data-elapsed-ms={quickResult?quick.elapsedMs:undefined} data-queue-ms={quickResult?quick.queueMs:undefined} role="status">{invalid?'':quick?.key===quickKey&&quick.error?'配置案が成立しません：'+quick.error:quickResult?'軽量配置案 · 移動 '+quickResult.changed.length+'件 · '+quickResult.pageCount+'ページ（未確定）':'配置ガイド（ドロップ後に実測）'}</small>}
@@ -239,7 +241,7 @@ export function BookPositionOverlay({viewport,node,context,bounds,onCommit,onClo
     </div>}
     {quickFrames.map(f=><div key={f.key} className={'book-geometry-draft-frame'+(f.selected?' is-selected':'')} aria-hidden="true" style={f.rect}/>)}
     {rect&&!needsRebase&&<div className="paper-drop-guide" aria-hidden="true" style={rect}/>}
-    {docked?createPortal(positionPanel,dockTarget):positionPanel}
+    {docked?createPortal(positionPanel,dockTarget):geometry.clipped?positionPanel:null}
   </>;
 }
 
