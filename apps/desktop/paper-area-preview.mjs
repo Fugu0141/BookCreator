@@ -1,4 +1,4 @@
-import {validatePaperAreaDocument,bindPaperAreaDocument,setPaperAreaValues,encodePaperAreaDocument} from './paper-area-store.mjs';
+import {validatePaperAreaDocument,bindPaperAreaDocument,setPaperAreaValues,setBookPaperFixed,encodePaperAreaDocument} from './paper-area-store.mjs';
 
 function reject(diagnostics){
   const e=Object.assign(Error('保存済みの占有領域を適用できません：'+diagnostics.map(d=>d.documentId+'/'+d.persistentId+' '+d.code).join('、')),{code:'AREA_CONFLICT',diagnostics});
@@ -135,4 +135,16 @@ export function prepareBookAreaRestore(context,ticket){
 export function acknowledgeBookAreaCommit(commit,saved){
   if(typeof saved?.revision!=='string'||encodePaperAreaDocument(saved.document)!==encodePaperAreaDocument(commit.value))throw Error('全冊配置の保存応答が一致しません。');
   return {revision:saved.revision,document:commit.prepared.document};
+}
+
+
+// Explicit recovery does not require a successful measured plan.
+export function prepareBookFixedRelease(context,documentId,persistentId){
+  const snapshot=context?.areaSnapshot,lease=context?.bookLease;
+  if(!snapshot||typeof snapshot.revision!=='string'||!/^[a-f0-9]{64}$/.test(snapshot.revision)||!lease?.documents?.some(d=>d.documentId===documentId))throw Error('全冊の固定位置を解除するための保存情報がありません。');
+  const before=validatePaperAreaDocument(snapshot.document);
+  if(!before.entries.some(e=>e.documentId===documentId&&e.persistentId===persistentId&&e.bookFixed))throw Error('指定された固定位置は存在しません。');
+  const next=setBookPaperFixed(before,{documentId,persistentId,position:null});
+  const value=validatePaperAreaDocument({schemaVersion:1,entries:next.entries.filter(e=>e.documentId===documentId)});
+  return {documentId,value,lease,expectedRevision:snapshot.revision};
 }
