@@ -123,3 +123,39 @@ export function planBlockOperation(source,request,{scan,parseInline,applyPatches
   // final boundary is created or when two eligible rows swap positions.
   return next;
 }
+
+/** Calculate the reachable interval once when selecting a block. Each crossed
+ * boundary must be blank and each crossed row must permit swapping with the
+ * selected row (including explicit study relationships). */
+export function paperMoveBounds(source,rows,index){
+  const row=rows[index];
+  if(!Number.isSafeInteger(index)||!movable(row))return null;
+  let min=index,max=index;
+  while(min>0&&movable(rows[min-1])&&!linkedPair(row,rows[min-1])&&blankGap(source,rows[min-1],rows[min]))min--;
+  while(max+1<rows.length&&movable(rows[max+1])&&!linkedPair(row,rows[max+1])&&blankGap(source,rows[max],rows[max+1]))max++;
+  return {min,max};
+}
+
+/** A range move is one patch and one validation, not a sequence of commits.
+ * Keep separators and terminal newlines in their original positional slots. */
+export function planPaperRangeMove(source,{source:expectedSource,index,target},{scan,parseInline,applyPatches}){
+  if(source!==expectedSource)throw Error('原稿が変化しました。構造を確認してください。');
+  const before=projectStructuredEditor(source,scan,parseInline),rows=before.rows;
+  const bounds=paperMoveBounds(source,rows,index);
+  if(before.diagnostics.length||!bounds||!Number.isSafeInteger(target)||target===index||target<bounds.min||target>bounds.max)throw Error('この位置・ブロックでは操作できません。');
+  const expected=rows.slice();
+  const [selected]=expected.splice(index,1);
+  expected.splice(target,0,selected);
+  const lo=Math.min(index,target),hi=Math.max(index,target);
+  let replacement='';
+  for(let i=lo;i<=hi;i++){
+    const original=rows[i],ending=original.raw.slice(stripEnd(original.raw).length);
+    replacement+=stripEnd(expected[i].raw)+ending;
+    if(i<hi)replacement+=source.slice(original.range.end,rows[i+1].range.start);
+  }
+  const range={start:rows[lo].range.start,end:rows[hi].range.end};
+  const next=applyPatches(source,[{range,expected:source.slice(range.start,range.end),replacement}]);
+  const after=projectBlocks(next,scan,parseInline);
+  if(after.diagnostics.length||after.rows.length!==expected.length||after.rows.some((r,i)=>!same(r,expected[i])))throw Error('周囲の構造が変化するため操作を中止しました。');
+  return next;
+}
