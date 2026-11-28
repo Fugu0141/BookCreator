@@ -1459,6 +1459,32 @@ async function packageSmoke(){
   await exec("document.querySelector('#paper-edit-mode').click()");
   if(await readFile(join(smokeRoot,'manuscript','chapter.md'),'utf8')!==sample)throw Error('Paper editing changed saved manuscript');
   console.log('PASS paper block selection, reorder, undo/redo and disk safety');
+  // Use a stable, explicit component identity. The IL test lab is isolated
+  // from the normal paper and must not modify source or a saved project.
+  const areaSample=':::component{name="example" #area-test}\n占有領域を調整する例題。\n:::\n\n後続の本文。\n';
+  await setNavigationSource(areaSample);
+  await exec("document.querySelector('#preview-button').click()");
+  await until("document.querySelector('#workspace-layout-state').dataset.phase==='ready'&&document.querySelector('#workspace-layout-state').dataset.scope==='manuscript'&&!document.querySelector('#preview > div').inert&&document.querySelector('#preview > div').shadowRoot.textContent.includes('占有領域を調整する例題。')");
+  await exec("document.querySelector('#paper-edit-mode').click()");
+  await exec("(()=>{const v=document.querySelector('#preview');v.scrollTop=0;v.scrollLeft=0;v.firstElementChild.shadowRoot.querySelector('[data-block][tabindex]').click();})()");
+  await until("!document.querySelector('#paper-area-open').disabled");
+  await exec("document.querySelector('#paper-area-open').click()");
+  await until("document.querySelector('#paper-area-status')?.textContent.includes('試験配置')&&!!document.querySelector('#paper-area-handle-height')&&!document.querySelector('#paper-area-handle-height').disabled");
+  await exec("document.querySelector('#paper-area-handle-height').scrollIntoView({block:'center',inline:'center'})");
+  await exec("new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))");
+  const areaPoint=await exec("(()=>{const h=document.querySelector('#paper-area-handle-height'),r=h.getBoundingClientRect();return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)};})()");
+  win.webContents.sendInputEvent({type:'mouseMove',...areaPoint});
+  win.webContents.sendInputEvent({type:'mouseDown',...areaPoint,button:'left',clickCount:1});
+  win.webContents.sendInputEvent({type:'mouseMove',x:areaPoint.x,y:areaPoint.y+65,button:'left'});
+  await until("document.querySelector('.paper-area-lab-frame')?.dataset.ghost==='true'");
+  win.webContents.sendInputEvent({type:'mouseUp',x:areaPoint.x,y:areaPoint.y+65,button:'left',clickCount:1});
+  await until("document.querySelector('#paper-area-status')?.textContent.includes('試験配置')&&/縦：\\d+%/.test(document.querySelector('.paper-area-lab-toolbar').textContent)&&!document.querySelector('#paper-area-handle-height').disabled");
+  if(!await exec("document.querySelector('#source').value==="+JSON.stringify(areaSample)))throw Error('IL test lab mutated manuscript');
+  await exec("document.querySelector('#paper-area-close').click()");
+  await until("!document.querySelector('#paper-area-lab')&&!document.querySelector('#preview').hidden");
+  await exec("document.querySelector('#paper-edit-mode').click()");
+  if(await readFile(join(smokeRoot,'manuscript','chapter.md'),'utf8')!==sample)throw Error('IL test lab changed saved manuscript');
+  console.log('PASS isolated IL area drag, real re-layout and disk safety');
   await setNavigationSource(navigationSample);
   await exec("document.querySelector('#mode-publication').click()");
   await until("document.querySelector('#publication-save').dataset.state==='required'&&document.querySelector('#publication-layout').dataset.state==='required'");
