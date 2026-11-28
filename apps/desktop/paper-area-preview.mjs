@@ -280,3 +280,35 @@ export function validBookMovePage(context,target,page){
   const count=context.plan?.pageCount;
   return Number.isSafeInteger(count)&&count>0&&count<=512?page<count:page===target.position.page;
 }
+
+
+// One transient session owns its own retained computation snapshot. The
+// supplied measurement callback is serialized by the renderer measurement
+// lane. Superseded, conflicting or incomplete results never advance it.
+export function createBookPositionPreviewSession(){
+  let snapshot,epoch=0;
+  return {
+    clear(){epoch++;snapshot=undefined;},
+    async measure(context,action,values,measure,current,privateCaches={}){
+      const generation=++epoch,active=()=>generation===epoch&&current();
+      if(!active())return;
+      const commit=action==='move'?prepareBookFixedCommit(context,'move',values):action==='preferred'?prepareBookPreferredCommit(context,values):null;
+      if(!['move','preferred'].includes(action))throw Error('Invalid position preview action');
+      if(!commit)return;
+      const options={...commit.prepared.options};
+      for(const name of ['paragraphCache','mathCache','displayMathCache','inlineMathCache']){
+        if(privateCaches[name]!==undefined){
+          if(privateCaches[name]===context.options[name])throw Error('Draft cache must not be shared with saved paper');
+          options[name]=privateCaches[name];
+        }
+      }
+      const result=await measure(options,snapshot,active);
+      if(!result||!active())return;
+      if(result.plan?.completeness!=='full'||result.plan.diagnostics.some(d=>d.severity==='error')||!result.snapshot||!result.element)throw Error('移動案の完全な紙面を取得できません。');
+      verifySavedAreaPreview(commit.prepared,result);
+      if(!active())return;
+      snapshot=result.snapshot;
+      return result;
+    }
+  };
+}
