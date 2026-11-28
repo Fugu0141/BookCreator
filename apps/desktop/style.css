@@ -601,3 +601,13 @@ body{font-family:BCFont_NotoSansJP,system-ui,sans-serif}.font-control,.typograph
 .lab-literal-row input{flex:1;min-width:100px;width:auto;margin:0}
 .lab-literal-row button{flex:0 0 auto}
 .lab-literal-editor small{margin-top:4px;color:#42586b}
+
+.lab-selection-toolbar{display:flex;align-items:center;gap:5px;flex-wrap:wrap;padding:6px;margin-bottom:7px;border:1px solid #c8d5e1;border-radius:5px;background:#f8fafc}
+.lab-toolbar-kind{font-size:12px;font-weight:600;color:#315b86;padding-right:3px}
+.lab-selection-toolbar select{width:auto;max-width:150px;min-width:0;margin:0;padding:4px;font-size:12px}
+.lab-selection-toolbar button{padding:4px 7px;font-size:12px;white-space:nowrap}
+.lab-quick-size{display:flex;align-items:center;gap:4px;white-space:nowrap}
+.lab-quick-size output{font-size:12px;min-width:44px;text-align:center;font-variant-numeric:tabular-nums}
+.lab-selection-toolbar .lab-quick-color{display:flex;align-items:center;gap:3px;margin:0;font-size:12px}
+.lab-quick-color input[type=color]{width:27px;height:27px;padding:2px;margin:0}
+.lab-toolbar-separator{height:20px;width:1px;background:#c8d5e1}
