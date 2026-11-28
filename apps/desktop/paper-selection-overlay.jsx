@@ -162,9 +162,11 @@ export function BookPositionOverlay({viewport,node,context,bounds,onCommit,onClo
     let cancelled=false;
     const current=()=>!cancelled&&draft.current===owner&&candidate.current();
     const [kind,page,x,y,tx,ty]=JSON.parse(quickKey),position={page,x,y},values=kind==='preferred'?{position,tolerance:{x:tx,y:ty}}:position;
+    const requested=performance.now();
     const frame=requestAnimationFrame(()=>{
       if(!current())return;
-      void measureBookPositionGeometry(candidate,kind,values,session,current).then(result=>{if(current()&&result&&session.isCurrent(result.generation))setQuick({key:quickKey,result});}).catch(error=>{if(current())setQuick({key:quickKey,error:String(error.message??error)});});
+      const started=performance.now();
+      void measureBookPositionGeometry(candidate,kind,values,session,current).then(result=>{if(current()&&result&&session.isCurrent(result.generation))setQuick({key:quickKey,result,elapsedMs:performance.now()-started,queueMs:started-requested});}).catch(error=>{if(current())setQuick({key:quickKey,error:String(error.message??error)});});
     });
     return ()=>{cancelled=true;cancelAnimationFrame(frame);};
   },[quickKey,node,context.geometryBase]);
@@ -177,10 +179,12 @@ export function BookPositionOverlay({viewport,node,context,bounds,onCommit,onClo
     if(!owner)return;
     const current=()=>!controller.signal.aborted&&draft.current===owner&&candidate.current();
     const [kind,page,x,y,tx,ty]=JSON.parse(liveKey),position={page,x,y},values=kind==='preferred'?{position,tolerance:{x:tx,y:ty}}:position;
+    const requested=performance.now();
     const timer=setTimeout(()=>{
       if(!current())return;
+      const started=performance.now();
       void owner.session.measure(candidate,kind,values,(options,previous,active)=>measurementLane.run(()=>createFullRetainedTextPagePreview(document,options,previous,createPreviewCheckpoint({current:active})),{current:active,signal:controller.signal,priority:'background',category:'paper-position-live'}),current,owner.caches)
-        .then(result=>{if(current())setLive({key:liveKey,result});})
+        .then(result=>{if(current())setLive({key:liveKey,result,elapsedMs:performance.now()-started,queueMs:started-requested});})
         .catch(error=>{if(current())setLive({key:liveKey,error:String(error.message??error)});});
     },120);
     return ()=>{clearTimeout(timer);controller.abort();};
@@ -216,8 +220,8 @@ export function BookPositionOverlay({viewport,node,context,bounds,onCommit,onClo
     <div className="paper-inline-area-toolbar" style={panel} role="group" aria-label={preferredMode?'希望位置の移動案':'固定位置の移動案'}>
       <small role="status">{needsRebase?'以前の希望位置は現在の本文領域では直接編集できません。':invalid?'本文領域外には移動できません。':display.page+1+'ページ · X '+display.x/1000+' / Y '+display.y/1000+' mm'+(preferredMode&&!preferenceChanged?'（保存済みの希望）':'（未確定）')}</small>
       {needsRebase&&<><small>保存済み：{stored.position.page+1}ページ X {stored.position.x/1000} / Y {stored.position.y/1000} mm、許容 ±{stored.tolerance.x/1000} / ±{stored.tolerance.y/1000} mm</small><button type="button" id="book-paper-preferred-rebase" onClick={()=>{if(!context.current())return;setProposal(null);setRebased(true);}}>現在の紙面を基準に再指定</button></>}
-      {quickMode&&<small className="paper-inline-live-status" role="status">{invalid?'':quick?.key===quickKey&&quick.error?'配置案が成立しません：'+quick.error:quickResult?'軽量配置案 · 移動 '+quickResult.changed.length+'件 · '+quickResult.pageCount+'ページ（未確定）':'配置ガイド（ドロップ後に実測）'}</small>}
-      {liveKey&&<small className="paper-inline-live-status" role="status">{shown?(placement?.preference==='fallback'?'実測配置案：希望範囲外（未保存）':'実測配置案（未保存）'):live?.key===liveKey&&live.error?'配置できません：'+live.error:live?.key===liveKey?'配置変更なし':'配置を計算中…'}</small>}
+      {quickMode&&<small className="paper-inline-live-status" data-position-phase={quickResult?'geometry-ready':quick?.key===quickKey&&quick.error?'geometry-conflict':'geometry-pending'} data-elapsed-ms={quickResult?quick.elapsedMs:undefined} data-queue-ms={quickResult?quick.queueMs:undefined} role="status">{invalid?'':quick?.key===quickKey&&quick.error?'配置案が成立しません：'+quick.error:quickResult?'軽量配置案 · 移動 '+quickResult.changed.length+'件 · '+quickResult.pageCount+'ページ（未確定）':'配置ガイド（ドロップ後に実測）'}</small>}
+      {liveKey&&<small className="paper-inline-live-status" data-position-phase={shown?'paper-ready':live?.key===liveKey&&live.error?'paper-conflict':'paper-pending'} data-elapsed-ms={shown?live.elapsedMs:undefined} data-queue-ms={shown?live.queueMs:undefined} role="status">{shown?(placement?.preference==='fallback'?'実測配置案：希望範囲外（未保存）':'実測配置案（未保存）'):live?.key===liveKey&&live.error?'配置できません：'+live.error:live?.key===liveKey?'配置変更なし':'配置を計算中…'}</small>}
       {crossPage&&<label>移動先ページ <select id="book-paper-position-page" value={position.page} disabled={!!gesture.current} onChange={e=>{if(!context.current()||gesture.current)return;const page=Number(e.target.value);if(Number.isSafeInteger(page)&&page>=0&&page<pageCount)setProposal({...position,page});}}>{Array.from({length:pageCount},(_,i)=><option key={i} value={i}>{i+1}ページ</option>)}</select></label>}
       {crossPage&&!handleRect&&<small>移動先が画面外です。ページ番号と座標を確認してください。</small>}
       {preferredMode&&!needsRebase?<><small>許容範囲内を優先。成立しない場合は通常配置に戻ります。</small><div className="controls"><label>横 ± mm <input type="number" min="0" max={body.width/1000} step="0.001" value={tx} onChange={e=>setTx(e.target.value)}/></label><label>縦 ± mm <input type="number" min="0" max={body.height/1000} step="0.001" value={ty} onChange={e=>setTy(e.target.value)}/></label></div></>:!preferredMode?<small>確定すると移動先を固定します。</small>:null}
