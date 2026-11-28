@@ -7,7 +7,7 @@ const key=(documentId,persistentId)=>JSON.stringify([documentId,persistentId]);
 const percent=v=>Number.isSafeInteger(v)&&v>=1&&v<=100;
 const invalid=()=>{throw Error('Invalid paper area document');};
 export function validatePaperAreaDocument(value){
-  if(!record(value)||Object.keys(value).length!==2||value.schemaVersion!==1||!Array.isArray(value.entries)||value.entries.length>10000)invalid();
+  if(!record(value)||Object.keys(value).length!==2||!Object.hasOwn(value,'schemaVersion')||!Object.hasOwn(value,'entries')||value.schemaVersion!==1||!Array.isArray(value.entries)||value.entries.length>10000)invalid();
   const seen=new Set(),entries=value.entries.map(entry=>{
     if(!record(entry)||!id(entry.documentId)||!id(entry.persistentId)||Object.keys(entry).some(k=>!['documentId','persistentId',...fields].includes(k)))invalid();
     const k=key(entry.documentId,entry.persistentId);
@@ -47,10 +47,13 @@ export function setPaperAreaValue(document,{documentId,persistentId,axis,value})
 export function bindPaperAreaDocument(document,fragments){
   const {entries}=validatePaperAreaDocument(document);
   if(!Array.isArray(fragments))throw Error('Invalid fragment inventory');
-  const index=new Map();
+  const index=new Map(),counts=new Map();
   for(const fragment of fragments){
     const origin=fragment?.origin;
-    if(!id(origin?.documentId)||!id(origin?.persistentId)||!id(origin?.blockKey))continue;
+    if(!id(origin?.documentId)||!id(origin?.blockKey))continue;
+    const block=key(origin.documentId,origin.blockKey);
+    counts.set(block,(counts.get(block)??0)+1);
+    if(!id(origin.persistentId))continue;
     const k=key(origin.documentId,origin.persistentId);
     const list=index.get(k)??[];list.push(origin);index.set(k,list);
   }
@@ -60,7 +63,7 @@ export function bindPaperAreaDocument(document,fragments){
     const identity={documentId:entry.documentId,persistentId:entry.persistentId};
     if(matches.length!==1){diagnostics.push({...identity,code:matches.length?'AREA_AMBIGUOUS':'AREA_MISSING'});continue;}
     const {documentId,blockKey}=matches[0],k=key(documentId,blockKey);
-    if(used.has(k)){diagnostics.push({...identity,code:'AREA_AMBIGUOUS'});continue;}
+    if(counts.get(k)!==1||used.has(k)){diagnostics.push({...identity,code:'AREA_AMBIGUOUS'});continue;}
     used.add(k);
     const sizeConstraints=Object.fromEntries(fields.filter(f=>Object.hasOwn(entry,f)).map(f=>[f,entry[f]]));
     intents.push({documentId,blockKey,placement:{sizeConstraints}});
