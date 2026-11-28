@@ -781,3 +781,12 @@ body{font-family:BCFont_NotoSansJP,system-ui,sans-serif}.font-control,.typograph
 /* Position handle remains reachable if a very small viewport forces overlap. */
 .book-position-frame{z-index:23;}
 .book-position-panel{min-width:0;}
+
+/* Compact contextual toolbar: keep only active editing controls. */
+.book-paper-toolbar{display:flex;flex-direction:column;align-items:stretch;gap:4px;}
+.book-paper-toolbar-summary{display:flex;align-items:baseline;justify-content:space-between;gap:8px;flex-wrap:wrap;min-width:0;}
+.book-paper-toolbar-summary small{flex:0 1 auto;font-size:12px;min-width:0;overflow-wrap:anywhere;}
+.book-paper-toolbar-status{color:#576b7c;}
+.book-paper-toolbar-actions{display:flex;align-items:center;flex-wrap:wrap;gap:4px;min-width:0;}
+.book-paper-toolbar-actions:empty{display:none;}
+.book-paper-toolbar[data-tool]:not([data-tool=select]) .book-paper-toolbar-status{font-weight:600;color:#205a99;}
