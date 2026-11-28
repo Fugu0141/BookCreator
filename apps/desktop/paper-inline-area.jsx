@@ -29,7 +29,7 @@ export function PaperInlineArea({viewport,node,context,onCommit}){
       const clipped=clipPaperRect(full,bounds);
       if(!clipped||!b.width||!b.height){setGeometry(null);return;}
       setGeometry({full,clipped,bounds,bodyWidth:b.width,bodyHeight:b.height,contentWidth:r.width,contentHeight:r.height,
-        rightVisible:Math.abs(clipped.right-full.right)<1,bottomVisible:Math.abs(clipped.bottom-full.bottom)<1});
+        rightVisible:Math.abs(clipped.left+clipped.width-full.right)<1,bottomVisible:Math.abs(clipped.top+clipped.height-full.bottom)<1});
     };
     const observer=new ResizeObserver(update);observer.observe(v);observer.observe(block);observer.observe(body);
     const escape=e=>{if(e.key==='Escape'){if(active.current){e.preventDefault();cancel();}else if(latest.current.proposal){e.preventDefault();setProposal(null);}}};
