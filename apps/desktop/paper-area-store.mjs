@@ -2,6 +2,7 @@
 // source offset), revision, geometry, or the result of automatic layout.
 const sizeFields=['minWidthPercent','minHeightPercent'];
 const fields=[...sizeFields,'spaceAfter','spaceBefore'];
+const positionFields=['page','x','y'];
 const axisFields={width:'minWidthPercent',height:'minHeightPercent',gap:'spaceAfter',before:'spaceBefore'};
 export const MAX_PAPER_TRAILING_SPACE=1000000; // micrometres (1 m), also bounded by IL page height
 const record=v=>v!==null&&typeof v==='object'&&!Array.isArray(v)&&[Object.prototype,null].includes(Object.getPrototypeOf(v));
@@ -9,16 +10,23 @@ const id=v=>typeof v==='string'&&v.length>0&&v.length<=256&&!/[\u0000-\u001f\u00
 const key=(documentId,persistentId)=>JSON.stringify([documentId,persistentId]);
 const percent=v=>Number.isSafeInteger(v)&&v>=1&&v<=100;
 const invalid=()=>{throw Error('Invalid paper area document');};
+// Absolute physical page index (zero-based) and body-relative integer µm.
+// This is explicit user intent, not a cached measured placement.
+function fixedPosition(value){
+  if(!record(value)||Object.keys(value).length!==3||positionFields.some(k=>!Object.hasOwn(value,k)||!Number.isSafeInteger(value[k])||value[k]<0||value[k]>(k==='page'?9999:1000000000)))invalid();
+  return Object.freeze({page:value.page,x:value.x,y:value.y});
+}
 export function validatePaperAreaDocument(value){
   if(!record(value)||Object.keys(value).length!==2||!Object.hasOwn(value,'schemaVersion')||!Object.hasOwn(value,'entries')||value.schemaVersion!==1||!Array.isArray(value.entries)||value.entries.length>10000)invalid();
   const seen=new Set(),entries=value.entries.map(entry=>{
-    if(!record(entry)||!id(entry.documentId)||!id(entry.persistentId)||Object.keys(entry).some(k=>!['documentId','persistentId',...fields].includes(k)))invalid();
+    if(!record(entry)||!id(entry.documentId)||!id(entry.persistentId)||Object.keys(entry).some(k=>!['documentId','persistentId',...fields,'bookFixed'].includes(k)))invalid();
     const k=key(entry.documentId,entry.persistentId);
     if(seen.has(k))invalid();seen.add(k);
     const clean={documentId:entry.documentId,persistentId:entry.persistentId};
     for(const field of fields)if(Object.hasOwn(entry,field)){
       if(!(!sizeFields.includes(field)?Number.isSafeInteger(entry[field])&&entry[field]>0&&entry[field]<=MAX_PAPER_TRAILING_SPACE:percent(entry[field])))invalid();clean[field]=entry[field];
     }
+    if(Object.hasOwn(entry,'bookFixed'))clean.bookFixed=fixedPosition(entry.bookFixed);
     if(Object.keys(clean).length===2)invalid();
     return Object.freeze(clean);
   });
@@ -38,6 +46,7 @@ export function setPaperAreaValue(document,{documentId,persistentId,axis,value})
   if(!id(documentId)||!id(persistentId)||!field||!Number.isSafeInteger(value)||value<0||value>(!sizeFields.includes(field)?MAX_PAPER_TRAILING_SPACE:100))invalid();
   const entries=current.entries.slice(),at=entries.findIndex(e=>e.documentId===documentId&&e.persistentId===persistentId);
   const entry=at<0?{documentId,persistentId}:{...entries[at]};
+  if(entry.bookFixed)throw Error('固定位置を解除してから占有領域を変更してください。');
   if((entry[field]??0)===value)return current;
   if(value===0)delete entry[field];else entry[field]=value;
   if(at>=0)entries.splice(at,1);
@@ -52,6 +61,18 @@ export function setPaperAreaValues(document,{documentId,persistentId,values}){
     next=setPaperAreaValue(next,{documentId,persistentId,axis,value:values[axis]});
   }
   return next;
+}
+// Lock/unlock never discards existing explicit dimensions or whitespace.
+// The engine must independently accept their combination with the hard lock.
+export function setBookPaperFixed(document,{documentId,persistentId,position}){
+  const current=validatePaperAreaDocument(document);
+  if(!id(documentId)||!id(persistentId)||position===undefined)invalid();
+  const entries=current.entries.slice(),at=entries.findIndex(e=>e.documentId===documentId&&e.persistentId===persistentId);
+  const entry=at<0?{documentId,persistentId}:{...entries[at]};
+  if(position===null)delete entry.bookFixed;else entry.bookFixed=fixedPosition(position);
+  if(at>=0)entries.splice(at,1);
+  if(entry.bookFixed||fields.some(f=>Object.hasOwn(entry,f)))entries.push(entry);
+  return validatePaperAreaDocument({schemaVersion:1,entries});
 }
 // Only a current, complete fragment inventory may be used. A missing or
 // duplicated persistent identity is never repaired using an offset or label.
@@ -78,7 +99,7 @@ export function bindPaperAreaDocument(document,fragments){
     if(counts.get(k)!==1||used.has(k)){diagnostics.push({...identity,code:'AREA_AMBIGUOUS'});continue;}
     used.add(k);
     const sizeConstraints=Object.fromEntries(sizeFields.filter(f=>Object.hasOwn(entry,f)).map(f=>[f,entry[f]]));
-    intents.push({documentId,blockKey,placement:{...(Object.keys(sizeConstraints).length?{sizeConstraints}:{}),...(entry.spaceAfter?{spaceAfter:entry.spaceAfter}:{}),...(entry.spaceBefore?{spaceBefore:entry.spaceBefore}:{})}});
+    intents.push({documentId,blockKey,placement:{...(Object.keys(sizeConstraints).length?{sizeConstraints}:{}),...(entry.spaceAfter?{spaceAfter:entry.spaceAfter}:{}),...(entry.spaceBefore?{spaceBefore:entry.spaceBefore}:{}),...(entry.bookFixed?{mode:'fixed',fixed:entry.bookFixed}:{})}});
   }
   return diagnostics.length?{status:'conflict',intents:[],diagnostics}:{status:'ready',intents,diagnostics:[]};
 }
