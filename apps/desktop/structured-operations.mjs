@@ -164,7 +164,7 @@ export function planPaperRangeMove(source,{source:expectedSource,index,target},{
 
 // A whole-book move is still a single manuscript edit. Require a complete
 // source range from the measured binding and never cross section boundaries.
-export function resolveBookPaperMove(source,range,{scan,parseInline}){
+export function resolveBookPaperMove(source,range,{scan,parseInline,protectedRanges=[]}){
   if(typeof source!=='string')return null;
   const model=projectStructuredEditor(source,scan,parseInline);
   if(model.diagnostics.length)return null;
@@ -174,7 +174,10 @@ export function resolveBookPaperMove(source,range,{scan,parseInline}){
   if(range.start!==row.range.start||range.end>row.range.end||! /^(?:\r\n|\n)?$/.test(source.slice(range.end,row.range.end)))return null;
   const bounds=paperMoveBounds(source,model.rows,index);
   if(!bounds)return null;
-  return {index,bounds,up:index>bounds.min,down:index<bounds.max};
+  if(!Array.isArray(protectedRanges)||protectedRanges.some(r=>!Number.isSafeInteger(r?.start)||!Number.isSafeInteger(r?.end)||r.start<0||r.end<=r.start||r.end>source.length))return null;
+  const protectedRow=r=>!!r&&protectedRanges.some(p=>p.start<r.range.end&&p.end>r.range.start);
+  if(protectedRow(row))return null;
+  return {index,bounds,up:index>bounds.min&&!protectedRow(model.rows[index-1]),down:index<bounds.max&&!protectedRow(model.rows[index+1])};
 }
 export function planBookPaperMove(source,{expectedSource,range,action},deps){
   if(source!==expectedSource)throw Error('全冊紙面の計測後に原稿が変更されました。');
