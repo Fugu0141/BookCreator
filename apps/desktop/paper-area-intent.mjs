@@ -66,3 +66,20 @@ export function finishPaperGapDrag(gesture,{current,placement={},pointerPx,cance
   const proposal=previewPaperGapDrag(gesture,pointerPx);
   return proposal?.changed?proposal.value:null;
 }
+
+
+// Numeric input is deliberately strict: empty and malformed input are not
+// a reset. Percent fields are integer 0..100; physical gaps accept up to
+// three decimal places in mm, stored exactly as integer micrometres.
+export function parsePaperPropertyNumber(axis,text,bodyHeight){
+  if(typeof text!=='string'||text.length>16)return null;
+  if(axis==='width'||axis==='height'){
+    if(!/^\d{1,3}$/.test(text))return null;
+    const value=Number(text);return value<=100?value:null;
+  }
+  if(axis!=='before'&&axis!=='gap')return null;
+  if(!Number.isSafeInteger(bodyHeight)||bodyHeight<=0||!/^\d{1,4}(?:\.\d{1,3})?$/.test(text))return null;
+  const [whole,fraction='']=text.split('.');
+  const value=Number(whole)*1000+Number(fraction.padEnd(3,'0'));
+  return value<=Math.min(bodyHeight,MAX_PAPER_TRAILING_SPACE)?value:null;
+}
