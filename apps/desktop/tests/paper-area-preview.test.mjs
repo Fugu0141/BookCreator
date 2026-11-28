@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {prepareSavedAreaPreview,verifySavedAreaPreview,measureInlineAreaProposal,resolvePaperAreaSelection,captureBookAreaLease,prepareBookAreaCommit,prepareBookAreaRestore,acknowledgeBookAreaCommit,prepareBookFixedRelease} from '../paper-area-preview.mjs';
+import {prepareSavedAreaPreview,verifySavedAreaPreview,measureInlineAreaProposal,resolvePaperAreaSelection,captureBookAreaLease,prepareBookAreaCommit,prepareBookAreaRestore,acknowledgeBookAreaCommit,prepareBookFixedRelease,resolveBookFixedSelection,prepareBookFixedCommit} from '../paper-area-preview.mjs';
 const origin=(documentId,blockKey,persistentId)=>({documentId,blockKey,persistentId});
 const options={revision:'r1',fingerprint:'f1',width:1000,height:2000,sections:[{id:'a',blocks:[{origin:origin('a','40','q')}]},{id:'b',blocks:[{origin:origin('b','70','q')}]}]};
 const snapshot={revision:'saved',document:{schemaVersion:1,entries:[{documentId:'a',persistentId:'q',minHeightPercent:30},{documentId:'b',persistentId:'q',minWidthPercent:50}]}};
@@ -189,4 +189,35 @@ test('failed whole-book recovery removes only the requested existing lock withou
   assert.throws(()=>prepareBookFixedRelease({...context,bookLease:{documents:[{documentId:'b'}]}},'a','q'));
   assert.throws(()=>prepareBookFixedRelease({...context,areaSnapshot:{...areaSnapshot,revision:null}},'a','q'));
   assert.deepEqual(prepareBookFixedRelease(context,'a','other').value.entries.map(e=>e.persistentId),['q']);
+});
+
+
+test('empty whole-book opt-in still requests IL geometry for a first lock',()=>{
+  const empty={revision:null,document:{schemaVersion:1,entries:[]}};
+  assert.deepEqual(prepareSavedAreaPreview(options,empty,{whole:true}).options.intelligentLayout,{intents:[]});
+  assert.equal(prepareSavedAreaPreview(options,empty,{whole:false,documentId:'a'}).options,options);
+});
+test('explicit current-position lock and unlock preserve other intents and validate measured identity',()=>{
+  const position={page:2,x:100,y:300};
+  const fragment={origin:origin('a','40','q'),placement:{page:2,fixed:false,rect:{x:100,y:300,width:400,height:600}}};
+  const plan={revision:'r1',fingerprint:'f1',fragments:[fragment,{origin:origin('b','70','q')}]};
+  const selected=resolveBookFixedSelection(plan,'a','40');
+  assert.deepEqual(selected.position,position);
+  const context={scope:'book',bookLease:{documents:[{documentId:'a'},{documentId:'b'}]},areaPrepared:prepareSavedAreaPreview(options,snapshot,{whole:true}),areaSnapshot:snapshot,options:{...options,pageCache:{}},plan,...selected};
+  const commit=prepareBookFixedCommit(context,'lock');
+  assert.deepEqual(commit.value.entries,[{documentId:'a',persistentId:'q',minHeightPercent:30,bookFixed:position}]);
+  assert.equal(commit.prepared.intents.length,2);
+  assert.equal(commit.prepared.options.pageCache,undefined);
+  assert.equal(snapshot.document.entries[0].bookFixed,undefined);
+  assert.throws(()=>prepareBookFixedCommit(context,'unlock'));
+  assert.throws(()=>prepareBookFixedCommit({...context,selection:{...selected.selection,revision:'old'}},'lock'));
+  assert.throws(()=>prepareBookFixedCommit({...context,bookLease:{documents:[{documentId:'b'}]}},'lock'));
+  assert.equal(resolveBookFixedSelection({...plan,fragments:[fragment,fragment]},'a','40'),null);
+  assert.equal(resolveBookFixedSelection({...plan,fragments:[{...fragment,placement:undefined}]},'a','40'),null);
+  const lockedPlan={...plan,fragments:[{...fragment,placement:{...fragment.placement,fixed:true}},plan.fragments[1]]};
+  const locked={...context,plan:lockedPlan,areaPrepared:commit.prepared,areaSnapshot:{revision:'locked',document:commit.prepared.document},...resolveBookFixedSelection(lockedPlan,'a','40')};
+  assert.equal(resolvePaperAreaSelection(lockedPlan,'a','40'),null);
+  assert.deepEqual(prepareBookFixedCommit(locked,'unlock').value.entries,snapshot.document.entries.slice(0,1));
+  assert.throws(()=>prepareBookFixedCommit(locked,'lock'));
+  assert.throws(()=>prepareBookFixedCommit({...locked,plan:{...lockedPlan,fragments:[{...lockedPlan.fragments[0],placement:{...lockedPlan.fragments[0].placement,page:3}},plan.fragments[1]]}},'unlock'));
 });
