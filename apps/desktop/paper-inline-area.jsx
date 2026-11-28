@@ -8,7 +8,7 @@ import {MAX_PAPER_TRAILING_SPACE} from './paper-area-store.mjs';
 
 // Separate from the measured shadow tree, just like the reorder overlay.
 // The preview is local to the gesture; a confirmed save is handled by App.
-export function PaperInlineArea({viewport,node,context,onCommit,previewOnly=false}){
+export function PaperInlineArea({viewport,node,context,onCommit,previewOnly=false,onPendingChange}){
   const [geometry,setGeometry]=useState(null),[proposal,setProposal]=useState({}),[ghost,setGhost]=useState(null);
   const active=useRef(null),liveMount=useRef(null);
   const isGap=axis=>axis==='before'||axis==='gap';
@@ -116,6 +116,8 @@ export function PaperInlineArea({viewport,node,context,onCommit,previewOnly=fals
   }
   const pending=Object.keys(proposal).length>0;
   const hasInput=pending||invalidNumbers.length>0;
+  useLayoutEffect(()=>{onPendingChange?.(hasInput||!!ghost);},[onPendingChange,hasInput,ghost]);
+  useLayoutEffect(()=>()=>onPendingChange?.(false),[onPendingChange]);
   const preview=ghost?.changed?{...proposal,[ghost.axis]:ghost.value}:proposal;
   const liveKey=JSON.stringify([preview.width??null,preview.height??null,preview.gap??null,preview.before??null]);
   const canPreview=!!geometry&&!context.disabled&&invalidNumbers.length===0&&Object.keys(preview).length>0;
