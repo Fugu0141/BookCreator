@@ -1,15 +1,19 @@
 import React,{useLayoutEffect,useRef,useState} from 'react';
 import {beginPaperAreaDrag,previewPaperAreaDrag,finishPaperAreaDrag} from './paper-area-intent.mjs';
 import {clipPaperRect} from './paper-selection-geometry.mjs';
+import {createPlainTextPagePreview} from '../../../BookCreator_LayoutEngine/dist/index.js';
+import {measurementLane} from './measurement-lane.mjs';
+import {measureInlineAreaProposal} from './paper-area-preview.mjs';
 
 // Separate from the measured shadow tree, just like the reorder overlay.
 // The preview is local to the gesture; a confirmed save is handled by App.
 export function PaperInlineArea({viewport,node,context,onCommit}){
   const [geometry,setGeometry]=useState(null),[proposal,setProposal]=useState({}),[ghost,setGhost]=useState(null);
-  const active=useRef(null);
+  const active=useRef(null),liveMount=useRef(null);
+  const [live,setLive]=useState(null);
   const {target,placement}=context;
   const stored=placement.sizeConstraints??{};
-  const latest=useRef(null);latest.current={proposal};
+  const latest=useRef(null);latest.current={proposal,context};
   const storedValue=axis=>stored[axis==='width'?'minWidthPercent':'minHeightPercent']??0;
   function propose(axis,value){
     setProposal(previous=>{const next={...previous};if(value===storedValue(axis))delete next[axis];else next[axis]=value;return next;});
@@ -33,7 +37,8 @@ export function PaperInlineArea({viewport,node,context,onCommit}){
       const full={left:r.left,top:r.top,right:r.left+width,bottom:r.top+height,width,height};
       const clipped=clipPaperRect(full,bounds);
       if(!clipped||!b.width||!b.height){setGeometry(null);return;}
-      setGeometry({full,clipped,bounds,bodyWidth:b.width,bodyHeight:b.height,contentWidth:r.width,contentHeight:r.height,
+      const hr=host.getBoundingClientRect();
+      setGeometry({full,clipped,bounds,host:{left:hr.left-left,top:hr.top-top,width:host.offsetWidth,sx,sy},bodyWidth:b.width,bodyHeight:b.height,contentWidth:r.width,contentHeight:r.height,
         rightVisible:Math.abs(clipped.left+clipped.width-full.right)<1,bottomVisible:Math.abs(clipped.top+clipped.height-full.bottom)<1});
     };
     const observer=new ResizeObserver(update);observer.observe(v);observer.observe(block);observer.observe(body);
@@ -79,10 +84,35 @@ export function PaperInlineArea({viewport,node,context,onCommit}){
     const value=Math.max(1,Math.min(100,start+delta*(e.shiftKey?5:1)));
     if(value!==start)propose(axis,value);
   }
-  if(!geometry)return null;
-  const {full,clipped,bounds}=geometry;
   const pending=Object.keys(proposal).length>0;
-  const preview=ghost?{...proposal,[ghost.axis]:ghost.value}:proposal;
+  const preview=ghost?.changed?{...proposal,[ghost.axis]:ghost.value}:proposal;
+  const liveKey=JSON.stringify([preview.width??null,preview.height??null]);
+  const canPreview=!!geometry&&!context.disabled&&Object.keys(preview).length>0;
+  // Keep the authoritative host and selection intact; the live layer is inert.
+  // Coalesce pointer movement and drop any late result for a superseded proposal.
+  useLayoutEffect(()=>{
+    setLive(null);
+    if(!canPreview)return;
+    const controller=new AbortController(),candidate=latest.current.context;
+    const current=()=>!controller.signal.aborted&&candidate.current()&&!latest.current.context.disabled;
+    const [w,h]=JSON.parse(liveKey),values={...(w!==null?{width:w}:{}),...(h!==null?{height:h}:{})};
+    const timer=setTimeout(()=>{
+      if(!current())return;
+      void measureInlineAreaProposal(candidate,values,options=>measurementLane.run(()=>createPlainTextPagePreview(document,options),{current,signal:controller.signal,priority:'background',category:'paper-area-live'}),current)
+        .then(result=>{if(current())setLive({key:liveKey,result});})
+        .catch(error=>{if(current())setLive({key:liveKey,error:String(error.message??error)});});
+    },120);
+    return ()=>{clearTimeout(timer);controller.abort();};
+  },[canPreview,liveKey,node,target.revision,target.fingerprint]);
+  const shown=canPreview&&live?.key===liveKey&&live.result;
+  useLayoutEffect(()=>{
+    const mount=liveMount.current;
+    if(!shown||!mount)return;
+    mount.replaceChildren(shown.element);
+    return ()=>{if(shown.element.parentNode===mount)shown.element.remove();};
+  },[shown]);
+  if(!geometry)return null;
+  const {full,clipped,bounds,host}=geometry;
   const extent=(axis,body,content,actual)=>Object.hasOwn(preview,axis)?Math.max(content,preview[axis]*body/100):actual;
   const width=extent('width',geometry.bodyWidth,geometry.contentWidth,full.width);
   const height=extent('height',geometry.bodyHeight,geometry.contentHeight,full.height);
@@ -90,12 +120,14 @@ export function PaperInlineArea({viewport,node,context,onCommit}){
   const style=r=>({left:r.left,top:r.top,width:r.width,height:r.height});
   const label=axis=>{const value=preview[axis]??storedValue(axis);return value?value+'%':'自動';};
   return <>
+    {shown&&<div className="paper-inline-live" aria-hidden="true" inert={true} style={{left:bounds.left,top:bounds.top,width:bounds.right-bounds.left,height:bounds.bottom-bounds.top}}><div ref={liveMount} style={{position:'absolute',left:host.left,top:host.top,width:host.width,transformOrigin:'top left',transform:'scale('+host.sx+','+host.sy+')'}}/></div>}
     {guide&&<div className="paper-inline-area-guide" aria-hidden="true" style={style(guide)}/>}
     <div className="paper-inline-area-frame" style={style(clipped)}>
       {['width','height'].map(axis=>(axis==='width'?geometry.rightVisible:geometry.bottomVisible)&&<button key={axis} id={'paper-inline-area-'+axis} type="button" className={'paper-area-handle '+axis} aria-label={axis==='width'?'横の最小占有率を調整':'縦の最小占有率を調整'} disabled={context.disabled} onPointerDown={e=>begin(e,axis)} onPointerMove={move} onPointerUp={finish} onPointerCancel={e=>{if(active.current?.id===e.pointerId)cancel();}} onLostPointerCapture={e=>{if(active.current?.id===e.pointerId)cancel();}} onKeyDown={e=>keyAdjust(e,axis)}/>)}
     </div>
     <div className="paper-inline-area-toolbar" style={{left:Math.max(bounds.left,Math.min(clipped.left,bounds.right-260)),top:Math.max(bounds.top,Math.min(clipped.bottom+10,bounds.bottom-62))}}>
       <small aria-live="polite">横 {label('width')} · 縦 {label('height')}{pending||ghost?'（未確定）':''}</small>
+      {canPreview&&<small className="paper-inline-live-status" role="status">{shown?'実測配置案（未保存）':live?.key===liveKey&&live.error?'配置できません：'+live.error:live?.key===liveKey?'配置変更なし':'配置を計算中…'}</small>}
       {!ghost&&<><button type="button" disabled={context.disabled||!(proposal.width??storedValue('width'))} onClick={()=>propose('width',0)}>横を自動</button><button type="button" disabled={context.disabled||!(proposal.height??storedValue('height'))} onClick={()=>propose('height',0)}>縦を自動</button></>}
       {pending&&!ghost&&<><button id="paper-inline-area-commit" type="button" disabled={context.disabled} onClick={()=>{if(!context.current())return;void onCommit({...proposal});}}>適用して保存</button><button type="button" disabled={context.disabled} onClick={()=>setProposal({})}>取消</button></>}
     </div>
