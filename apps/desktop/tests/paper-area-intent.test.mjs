@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {canEditPaperArea,planPaperAreaIntent,beginPaperAreaDrag,previewPaperAreaDrag,finishPaperAreaDrag,beginPaperGapDrag,previewPaperGapDrag,finishPaperGapDrag} from '../paper-area-intent.mjs';
+import {canEditPaperArea,planPaperAreaIntent,beginPaperAreaDrag,previewPaperAreaDrag,finishPaperAreaDrag,beginPaperGapDrag,previewPaperGapDrag,finishPaperGapDrag,parsePaperPropertyNumber} from '../paper-area-intent.mjs';
 const target={documentId:'chapter',blockKey:'example',revision:'r1',fingerprint:'f1',fragmentCount:1};
 const input={target,current:{...target}};
 test('independent occupied constraints preserve explicit mode, spacing and unrelated dimensions',()=>{
@@ -75,4 +75,22 @@ test('leading gap grows upward and shrinks downward, including zero and zoom',()
     assert.equal(finishPaperGapDrag(existing,{current:{...target,fingerprint:'old'},pointerPx:260*scale}),null);
     assert.equal(beginPaperGapDrag({...start,side:'unknown'}),null);
   }
+});
+
+test('precise property input distinguishes zero reset from incomplete and invalid values',()=>{
+  for(const axis of ['width','height']){
+    assert.equal(parsePaperPropertyNumber(axis,'0',200000),0);
+    assert.equal(parsePaperPropertyNumber(axis,'100',200000),100);
+    assert.equal(parsePaperPropertyNumber(axis,'25',200000),25);
+    for(const raw of ['','-1','101','1.2','1e2',' ','Infinity','+1'])assert.equal(parsePaperPropertyNumber(axis,raw,200000),null);
+  }
+  for(const axis of ['before','gap']){
+    assert.equal(parsePaperPropertyNumber(axis,'0',200000),0);
+    assert.equal(parsePaperPropertyNumber(axis,'12.345',200000),12345);
+    assert.equal(parsePaperPropertyNumber(axis,'0.005',200000),5);
+    assert.equal(parsePaperPropertyNumber(axis,'200',200000),200000);
+    for(const raw of ['','-0.1','200.001','1.0001','1e2','1.','NaN'])assert.equal(parsePaperPropertyNumber(axis,raw,200000),null);
+    assert.equal(parsePaperPropertyNumber(axis,'1000.001',2000000),null);
+  }
+  assert.equal(parsePaperPropertyNumber('other','1',200000),null);
 });
