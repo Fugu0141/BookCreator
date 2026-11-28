@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {prepareSavedAreaPreview,verifySavedAreaPreview,measureInlineAreaProposal,resolvePaperAreaSelection,captureBookAreaLease,prepareBookAreaCommit,prepareBookAreaRestore,acknowledgeBookAreaCommit,prepareBookFixedRelease,resolveBookFixedSelection,prepareBookFixedCommit,resolveBookMoveBounds,prepareBookPreferredCommit,prepareBookGroupCommit,prepareBookGroupRelease,resolveBookGroupMembers} from '../paper-area-preview.mjs';
+import {prepareSavedAreaPreview,verifySavedAreaPreview,measureInlineAreaProposal,resolvePaperAreaSelection,captureBookAreaLease,prepareBookAreaCommit,prepareBookAreaRestore,acknowledgeBookAreaCommit,prepareBookFixedRelease,resolveBookFixedSelection,prepareBookFixedCommit,resolveBookMoveBounds,prepareBookPreferredCommit,prepareBookGroupCommit,prepareBookGroupRelease,resolveBookGroupMembers,validBookMovePage} from '../paper-area-preview.mjs';
 const origin=(documentId,blockKey,persistentId)=>({documentId,blockKey,persistentId});
 const options={revision:'r1',fingerprint:'f1',width:1000,height:2000,sections:[{id:'a',blocks:[{origin:origin('a','40','q')}]},{id:'b',blocks:[{origin:origin('b','70','q')}]}]};
 const snapshot={revision:'saved',document:{schemaVersion:1,entries:[{documentId:'a',persistentId:'q',minHeightPercent:30},{documentId:'b',persistentId:'q',minWidthPercent:50}]}};
@@ -285,4 +285,24 @@ test('group commits are atomic, consecutive, within one manuscript, and verified
   assert.deepEqual(prepareBookGroupCommit(saved,{groupId:'g',layout:'vertical'}).prepared.intents[1].placement,{keepTogetherGroup:'g',keepTogetherLayout:'vertical'});
   assert.deepEqual(prepareBookGroupCommit(saved,{groupId:'g',layout:null}).value,areaSnapshot.document);
   assert.deepEqual(prepareBookGroupRelease(saved,'a','g').value,areaSnapshot.document);
+});
+
+
+test('cross-page fixed movement is restricted to current complete book page inventory',()=>{
+  const fragment={origin:origin('a','40','q'),placement:{page:2,fixed:false,rect:{x:100,y:300,width:400,height:600},occupiedRect:{x:100,y:300,width:500,height:700}}};
+  const plan={revision:'r1',fingerprint:'f1',pageCount:5,fragments:[fragment,{origin:origin('b','70','q')}]};
+  const selected=resolveBookFixedSelection(plan,'a','40');
+  const context={scope:'book',bookLease:{documents:[{documentId:'a'},{documentId:'b'}]},areaPrepared:prepareSavedAreaPreview(options,snapshot,{whole:true}),areaSnapshot:snapshot,options,plan,...selected};
+  const position={page:4,x:100,y:300};
+  const commit=prepareBookFixedCommit(context,'move',position);
+  assert.deepEqual(commit.value.entries,[{documentId:'a',persistentId:'q',minHeightPercent:30,bookFixed:position}]);
+  assert.equal(commit.prepared.intents[1].placement.sizeConstraints.minWidthPercent,50);
+  for(const page of [-1,5,512,2.5,NaN])assert.throws(()=>prepareBookFixedCommit(context,'move',{...position,page}));
+  assert.equal(validBookMovePage({...context,plan:{...plan,pageCount:undefined}},selected,4),false);
+  assert.throws(()=>prepareBookPreferredCommit(context,{position,tolerance:{x:0,y:0}}));
+  const locked={...fragment,placement:{...fragment.placement,page:4,fixed:true}};
+  const other={origin:origin('b','70','q'),placement:{page:4,rect:{x:0,y:1200,width:500,height:100}}};
+  const result=fragments=>({intelligentLayout:{status:'placed',revision:'r1',fingerprint:'f1',fragments}});
+  assert.doesNotThrow(()=>verifySavedAreaPreview(commit.prepared,result([locked,other])));
+  assert.throws(()=>verifySavedAreaPreview(commit.prepared,result([{...locked,placement:{...locked.placement,page:3}},other])),/固定位置/);
 });
