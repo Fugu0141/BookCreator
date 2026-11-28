@@ -53,7 +53,7 @@ export async function measureInlineAreaProposal(context,values,measure,current,p
   const draft=setPaperAreaValues(before,{documentId:id,persistentId:context.persistentId,values});
   if(encodePaperAreaDocument(draft)===encodePaperAreaDocument(before))return;
   const {measurementCache,paragraphCache,pageCache,inlineMathCache,displayMathCache,mathCache,intelligentLayout,...options}=context.options;
-  const prepared=prepareSavedAreaPreview(options,{revision:context.areaSnapshot.revision,document:draft},{whole:false,documentId:id});
+  const prepared=prepareSavedAreaPreview(options,{revision:context.areaSnapshot.revision,document:draft},{whole:context.scope==='book',documentId:id});
   // Reuse only explicitly supplied draft-owned caches, never normal preview
   // caches or page templates. The engine checks text width and font identity.
   const draftOptions={...prepared.options};
@@ -69,4 +69,16 @@ export async function measureInlineAreaProposal(context,values,measure,current,p
   verifySavedAreaPreview(prepared,result);
   if(!current())return;
   return result;
+}
+
+
+// Scope a selection by the exact current fragment inventory. A duplicate
+// persistent ID in another manuscript is valid; a split/duplicate inside
+// the selected manuscript is not. Never infer identity from displayed text.
+export function resolvePaperAreaSelection(plan,documentId,blockKey){
+  if(!plan||!Array.isArray(plan.fragments)||typeof documentId!=='string'||!documentId||typeof blockKey!=='string'||!blockKey||typeof plan.revision!=='string'||!plan.revision||typeof plan.fingerprint!=='string'||!plan.fingerprint)return null;
+  const matches=plan.fragments.filter(f=>f.origin?.documentId===documentId&&f.origin?.blockKey===blockKey);
+  const persistentId=matches[0]?.origin?.persistentId;
+  if(matches.length!==1||typeof persistentId!=='string'||!persistentId||matches[0].placement?.fixed||plan.fragments.filter(f=>f.origin?.documentId===documentId&&f.origin?.persistentId===persistentId).length!==1)return null;
+  return {persistentId,selection:{documentId,blockKey,revision:plan.revision,fingerprint:plan.fingerprint}};
 }
