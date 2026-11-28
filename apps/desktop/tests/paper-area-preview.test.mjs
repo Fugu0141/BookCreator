@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {prepareSavedAreaPreview,verifySavedAreaPreview,measureInlineAreaProposal,resolvePaperAreaSelection,captureBookAreaLease,prepareBookAreaCommit,prepareBookAreaRestore,acknowledgeBookAreaCommit,prepareBookFixedRelease,resolveBookFixedSelection,prepareBookFixedCommit,resolveBookMoveBounds,prepareBookPreferredCommit,prepareBookGroupCommit,prepareBookGroupRelease,resolveBookGroupMembers,validBookMovePage} from '../paper-area-preview.mjs';
+import {prepareSavedAreaPreview,verifySavedAreaPreview,measureInlineAreaProposal,resolvePaperAreaSelection,captureBookAreaLease,prepareBookAreaCommit,prepareBookAreaRestore,acknowledgeBookAreaCommit,prepareBookFixedRelease,resolveBookFixedSelection,prepareBookFixedCommit,resolveBookMoveBounds,prepareBookPreferredCommit,prepareBookGroupCommit,prepareBookGroupRelease,resolveBookGroupMembers,validBookMovePage,createBookPositionPreviewSession} from '../paper-area-preview.mjs';
 const origin=(documentId,blockKey,persistentId)=>({documentId,blockKey,persistentId});
 const options={revision:'r1',fingerprint:'f1',width:1000,height:2000,sections:[{id:'a',blocks:[{origin:origin('a','40','q')}]},{id:'b',blocks:[{origin:origin('b','70','q')}]}]};
 const snapshot={revision:'saved',document:{schemaVersion:1,entries:[{documentId:'a',persistentId:'q',minHeightPercent:30},{documentId:'b',persistentId:'q',minWidthPercent:50}]}};
@@ -305,4 +305,24 @@ test('cross-page fixed movement is restricted to current complete book page inve
   const result=fragments=>({intelligentLayout:{status:'placed',revision:'r1',fingerprint:'f1',fragments}});
   assert.doesNotThrow(()=>verifySavedAreaPreview(commit.prepared,result([locked,other])));
   assert.throws(()=>verifySavedAreaPreview(commit.prepared,result([{...locked,placement:{...locked.placement,page:3}},other])),/固定位置/);
+});
+
+
+test('position live session adopts only verified complete current results and retains private snapshots',async()=>{
+  const fragment={origin:origin('a','40','q'),placement:{page:2,fixed:false,rect:{x:100,y:300,width:400,height:600},occupiedRect:{x:100,y:300,width:500,height:700}}};
+  const plan={revision:'r1',fingerprint:'f1',pageCount:5,fragments:[fragment,{origin:origin('b','70','q')}]};
+  const selected=resolveBookFixedSelection(plan,'a','40');
+  const context={scope:'book',bookLease:{documents:[{documentId:'a'},{documentId:'b'}]},areaPrepared:prepareSavedAreaPreview(options,snapshot,{whole:true}),areaSnapshot:snapshot,options:{...options,paragraphCache:{},pageCache:{}},plan,...selected};
+  const session=createBookPositionPreviewSession(),privateCache={},first={page:2,x:200,y:300},second={page:3,x:300,y:400};
+  const result=(position,handle)=>({element:{},snapshot:handle,plan:{completeness:'full',diagnostics:[]},intelligentLayout:{status:'placed',revision:'r1',fingerprint:'f1',fragments:[{...fragment,placement:{...fragment.placement,page:position.page,fixed:true,rect:{...fragment.placement.rect,x:position.x,y:position.y}}},{origin:origin('b','70','q'),placement:{rect:{width:500,height:100}}}]}});
+  const one={},two={};
+  assert.equal(await session.measure(context,'move',first,async(o,previous)=>{assert.equal(previous,undefined);assert.equal(o.pageCache,undefined);assert.equal(o.paragraphCache,privateCache);return result(first,one);},()=>true,{paragraphCache:privateCache}).then(r=>r.snapshot),one);
+  await assert.rejects(()=>session.measure(context,'move',second,async(o,previous)=>{assert.equal(previous,one);return result(first,two);},()=>true),/固定位置/);
+  let current=true;
+  assert.equal(await session.measure(context,'move',second,async(o,previous)=>{assert.equal(previous,one);current=false;return result(second,two);},()=>current),undefined);
+  assert.equal(await session.measure(context,'move',second,async(o,previous)=>{assert.equal(previous,one);return result(second,two);},()=>true).then(r=>r.snapshot),two);
+  await assert.rejects(()=>session.measure(context,'move',first,async()=>{throw Error('unexpected');},()=>true,{paragraphCache:context.options.paragraphCache}),/Draft cache/);
+  session.clear();
+  await session.measure(context,'move',first,async(o,previous)=>{assert.equal(previous,undefined);return result(first,one);},()=>true);
+  assert.equal(context.areaSnapshot.document.entries[0].bookFixed,undefined);
 });
