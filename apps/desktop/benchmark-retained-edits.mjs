@@ -53,7 +53,7 @@ export async function benchmarkRetainedEdits({raw,click,until,ready,paperSignatu
           if(!Number.isSafeInteger(sample.work.measurement.sharedSnapshotEntries)||sample.work.measurement.sharedSnapshotEntries<1||sample.work.measurement.sharedSnapshotEntries>sample.work.measurement.reusedBlocks)throw Error('Retained benchmark did not share measurement snapshots');
           if(!['preparationMs','publicationMs'].every(key=>Number.isFinite(sample.work.hostTiming?.[key])&&sample.work.hostTiming[key]>=0))throw Error('Missing host timing diagnostics');
           const publicationStages=sample.work.hostTiming.publicationStages;
-          if(!['assemblyMs','describeMs','commitMs'].every(key=>Number.isFinite(publicationStages?.[key])&&publicationStages[key]>=0))throw Error('Missing sparse publication stage timing');
+          if(!['assemblyMs','describeMs','commitMs','scrollRestoreMs','otherCommitMs'].every(key=>Number.isFinite(publicationStages?.[key])&&publicationStages[key]>=0)||Math.abs(publicationStages.commitMs-publicationStages.scrollRestoreMs-publicationStages.otherCommitMs)>0.001)throw Error('Missing or inconsistent sparse publication stage timing');
           if(!Number.isSafeInteger(sample.work.pagination.sharedSnapshotFragments)||sample.work.pagination.sharedSnapshotFragments<1)throw Error('Retained benchmark did not share placement snapshots');
           if(!Number.isFinite(sample.work.hostTiming?.preparationYieldMs)||sample.work.hostTiming.preparationYieldMs<0)throw Error('Missing preparation task boundary timing');
           const cancelled=sample.work.cancelledJobs;
