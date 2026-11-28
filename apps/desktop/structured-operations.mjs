@@ -1,9 +1,13 @@
 import {projectBlocks} from './structured-blocks.mjs';
+import {projectStructuredEditor} from './structured-projection.mjs';
 import {slottedStudyTemplate,isCustomComponentId,namedSlotDefinitions} from '../../dist/index.js';
 import {projectStudy} from './structured-study.mjs';
 
 const stripEnd=s=>s.replace(/(?:\r\n|\n)$/,'');
 const simple=row=>row&&row.payload!==null&&['paragraph','math'].includes(row.kind);
+const movable=row=>simple(row)||!!row?.study;
+// IDs and answer targets may move intact, but do not invert a linked pair.
+const linkedPair=(a,b)=>!!(a?.study?.id&&b?.study?.answerTo===a.study.id||b?.study?.id&&a?.study?.answerTo===b.study.id);
 const same=(a,b)=>a.kind===b.kind&&a.level===b.level&&stripEnd(a.raw)===stripEnd(b.raw);
 const templates={heading:()=> '## 新しい見出し\n',paragraph:()=> '新しい本文を入力してください。\n',math:()=> '$$\nx^2\n$$\n'};
 export const insertionChoices=[['paragraph','本文'],['heading','見出し H2'],['math','独立数式'],...Object.entries({example:'例題',exercise:'練習問題',explanation:'解説',note:'補足',tip:'ポイント',warning:'注意',important:'重要'})];
@@ -26,14 +30,18 @@ export function canBlockOperation(source,rows,index,action){
   if(action==='split')return row?.kind==='paragraph'&&row.payload!==null&&row.payload.includes('\n');
   if(action==='join')return row?.kind==='paragraph'&&rows[index+1]?.kind==='paragraph'&&blankGap(source,row,rows[index+1]);
   if(action==='insert')return index===rows.length||!!row&&(index===0||blankGap(source,rows[index-1],row));
+  if(action==='up'||action==='down'){
+    const other=action==='up'?index-1:index+1;
+    return movable(row)&&movable(rows[other])&&!linkedPair(row,rows[other])&&blankGap(source,rows[Math.min(index,other)],rows[Math.max(index,other)]);
+  }
   if(!simple(row))return false;
   if(action==='duplicate')return canBlockOperation(source,rows,index+1,'insert');
   if(action==='delete')return true;
-  const other=action==='up'?index-1:action==='down'?index+1:-1;
-  return simple(rows[other])&&blankGap(source,rows[Math.min(index,other)],rows[Math.max(index,other)]);
+  return false;
 }
 export function planBlockOperation(source,request,{scan,parseInline,applyPatches,validateMath,theme}){
-  const before=projectBlocks(source,scan,parseInline),rows=before.rows;
+  const moving=request.action==='up'||request.action==='down';
+  const before=(moving?projectStructuredEditor:projectBlocks)(source,scan,parseInline),rows=before.rows;
   if(before.diagnostics.length||request.source!==source)throw Error('原稿が変化しました。構造を確認してください。');
   const {action,index}=request;
   const caretSplit=action==='split'&&Number.isSafeInteger(request.offset)&&rows[index]?.kind==='paragraph'&&rows[index].payload!==null;
