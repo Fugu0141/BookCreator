@@ -178,7 +178,17 @@ export function ComponentLab({design,typography,width,height,onApply:saveDesign,
       if(!target.current)return;
       target.current.replaceChildren(result.element);
       const root=result.element.shadowRoot;
-      dragCleanup.current=installCanvasDrag(root,{smartSnap:()=>smartSnapRef.current,ratioLocked:id=>ratioRef.current.has(id),isLocked:id=>isComponentLocked(historyRef.current.present.children,id,locksRef.current),lookup:id=>locate(value.children,id),onSelect:id=>{selectSingle(id);highlightCanvasSelection(root,id,id=>isComponentLocked(historyRef.current.present.children,id,locksRef.current));},onActive:setDragging,onCommit:(id,geometry)=>{
+      dragCleanup.current=installCanvasDrag(root,{smartSnap:()=>smartSnapRef.current,ratioLocked:id=>ratioRef.current.has(id),isLocked:id=>isComponentLocked(historyRef.current.present.children,id,locksRef.current),lookup:id=>locate(value.children,id),flowDirection:entry=>entry.parent?.direction??value.direction,onSelect:id=>{selectSingle(id);highlightCanvasSelection(root,id,id=>isComponentLocked(historyRef.current.present.children,id,locksRef.current));},onActive:setDragging,onReorder:(id,index)=>{
+        if(!measurement.current.isCurrent(job))return;
+        const current=historyRef.current.present,where=locate(current.children,id);
+        const direction=where?.parent?.direction??current.direction;
+        if(!where||!['row','column'].includes(direction)||!Number.isInteger(index)||index<0||index>=where.siblings.length||index===where.index||isComponentLocked(current.children,id,locksRef.current))return;
+        const next={...current,children:editChildren(current.children,where.parent?.id??null,a=>{
+          const children=[...a];const [item]=children.splice(where.index,1);children.splice(index,0,item);return children;
+        })};
+        // commit also enforces locks of other siblings and records one undo step.
+        if(commit(next))void measure(next,id);
+      },onCommit:(id,geometry)=>{
         if(!measurement.current.isCurrent(job))return;
         const current=historyRef.current.present,where=locate(current.children,id);
         if(!where||where.parent?.direction!=='canvas')return;
