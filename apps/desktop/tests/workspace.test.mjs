@@ -158,3 +158,34 @@ test('Canvas component persists coordinates and rejects coordinates outside canv
   await assert.rejects(w.saveHeadingDesign(saved.revision,{...design,children:[{...canvas,direction:'column'}]},'1'),RangeError);
   await assert.rejects(w.saveHeadingDesign(saved.revision,{...design,children:[{...canvas,children:[{id:'content',type:'content',x:-1,y:0,width:10000}]}]},'1'),RangeError);
 });
+
+test('textbook starter creates three editable chapters with unique IDs and survives reopen',async t=>{
+  const parent=await mkdtemp(join(tmpdir(),'bc-textbook-'));t.after(()=>rm(parent,{recursive:true,force:true}));
+  const options={title:'数学参考書',folder:'textbook',size:'B5',template:'textbook'};
+  const w=await createProject(parent,options);
+  const ids=['chapter-01','chapter-02','chapter-03'];
+  assert.deepEqual(w.summary.sections.map(s=>s.id),ids);
+  const [intro,lesson,practice]=await Promise.all(ids.map(id=>w.read(id)));
+  assert.equal(intro.editable,true);assert.equal(lesson.editable,true);assert.equal(practice.editable,true);
+  assert.match(intro.text,/この本の使い方/);
+  assert.ok(lesson.text.includes('$$\n2x+3=7\n$$\n'));assert.ok(lesson.text.includes('answer-to="exercise-01"'));
+  assert.ok(practice.text.includes('answer-to="exercise-02"'));
+  const manifest=join(parent,'textbook','book.yaml'),before=await readFile(manifest);
+  await w.save('chapter-02',lesson.revision,lesson.text.replace('基本の考え方','方程式の基本'));
+  const reopened=await openWorkspace(manifest);
+  assert.match((await reopened.read('chapter-02')).text,/方程式の基本/);
+  assert.equal((await reopened.read('chapter-03')).text,practice.text);
+  assert.deepEqual(await readFile(manifest),before);
+  await assert.rejects(createProject(parent,options),{code:'EEXIST'});
+});
+test('explicit blank template preserves legacy content; unknown templates create nothing',async t=>{
+  const parent=await mkdtemp(join(tmpdir(),'bc-starter-'));t.after(()=>rm(parent,{recursive:true,force:true}));
+  const options={title:'本',folder:'blank',size:'A5',template:'blank'};
+  const w=await createProject(parent,options);
+  assert.equal(w.summary.sections.length,1);
+  assert.equal((await w.read('chapter-01')).text,'# はじめに\n\nここから原稿を書き始めます。\n');
+  for(const template of ['unknown',null,{},'../outside']){
+    await assert.rejects(createProject(parent,{...options,folder:'invalid',template}),{code:'INPUT'});
+  }
+  assert.deepEqual(await readdir(parent),['blank']);
+});

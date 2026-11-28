@@ -2141,7 +2141,66 @@ async function nativeCloseSmoke(decision){
   if(await readFile(path,'utf8')!==draft||await readFile(themePath,'utf8')===oldTheme||!(await readFile(manifestPath,'utf8')).includes('size: '+size))throw Error('Save and exit failed to persist every target');
   console.log('PASS UX-10e native close blocks drafts and conflicts, then saves all targets and exits');
 }
+// Practical acceptance: create a real starter through the visible UI, edit a
+// chapter, save, compose the whole book and reopen without touching other files.
+async function textbookJourneySmoke(){
+  const raw=js=>win.webContents.executeJavaScript(js);
+  const until=async(label,js)=>{for(let i=0;i<150;i++){if(await raw(js))return;await new Promise(r=>setTimeout(r,100));}throw Error('Textbook journey: '+label+'; '+await raw("document.querySelector('#status')?.textContent"));};
+  const click=async selector=>{
+    await until('reachable '+selector,"(()=>{const e=document.querySelector("+JSON.stringify(selector)+");return !!e?.getClientRects().length&&!e.disabled;})()");
+    await raw("document.querySelector("+JSON.stringify(selector)+").click()");
+  };
+  const input=async(selector,value)=>{
+    await until('editable '+selector,"(()=>{const e=document.querySelector("+JSON.stringify(selector)+");return !!e?.getClientRects().length&&!e.disabled&&!e.readOnly;})()");
+    await raw("(()=>{const e=document.querySelector("+JSON.stringify(selector)+");const proto=e.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype;Object.getOwnPropertyDescriptor(proto,'value').set.call(e,"+JSON.stringify(value)+");e.dispatchEvent(new Event('input',{bubbles:true}));})()");
+  };
+  const mode=which=>"document.querySelector('.workspace-shell').dataset.workspaceMode==="+JSON.stringify(which);
+  const title='数学参考書の制作検証',folder='textbook-journey';
+  const root=join(smokeRoot,folder),chapter=join(root,'manuscript','chapter-02.md');
+  await click('#new-project');
+  await input('#new-title',title);await input('#new-folder',folder);
+  await until('template selector',"!!document.querySelector('#new-template')?.getClientRects().length&&!document.querySelector('#new-template').disabled");
+  await raw("(()=>{const e=document.querySelector('#new-template');e.value='textbook';e.dispatchEvent(new Event('change',{bubbles:true}));})()");
+  await until('textbook selected',"document.querySelector('#new-template').value==='textbook'");
+  await click('#create-project');
+  const sections="['chapter-01','chapter-02','chapter-03'].every(id=>{const e=document.querySelector('[data-section='+id+']');return !!e&&!e.disabled;})";
+  await until('three chapters',mode('writing')+"&&"+sections);
+  const before=await readFile(chapter,'utf8'),manifest=await readFile(join(root,'book.yaml'));
+  const otherPaths=['chapter-01','chapter-03'].map(id=>join(root,'manuscript',id+'.md'));
+  const other=await Promise.all(otherPaths.map(path=>readFile(path)));
+  await click('[data-section=chapter-02]');
+  await until('lesson loaded',"document.querySelector('#source').value==="+JSON.stringify(before));
+  await click('#editor-view-structured');
+  await until('structured lesson',"!!document.querySelector('[data-structured-kind=math]')&&!!document.querySelector('[data-study-kind=example]')&&!!document.querySelector('[data-study-kind=exercise]')&&!!document.querySelector('[data-study-kind=explanation]')");
+  const revised='等式の両辺に同じ操作をします。';
+  await click('[data-structured-kind=paragraph] [data-rich-edit]');
+  await input('#structured-rich-value',revised);await click('#structured-apply');
+  const expected=before.replace('一次方程式は、未知数の値を求めるための等式です。',revised);
+  await until('edited exact manuscript',"document.querySelector('#source').value==="+JSON.stringify(expected)+"&&!document.querySelector('#structured-apply')");
+  if(await readFile(chapter,'utf8')!==before)throw Error('Textbook journey: edit saved implicitly');
+  await click('#save');
+  await until('saved',"document.querySelector('#workspace-save-state').textContent==='保存済み'");
+  await click('#mode-layout');await click('#preview-book');
+  const whole="document.querySelector('#workspace-layout-state').dataset.phase==='ready'&&document.querySelector('#workspace-layout-state').dataset.scope==='book'";
+  const paper="(()=>{const r=document.querySelector('#preview > div')?.shadowRoot;return !!r?.querySelector('[data-display-math] math')&&!!r.querySelector('[data-inline-math]')&&r.textContent.includes('この本の使い方')&&r.textContent.includes('練習問題')&&r.textContent.includes("+JSON.stringify(revised)+");})()";
+  await until('all chapters and math on measured paper',whole+"&&"+paper);
+  await click('#mode-home');
+  await until('catalog entry',mode('home')+"&&[...document.querySelectorAll('.hub-project-open')].some(e=>e.querySelector('strong')?.textContent==="+JSON.stringify(title)+"&&!e.disabled)");
+  await raw("([...document.querySelectorAll('.hub-project-open')].find(e=>e.querySelector('strong')?.textContent==="+JSON.stringify(title)+")).click()");
+  await until('reopened textbook',mode('writing')+"&&"+sections);
+  await click('[data-section=chapter-02]');
+  await until('saved chapter reopened',"document.querySelector('#source').value==="+JSON.stringify(expected));
+  await click('#mode-layout');await click('#preview-book');
+  await until('recomposed textbook',whole+"&&"+paper);
+  if(await readFile(chapter,'utf8')!==expected||!(await readFile(join(root,'book.yaml'))).equals(manifest))throw Error('Textbook journey: saved source or manifest mismatch');
+  for(let i=0;i<otherPaths.length;i++)if(!(await readFile(otherPaths[i])).equals(other[i]))throw Error('Textbook journey: unrelated chapter changed');
+  console.log('PASS PRACTICAL-01 textbook UI creation, structured edit, save, whole-book paper and reopen');
+  // Reset renderer-local choices before the pre-existing smoke journey.
+  await win.loadURL(PAGE);await selectManualPreviewForRegression();
+  await until('fresh home',mode('home')+"&&!document.querySelector('#open').disabled");
+}
 async function smoke(){
+  await textbookJourneySmoke();
   const exec=workspaceSmokeExec();
   const until=async js=>{for(let i=0;i<100;i++){if(await exec(js))return;await new Promise(r=>setTimeout(r,100));}throw Error('Timed out: '+js+'; renderer status: '+await exec("document.querySelector('#status')?.textContent")+'; inline nodes: '+await exec("JSON.stringify([...document.querySelector('#preview > div')?.shadowRoot?.querySelectorAll('[data-named-slot=extra] [data-inline-style]')??[]].map(s=>({text:s.textContent,style:s.getAttribute('style')})))"));};
   await until("!!document.querySelector('#open')&&!document.querySelector('#open').disabled");

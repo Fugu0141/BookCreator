@@ -17,6 +17,7 @@ BookCreator consumes both libraries. Neither library requires the other or the a
 | --- | --- |
 | [DESIGN.md](DESIGN.md) | 基本設計・製品要件・受入テスト |
 | [DEVELOPMENT_PLAN](docs/DEVELOPMENT_PLAN.md) | 3リポジトリの実装順・PoC・公開ゲート |
+| [PRACTICAL_WORKFLOW](docs/PRACTICAL_WORKFLOW.md) | 現在の実用化優先順位・制作工程の受入基準 |
 | [DECISIONS](docs/DECISIONS.md) | 決定済み・未決・確認事項 |
 | [PRE_IMPLEMENTATION_REVIEW](docs/PRE_IMPLEMENTATION_REVIEW.md) | リスクとレビュー記録 |
 | [PROJECT_FORMAT](docs/PROJECT_FORMAT.md) | book.yaml・原稿・素材・番号・文献 |
