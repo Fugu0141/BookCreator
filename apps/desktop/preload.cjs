@@ -1,5 +1,6 @@
 const {contextBridge,ipcRenderer}=require('electron');
 contextBridge.exposeInMainWorld('bookcreator',Object.freeze({
+  editorBenchmark:process.argv.includes('--bc-editor-benchmark'),
   onCloseRequested:callback=>{
     const listener=(_event,token)=>callback(token);
     ipcRenderer.on('bookcreator:close-requested',listener);
