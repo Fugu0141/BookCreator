@@ -44,6 +44,7 @@ import {createWorkspacePreviewLifecycle} from './workspace-preview-lifecycle.mjs
 import {manuscriptDirty,activeStructuredHistory} from './manuscript-state.mjs';
 import {captureStructuredCommand,assertStructuredCommandCurrent,commitStructuredCommand,moveStructuredHistory} from './structured-command.mjs';
 import {createManuscriptStore} from './manuscript-store.mjs';
+import {navigationState,confirmNavigationDiscard,manuscriptNavigationBlocked,canSaveBeforeClose,withManuscriptDiscard} from './workspace-navigation.mjs';
 import {persistManuscript as persistManuscriptTransaction} from './manuscript-persistence.mjs';
 import {SourceEditor} from './source-editor.jsx';
 import {captureSourceCommand,applySourceCommand,isSourceCommandCurrent,captureDraftCommand,isDraftCommandCurrent} from './source-command.mjs';
@@ -198,7 +199,7 @@ function App(){
   function applyParagraph(design,afterSave){return io(async()=>{const next=await unwrap(api.saveParagraphDesign(theme.revision,design));await afterSave?.(next.revision);setTheme(next);setParagraphOpen(false);invalidate();setStatus(design?.componentId?'共有本文部品を割り当てました。':'本文フレームを保存しました。');});}
   const [labOpen,setLabOpen]=useState(false),[labLevel,setLabLevel]=useState('default');
   const [libraryNotice,setLibraryNotice]=useState('');
-  function changeLibrary(action,afterSave){return io(async()=>{try{if(action.type==='delete'&&text.includes(action.id))throw Error('現在の原稿に部品IDが含まれています。参照を解除してから削除してください。');const next=await unwrap(api.changeComponentLibrary(theme.revision,action));await afterSave?.(next.revision);setTheme(next);invalidate();setLibraryNotice('部品ライブラリを保存しました。');}catch(e){setLibraryNotice(String(e.message??e));}});}
+  function changeLibrary(action,afterSave){return io(async()=>{try{if(action.type==='delete'&&manuscriptStore.getSnapshot().text.includes(action.id))throw Error('現在の原稿に部品IDが含まれています。参照を解除してから削除してください。');const next=await unwrap(api.changeComponentLibrary(theme.revision,action));await afterSave?.(next.revision);setTheme(next);invalidate();setLibraryNotice('部品ライブラリを保存しました。');}catch(e){setLibraryNotice(String(e.message??e));}});}
   function applyHeadingDesign(design,afterSave){return io(async()=>{const next=await unwrap(api.saveHeadingDesign(theme.revision,design,labLevel));await afterSave?.(next.revision);setTheme(next);setLabOpen(false);invalidate();setStatus(design?.componentId?'共有部品を見出しに割り当てました。':'見出し部品をテーマに保存しました。');});}
   function labRecovery(usage,level){
     const token=book?.settingRecovery?.token;
@@ -211,8 +212,8 @@ function App(){
   async function refreshProjects(){await io(async()=>{let next;try{next=await unwrap(api.listProjects());setCatalogError('');}catch(e){setCatalogError(String(e.message??e));}await loadRecoveryHub();if(next)setProjects(next);});}
   function openRecoveryHub(){setCreating(false);setHomeTab('recovery');void io(loadRecoveryHub);}
   function openRecoveryItem(item){
-    if(routeBlockRef.current||composing.current)return;
-    if(item.kind==='manuscript'&&book?.projectId===item.projectId&&file?.id===item.sectionId){navigate('writing');if(recoveryCandidate)setRecoveryOpen(true);return;}
+    if(navigationBlocked())return;
+    if(item.kind==='manuscript'&&book?.projectId===item.projectId&&manuscriptStore.getMetadata().file?.id===item.sectionId){navigate('writing');if(recoveryCandidate)setRecoveryOpen(true);return;}
     // Keep an already open book's current draft and controller intact.
     if(book?.projectId===item.projectId&&item.kind==='settings'){
       if(item.settingKind==='typography'){navigate('design');setDesignTab('styles');}
@@ -256,10 +257,10 @@ function App(){
     if(!confirmProjectDiscard())return;
     void io(()=>withProjectDiscard(async()=>{const next=await unwrap(api.openRegisteredProject(item.projectId));await applyBook(next);await route(next);}));
   }
-  function openRegistered(id){if(!confirmProjectDiscard())return;void io(()=>withProjectDiscard(async()=>{const next=await unwrap(api.openRegisteredProject(id));await applyBook(next);}));}
+  function openRegistered(id){if(navigationBlocked()||!confirmProjectDiscard())return;void io(()=>withProjectDiscard(async()=>{const next=await unwrap(api.openRegisteredProject(id));await applyBook(next);}));}
   function favoriteProject(id,value){void io(async()=>{setProjects(await unwrap(api.favoriteProject(id,value)));});}
   function forgetProject(id){if(!window.confirm('一覧から登録を解除しますか？ 書籍ファイルは削除されません。'))return;void io(async()=>{setProjects(await unwrap(api.forgetProject(id)));});}
-  function create(){if(!confirmProjectDiscard())return;void io(()=>withProjectDiscard(async()=>{const next=await unwrap(api.create(newBook));if(next)await applyBook(next);}));}
+  function create(){if(navigationBlocked()||!confirmProjectDiscard())return;void io(()=>withProjectDiscard(async()=>{const next=await unwrap(api.create(newBook));if(next)await applyBook(next);}));}
   function saveTheme(){if(typographyLocked||!theme?.editable||!themeDirty)return;void io(async()=>{await persistSettings('typography');setStatus('テーマを保存しました。');});}
   function setRole(role,key,value){if(typographyLocked)return;setTypography(t=>({...t,[role]:{...t[role],[key]:value,...(key==='fontFamily'&&fonts.some(f=>f.alias===value)?{fontWeight:weightsFor(value)[0]}:key==='fontFamily'&&![400,500,600,700].includes(t[role].fontWeight)?{fontWeight:400}:{})}}));invalidate();setStatus('書籍プレビューのフォント設定を変更しました（未保存）。');}
   const textarea=useRef(null),preview=useRef(null),working=useRef(false),imeChanged=useRef(false);
@@ -382,12 +383,8 @@ function App(){
     }catch(e){setRecoveryState({phase:'error',message:String(e.message??e)});}
     finally{setRecoveryResolving(false);}
   }
-  async function withDiscard(fn){
-    const controller=recoveryRef.current;
-    if(!controller||recoveryCandidate)return fn();
-    await controller.pause();
-    try{await controller.discard();return await fn();}
-    finally{if(recoveryRef.current===controller)controller.resume(manuscriptStore.getSnapshot().text);}
+  function withDiscard(fn){
+    return withManuscriptDiscard({store:manuscriptStore,getController:()=>recoveryRef.current,candidate:recoveryCandidate},fn);
   }
   function persistManuscript(){
     return persistManuscriptTransaction({store:manuscriptStore,getController:()=>recoveryRef.current,
@@ -400,11 +397,12 @@ function App(){
     return !clear&&paperDisplay.retain(preview.current,paperTarget(scope,targetFile));
   };
   const invalidate=(clear=false)=>{lifecycle.invalidate();const retained=retainLayoutHost(clear);dispatchLayout({type:'invalidate',clear,retained});};
-  const confirmDiscard=()=>!dirty||window.confirm('未保存の変更を破棄しますか？');
-  const confirmProjectDiscard=()=>!(dirty||themeDirty||settingsDirty)||window.confirm('未保存の原稿・テーマ・書籍設定を破棄しますか？');
+  const confirmDiscard=()=>confirmNavigationDiscard(manuscriptStore,message=>window.confirm(message));
+  const confirmProjectDiscard=()=>confirmNavigationDiscard(manuscriptStore,message=>window.confirm(message),{project:true,themeDirty,settingsDirty});
+  const navigationBlocked=()=>manuscriptNavigationBlocked({routeBlocked:routeBlockRef,working,composing,drafts:structuredDraftStore});
   async function io(fn){if(working.current)return;working.current=true;setBusy(true);try{await fn();}catch(e){setStatus(String(e.message??e));}finally{working.current=false;setBusy(false);}}
-  function open(){if(!confirmProjectDiscard())return;void io(()=>withProjectDiscard(async()=>{const next=await unwrap(api.open());if(next)await applyBook(next);}));}
-  function select(id){if(routeBlockRef.current||composing.current){setStatus('現在の操作を完了または取り消してから原稿を切り替えてください。');return;}if(file?.id===id){setCompactPane('editor');if(compactWidthRef.current)setCompactFocusRequest({pane:'editor',id});return;}if(!confirmDiscard())return;void io(()=>withDiscard(async()=>{const next=await unwrap(api.read(id));invalidate(true);dispatchManuscript({type:'clear-history'});installRead(next);setWritingPanel(null);setCompactPane('editor');if(compactWidthRef.current)setCompactFocusRequest({pane:'editor',id:next.id});setStatus(next.editable?'原稿を読み込みました。':'混在改行のため読み取り専用です。');}));}
+  function open(){if(navigationBlocked()||!confirmProjectDiscard())return;void io(()=>withProjectDiscard(async()=>{const next=await unwrap(api.open());if(next)await applyBook(next);}));}
+  function select(id){if(navigationBlocked()){setStatus('現在の操作を完了または取り消してから原稿を切り替えてください。');return;}if(manuscriptStore.getMetadata().file?.id===id){setCompactPane('editor');if(compactWidthRef.current)setCompactFocusRequest({pane:'editor',id});return;}if(!confirmDiscard())return;void io(()=>withDiscard(async()=>{const next=await unwrap(api.read(id));invalidate(true);dispatchManuscript({type:'clear-history'});installRead(next);setWritingPanel(null);setCompactPane('editor');if(compactWidthRef.current)setCompactFocusRequest({pane:'editor',id:next.id});setStatus(next.editable?'原稿を読み込みました。':'混在改行のため読み取り専用です。');}));}
   function save(){const current=manuscriptStore.getMetadata();if(composing.current||routeBlockRef.current||!current.file?.editable||!current.dirty)return;void io(async()=>{if(await persistManuscript())setStatus(manuscriptStore.getMetadata().dirty?'保存しました。新しい未保存の変更があります。':'保存しました。');});}
   const [includeOptionalSlots,setIncludeOptionalSlots]=useState(false);
   const [studyChoice,setStudyChoice]=useState('example'),[studyInstanceId,setStudyInstanceId]=useState(''),[answerTo,setAnswerTo]=useState('');
@@ -770,7 +768,8 @@ function App(){
   const [closeRequest,setCloseRequest]=useState(null),[closeError,setCloseError]=useState(''),[closeSaving,setCloseSaving]=useState(false);
   const closeDialog=useRef(null),closeAction=useRef(false),closeHandler=useRef(null);
   const closeBlocked=routeBlocked||measuring||creating||working.current;
-  const closeSaveAllowed=(!dirty||file?.editable)&&(!themeDirty||theme?.editable)&&(!settingsDirty||(!!validPaper(page)&&order.every(s=>['page','continuous'].includes(s.startOn))));
+  const currentCloseSaveAllowed=()=>canSaveBeforeClose(manuscriptStore,{themeDirty,themeEditable:theme?.editable,settingsDirty,settingsValid:!!validPaper(page)&&order.every(s=>['page','continuous'].includes(s.startOn))});
+  const closeSaveAllowed=currentCloseSaveAllowed();
   closeHandler.current=token=>{
     // Never move focus away from an active IME composition to show a dialog.
     if(settingsReview||recoveryOpen||composing.current||mathComposing.current||structuredComposing||isComposing){
@@ -778,12 +777,13 @@ function App(){
       void api.completeClose(token,'cancel').catch(e=>setStatus(String(e.message??e)));
       return;
     }
-    if(!closeBlocked&&!unsaved.length){
+    const blocked=closeBlocked||navigationBlocked();
+    if(!blocked&&!navigationState(manuscriptStore,{themeDirty,settingsDirty}).unsaved.length){
       working.current=true;setBusy(true);
       void withProjectDiscard(()=>api.completeClose(token,'exit')).catch(e=>{setCloseError(String(e.message??e));setCloseRequest({token,blocked:false});}).finally(()=>{working.current=false;setBusy(false);});
       return;
     }
-    setCloseError('');setCloseRequest({token,blocked:closeBlocked});
+    setCloseError('');setCloseRequest({token,blocked});
   };
   useEffect(()=>api.onCloseRequested(token=>closeHandler.current?.(token)),[]);
   useEffect(()=>{
@@ -793,8 +793,8 @@ function App(){
   },[closeRequest]);
   async function finishClose(decision){
     if(!closeRequest||closeAction.current)return;
-    if(decision!=='cancel'&&(closeRequest.blocked||routeBlocked||working.current||composing.current||mathComposing.current||measuring||creating))return;
-    if(decision==='save'&&!closeSaveAllowed)return;
+    if(decision!=='cancel'&&(closeRequest.blocked||navigationBlocked()||mathComposing.current||measuring||creating))return;
+    if(decision==='save'&&!currentCloseSaveAllowed())return;
     closeAction.current=true;setCloseSaving(true);setCloseError('');
     let saving=false;const completed=[];
     try{
@@ -820,7 +820,7 @@ function App(){
   const layoutLabel=layoutState.phase==='ready'?(layoutState.scope==='book'?'全冊':'選択原稿')+' '+layoutState.pages+'ページ（試作）':({idle:'未組版',stale:'組版の更新が必要',running:'組版中…',failed:'組版できませんでした'})[layoutState.phase];
   function navigate(next){
     if(next===mode)return;
-    if(busy||settingsReview||recoveryOpen||composing.current||structuredComposing||structuredDraftStore.getActive()||studyLinkDraft||mathDraft||referenceDraft||labOpen||paragraphOpen||studyOpen){setStatus('現在の操作を完了または取り消してから画面を切り替えてください。');return;}
+    if(navigationBlocked()){setStatus('現在の操作を完了または取り消してから画面を切り替えてください。');return;}
     if(next!=='home'&&!book)return;
     setCreating(false);setPreviewScopeOverride(null);setMode(next);setCompactPane('editor');setCompactFocusRequest(null);setWritingPanel(null);if(next==='home'){invalidate(true);resetScanSession();resetTextCache();resetMathCaches();resetParagraphCache();resetPageCache();setShowPerformance(false);setHomeTab('projects');setRecoveryHub(null);setRecoveryHubError('');}setShowSettings(next==='settings');
   }
@@ -846,14 +846,15 @@ function App(){
     return !!d.range&&typeof d.source==='string'&&!!book?.sections.some(s=>s.id===d.documentId&&s.editable);
   }
   function openDiagnostic(d){
-    if(routeBlockRef.current||composing.current||layoutState.phase!=='failed'||!layoutDiagnostics.includes(d)||!canOpenDiagnostic(d))return;
+    if(navigationBlocked()||layoutState.phase!=='failed'||!layoutDiagnostics.includes(d)||!canOpenDiagnostic(d))return;
     const job=generation.current;
     const reveal=()=>{
       pendingDiagnostic.current={job:generation.current,id:d.documentId,source:d.source,range:d.range};
       setMode('writing');setEditorView('source');setWritingPanel(null);setShowSettings(false);setShowPaper(false);setOutlineOpen(true);setCompactPane('editor');dispatchLayout({type:'close-diagnostics'});
     };
-    if(file?.id===d.documentId){
-      if(text!==d.source){setStatus('診断後に原稿が変更されました。再組版してください。');return;}
+    const current=manuscriptStore.getPreviewInput();
+    if(current.file?.id===d.documentId){
+      if(current.text!==d.source){setStatus('診断後に原稿が変更されました。再組版してください。');return;}
       reveal();return;
     }
     if(!confirmDiscard())return;
@@ -873,9 +874,9 @@ function App(){
     node.focus();node.setSelectionRange(p.range.start,p.range.end);syncSelection();
     setStatus('診断箇所を選択しました。修正後に再組版してください。');
   },[mode,file?.id,text,busy,showDiagnostics,editorView]);
-  function switchEditorView(next){if(routeBlocked||!file)return;setEditorView(next);setWritingPanel(null);setHasSelection(false);}
-  function openStructuredSource(range){if(routeBlocked||!file)return;pendingSource.current={job:generation.current,id:file.id,range};switchEditorView('source');}
-  useEffect(()=>{const p=pendingSource.current;if(!p||editorView!=='source'||mode!=='writing')return;pendingSource.current=null;if(p.job!==generation.current||p.id!==file?.id)return;textarea.current?.focus();textarea.current?.setSelectionRange(p.range.start,p.range.end);syncSelection();},[editorView,mode,file?.id]);
+  function switchEditorView(next){if(navigationBlocked()||!manuscriptStore.getMetadata().file)return;setEditorView(next);setWritingPanel(null);setHasSelection(false);}
+  function openStructuredSource(range){const current=manuscriptStore.getPreviewInput();if(navigationBlocked()||!current.file)return;pendingSource.current={job:generation.current,id:current.file.id,source:current.text,range};switchEditorView('source');}
+  useEffect(()=>{const p=pendingSource.current;if(!p||editorView!=='source'||mode!=='writing')return;pendingSource.current=null;const current=manuscriptStore.getPreviewInput(),node=textarea.current;if(p.job!==generation.current||p.id!==current.file?.id||p.source!==current.text||!node||node.value!==current.text)return;node.focus();node.setSelectionRange(p.range.start,p.range.end);syncSelection();},[editorView,mode,file?.id]);
   const currentHistory=activeStructuredHistory(manuscript);
   function structuredCommandDeps(){return {store:manuscriptStore,drafts:structuredDraftStore,generation};}
   function commitStructured(next,command){return commitStructuredCommand(structuredCommandDeps(),command,next,edit);}
