@@ -285,13 +285,18 @@ export function validBookMovePage(context,target,page){
 // One transient session owns its own retained computation snapshot. The
 // supplied measurement callback is serialized by the renderer measurement
 // lane. Superseded, conflicting or incomplete results never advance it.
-export function createBookPositionPreviewSession(){
-  let snapshot,epoch=0;
+export function createBookPositionPreviewSession(baseContext){
+  // The Engine retains value-only measurements behind an immutable handle.
+  // Borrow only the exact published job's base, never its mutable caches/DOM.
+  const base=baseContext?.geometryBase,job=baseContext?.job;
+  let snapshot=base,epoch=0;
+  const owns=context=>!base||context.geometryBase===base&&context.job===job&&context.selection.revision===baseContext.selection.revision&&context.selection.fingerprint===baseContext.selection.fingerprint;
   return {
     clear(){epoch++;snapshot=undefined;},
     async measure(context,action,values,measure,current,privateCaches={}){
       const generation=++epoch,active=()=>generation===epoch&&current();
       if(!active())return;
+      if(!owns(context))throw Error('Position preview base belongs to another published job');
       const commit=action==='move'?prepareBookFixedCommit(context,'move',values):action==='preferred'?prepareBookPreferredCommit(context,values):null;
       if(!['move','preferred'].includes(action))throw Error('Invalid position preview action');
       if(!commit)return;
