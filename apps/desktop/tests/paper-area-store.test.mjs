@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {validatePaperAreaDocument,encodePaperAreaDocument,decodePaperAreaDocument,setPaperAreaValue,setPaperAreaValues,bindPaperAreaDocument,createPaperAreaDraft} from '../paper-area-store.mjs';
+import {validatePaperAreaDocument,encodePaperAreaDocument,decodePaperAreaDocument,setPaperAreaValue,setPaperAreaValues,bindPaperAreaDocument,createPaperAreaDraft,createSavedPaperAreaHistory} from '../paper-area-store.mjs';
 const empty={schemaVersion:1,entries:[]};
 const width={documentId:'ch',persistentId:'q-1',axis:'width',value:50};
 const height={...width,axis:'height',value:25};
@@ -61,4 +61,30 @@ test('combined area proposal preserves omitted dimensions and applies both axes 
     assert.throws(()=>setPaperAreaValues(doc,{documentId:'ch',persistentId:'q-1',values}));
   }
   assert.deepEqual(doc.entries,[{documentId:'ch',persistentId:'q-1',minWidthPercent:50,minHeightPercent:25}]);
+});
+
+test('saved history moves only on successful acknowledgement, with revision and scope leases',()=>{
+  const h=createSavedPaperAreaHistory(),scope='book/ch/source-r1',s0={revision:null,document:empty};
+  const s1={revision:'r1',document:doc},edit=h.plan(scope,s0,'edit',doc);
+  assert.deepEqual(h.availability(scope,s0),{canUndo:false,canRedo:false});
+  h.accept(edit,s1);
+  assert.deepEqual(h.availability(scope,s1),{canUndo:true,canRedo:false});
+  assert.equal(h.plan('book/other',s1,'undo'),null);
+  assert.equal(h.plan(scope,{...s1,revision:'external'},'undo'),null);
+  assert.equal(h.plan(scope,{...s1,document:empty},'undo'),null);
+  const back=h.plan(scope,s1,'undo');
+  assert.deepEqual(back.next,empty);
+  assert.throws(()=>h.accept(back,{revision:'r2',document:doc}));
+  assert.equal(h.availability(scope,s1).canUndo,true);
+  const s2={revision:'r2',document:empty};
+  h.accept(back,s2);
+  assert.throws(()=>h.accept(back,s2));
+  const forward=h.plan(scope,s2,'redo');
+  assert.deepEqual(forward.next,doc);
+  h.accept(forward,s1);
+  const again=h.plan(scope,s1,'undo');h.accept(again,s2);
+  const changed=setPaperAreaValue(empty,width);
+  h.accept(h.plan(scope,s2,'edit',changed),{revision:'r3',document:changed});
+  assert.equal(h.availability(scope,{revision:'r3',document:changed}).canRedo,false);
+  h.clear();assert.equal(h.plan(scope,{revision:'r3',document:changed},'undo'),null);
 });
