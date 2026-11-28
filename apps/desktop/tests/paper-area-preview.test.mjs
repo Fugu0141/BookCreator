@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {prepareSavedAreaPreview,verifySavedAreaPreview,measureInlineAreaProposal,resolvePaperAreaSelection} from '../paper-area-preview.mjs';
+import {prepareSavedAreaPreview,verifySavedAreaPreview,measureInlineAreaProposal,resolvePaperAreaSelection,captureBookAreaLease,prepareBookAreaCommit} from '../paper-area-preview.mjs';
 const origin=(documentId,blockKey,persistentId)=>({documentId,blockKey,persistentId});
 const options={revision:'r1',fingerprint:'f1',width:1000,height:2000,sections:[{id:'a',blocks:[{origin:origin('a','40','q')}]},{id:'b',blocks:[{origin:origin('b','70','q')}]}]};
 const snapshot={revision:'saved',document:{schemaVersion:1,entries:[{documentId:'a',persistentId:'q',minHeightPercent:30},{documentId:'b',persistentId:'q',minWidthPercent:50}]}};
@@ -97,4 +97,28 @@ test('whole-book selection resolves the exact local identity, not same-named blo
   assert.equal(resolvePaperAreaSelection({...plan,fragments:[a,b,b]},'b','40'),null);
   assert.equal(resolvePaperAreaSelection({...plan,fragments:[a,b,{origin:origin('b','41','q')}]},'b','40'),null);
   assert.equal(resolvePaperAreaSelection({...plan,fragments:[a,{...b,placement:{fixed:true}}]},'b','40'),null);
+});
+
+test('book placement lease rejects unsaved or unmatched source and duplicate documents',()=>{
+  const hash='a'.repeat(64),other='b'.repeat(64);
+  const source=[{documentId:'a',revision:hash,source:'text'},{documentId:'b',revision:other,source:'other'}];
+  const input={snapshot:source,file:{id:'a',revision:hash},raw:'text',themeRevision:hash,settingsRevision:other};
+  const lease=captureBookAreaLease(input);
+  assert.deepEqual(lease,{themeRevision:hash,settingsRevision:other,documents:[{documentId:'a',revision:hash},{documentId:'b',revision:other}]});
+  for(const bad of [{dirty:true},{themeDirty:true},{settingsDirty:true},{raw:'changed'},{file:{id:'a',revision:other}},{themeRevision:null},{snapshot:[source[0],source[0]]}])assert.equal(captureBookAreaLease({...input,...bad}),null);
+});
+test('whole book save prepares every chapter but persists only the selected slice',()=>{
+  const plan={revision:'r1',fingerprint:'f1',fragments:[{origin:origin('a','40','q')},{origin:origin('b','70','q')}]};
+  const context={scope:'book',bookLease:{documents:[{documentId:'a'},{documentId:'b'}]},areaPrepared:prepareSavedAreaPreview(options,snapshot,{whole:true}),areaSnapshot:snapshot,options:{...options,pageCache:{}},plan,...resolvePaperAreaSelection(plan,'b','70')};
+  const commit=prepareBookAreaCommit(context,{width:75});
+  assert.equal(commit.documentId,'b');
+  assert.deepEqual(commit.value.entries,[{documentId:'b',persistentId:'q',minWidthPercent:75}]);
+  assert.equal(commit.prepared.intents.length,2);
+  assert.equal(commit.prepared.intents[0].placement.sizeConstraints.minHeightPercent,30);
+  assert.equal(commit.prepared.options.pageCache,undefined);
+  assert.equal(commit.expectedRevision,'saved');
+  assert.equal(prepareBookAreaCommit(context,{width:50}),null);
+  assert.throws(()=>prepareBookAreaCommit({...context,selection:{...context.selection,revision:'old'}},{width:75}));
+  assert.throws(()=>prepareBookAreaCommit({...context,bookLease:{documents:[{documentId:'a'}]}},{width:75}));
+  assert.equal(snapshot.document.entries[1].minWidthPercent,50);
 });
