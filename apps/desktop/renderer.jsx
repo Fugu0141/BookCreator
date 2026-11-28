@@ -45,7 +45,7 @@ import {manuscriptDirty,activeStructuredHistory,planStructuredCommit,planStructu
 import {createManuscriptStore} from './manuscript-store.mjs';
 import {persistManuscript as persistManuscriptTransaction} from './manuscript-persistence.mjs';
 import {SourceEditor} from './source-editor.jsx';
-import {captureSourceCommand,applySourceCommand} from './source-command.mjs';
+import {captureSourceCommand,applySourceCommand,isSourceCommandCurrent,captureDraftCommand,isDraftCommandCurrent} from './source-command.mjs';
 import {LivePreviewBridge} from './live-preview-bridge.jsx';
 const api=window.bookcreator;
 const studyNames={note:'補足',tip:'ポイント',warning:'注意',important:'重要',example:'例題',exercise:'練習問題',explanation:'解説'};
@@ -440,37 +440,43 @@ function App(){
     if(mathDraft&&!mathError)target.append(createPreviewMath(document,mathDraft.formula,mathDraft.kind==='inline'?'inline':'block',typography.mathFontFamily));
   },[mathDraft,mathError,typography.mathFontFamily]);
   function openMath(kind='display'){
-    const node=textarea.current;
-    if(busy||working.current||!file?.editable||!node||composing.current)return;
-    const start=node.selectionStart,end=node.selectionEnd,job=generation.current;
-    const open=context=>{
-      if(generation.current!==job||node.value!==text||composing.current||node.selectionStart!==start||node.selectionEnd!==end)throw Error('原稿の編集状態が変わりました。');
-      const target=kind==='inline'?inspectInlineMath(text,start,end,deps,context):(inspectComponentDisplayMath(text,start,end,deps,context)??inspectDisplayMath(text,start,end,scanDocument));
-      mathComposing.current=false;
-      setMathDraft({kind,start,end,component:target.component===true,formula:target.formula,mode:target.mode,numbered:kind==='display'&&!!target.numbered,equationId:kind==='display'?target.equationId:undefined,source:text,fileId:file.id,revision:file.revision,job:generation.current});
-    };
+    if(busy||working.current)return;
+    const commandDeps=sourceCommandDeps(),report=e=>setStatus('数式編集不可：'+String(e.message??e));
     try{
-      if(node.value!==text)throw Error('原稿の編集状態が変わりました。');
-      const nested=kind==='display'&&scanDocument(text).blocks.some(b=>b.kind==='directive'&&b.header.name!=='layout'&&start>=b.range.start&&start<b.range.end&&end<=b.range.end);
-      if(nested||kind==='inline')void io(async()=>{try{open({documents:await referenceDocuments(text),documentId:file.id});}catch(e){setStatus('数式編集不可：'+String(e.message??e));}});
+      const command=captureSourceCommand(commandDeps);
+      if(!command)return;
+      const {text:raw,file:targetFile,start,end,job}=command;
+      const open=context=>{
+        if(!isSourceCommandCurrent(commandDeps,command))throw Error('原稿の編集状態が変わりました。');
+        const target=kind==='inline'?inspectInlineMath(raw,start,end,deps,context):(inspectComponentDisplayMath(raw,start,end,deps,context)??inspectDisplayMath(raw,start,end,scanDocument));
+        mathComposing.current=false;
+        setMathDraft({kind,start,end,component:target.component===true,formula:target.formula,mode:target.mode,numbered:kind==='display'&&!!target.numbered,equationId:kind==='display'?target.equationId:undefined,source:raw,fileId:targetFile.id,revision:targetFile.revision,job,origin:command});
+      };
+      const nested=kind==='display'&&scanDocument(raw).blocks.some(b=>b.kind==='directive'&&b.header.name!=='layout'&&start>=b.range.start&&start<b.range.end&&end<=b.range.end);
+      if(nested||kind==='inline')void io(async()=>{try{open({documents:await referenceDocuments(raw,targetFile),documentId:targetFile.id});}catch(e){report(e);}});
       else open();
-    }catch(e){setStatus('数式編集不可：'+String(e.message??e));}
+    }catch(e){report(e);}
   }
   function applyMath(){
-    const node=textarea.current;
-    if(!mathDraft||busy||working.current||!file?.editable||!node||composing.current||mathComposing.current)return;
-    const apply=context=>{
-      if(mathStale||generation.current!==mathDraft.job||node.value!==mathDraft.source||composing.current||mathComposing.current)throw Error('原稿が変更されました。数式エディタを開き直してください。');
-      const plan=mathDraft.kind==='inline'?planInlineMath(text,mathDraft.start,mathDraft.end,mathDraft.formula,deps,context):mathDraft.component?(mathDraft.mode==='insert'&&mathDraft.numbered?planNumberedComponentDisplayMath(context.documents,context.documentId,mathDraft.start,mathDraft.end,mathDraft.formula,mathDraft.equationId,deps):planComponentDisplayMath(text,mathDraft.start,mathDraft.end,mathDraft.formula,deps,context)):planDisplayMath(text,mathDraft.start,mathDraft.end,mathDraft.formula,scanDocument,parseDisplayMath,mathDraft.mode==='insert'&&mathDraft.numbered?mathDraft.equationId:undefined);
-      const next=applyPatches(text,[plan.patch]);
-      setMathDraft(null);edit(next);setStatus((mathDraft.kind==='inline'?'本文内数式':'独立数式')+'を'+(plan.action==='apply'?'挿入':'更新')+'しました（未保存）。');
-      pendingEditSelection.current={node,fileId:file.id,job:generation.current,value:next,start:plan.selection.start,end:plan.selection.end};
-    };
+    const draft=mathDraft;
+    if(!draft||busy||working.current||mathComposing.current)return;
+    const commandDeps=sourceCommandDeps(),report=e=>setStatus('数式編集不可：'+String(e.message??e));
     try{
-      if(mathStale||node.value!==mathDraft.source)throw Error('原稿が変更されました。数式エディタを開き直してください。');
-      if(mathDraft.component||mathDraft.kind==='inline')void io(async()=>{try{apply({documents:await referenceDocuments(text),documentId:file.id});}catch(e){setStatus('数式編集不可：'+String(e.message??e));}});
+      const command=captureDraftCommand(commandDeps,draft);
+      if(!command)throw Error('原稿が変更されました。数式エディタを開き直してください。');
+      const {text:raw,file:targetFile}=command;
+      const assertCurrent=()=>{if(!isDraftCommandCurrent(commandDeps,command)||mathComposing.current)throw Error('原稿が変更されました。数式エディタを開き直してください。');};
+      const apply=context=>{
+        assertCurrent();
+        const plan=draft.kind==='inline'?planInlineMath(raw,draft.start,draft.end,draft.formula,deps,context):draft.component?(draft.mode==='insert'&&draft.numbered?planNumberedComponentDisplayMath(context.documents,context.documentId,draft.start,draft.end,draft.formula,draft.equationId,deps):planComponentDisplayMath(raw,draft.start,draft.end,draft.formula,deps,context)):planDisplayMath(raw,draft.start,draft.end,draft.formula,scanDocument,parseDisplayMath,draft.mode==='insert'&&draft.numbered?draft.equationId:undefined);
+        const next=applyPatches(raw,[plan.patch]);
+        assertCurrent();
+        setMathDraft(null);edit(next);queueSourceCommandSelection(command,plan,next);
+        setStatus((draft.kind==='inline'?'本文内数式':'独立数式')+'を'+(plan.action==='apply'?'挿入':'更新')+'しました（未保存）。');
+      };
+      if(draft.component||draft.kind==='inline')void io(async()=>{try{apply({documents:await referenceDocuments(raw,targetFile),documentId:targetFile.id});}catch(e){report(e);}});
       else apply();
-    }catch(e){setStatus('数式編集不可：'+String(e.message??e));}
+    }catch(e){report(e);}
   }
   const referenceStale=!!referenceDraft&&(referenceDraft.fileId!==file?.id||referenceDraft.revision!==file?.revision||referenceDraft.job!==generation.current||referenceDraft.source!==text);
   async function referenceDocuments(raw,targetFile=file){
@@ -482,43 +488,54 @@ function App(){
     });
   }
   function toggleEquationNumbering(){
-    const node=textarea.current;
-    if(busy||working.current||!file?.editable||!node||composing.current||node.value!==text)return;
-    const start=node.selectionStart,end=node.selectionEnd,job=generation.current;
-    void io(async()=>{
-      const documents=await referenceDocuments(text);
-      if(generation.current!==job||node.value!==text||composing.current||node.selectionStart!==start||node.selectionEnd!==end)throw Error('原稿が変更されました。');
-      const target=inspectComponentDisplayMath(text,start,end,deps,{documents,documentId:file.id})??inspectDisplayMath(text,start,end,scanDocument);
-      if(target.mode!=='edit')throw Error('既存の独立数式を選択してください。');
-      const enabled=!target.numbered;
-      const plan=planEquationNumbering(documents,file.id,start,end,enabled,enabled&&!target.equationId?'eq-'+crypto.randomUUID():undefined,deps);
-      const next=applyPatches(text,[plan.patch]);
-      setMathDraft(null);setReferenceDraft(null);edit(next);setStatus(enabled?'数式の採番を有効にしました（未保存）。':'数式の採番を解除しました（未保存）。');
-      const changed=generation.current;
-      requestAnimationFrame(()=>{if(textarea.current===node&&generation.current===changed&&node.value===next){node.focus();node.setSelectionRange(plan.selection.start,plan.selection.end);}});
-    });
+    if(busy||working.current)return;
+    const commandDeps=sourceCommandDeps();
+    try{
+      const command=captureSourceCommand(commandDeps);
+      if(!command)return;
+      const {text:raw,file:targetFile,start,end}=command;
+      void io(async()=>{
+        const documents=await referenceDocuments(raw,targetFile);
+        let enabled;
+        const {planned,next}=applySourceCommand(commandDeps,command,()=>{
+          const target=inspectComponentDisplayMath(raw,start,end,deps,{documents,documentId:targetFile.id})??inspectDisplayMath(raw,start,end,scanDocument);
+          if(target.mode!=='edit')throw Error('既存の独立数式を選択してください。');
+          enabled=!target.numbered;
+          return planEquationNumbering(documents,targetFile.id,start,end,enabled,enabled&&!target.equationId?'eq-'+crypto.randomUUID():undefined,deps);
+        },applyPatches,edit);
+        setMathDraft(null);setReferenceDraft(null);queueSourceCommandSelection(command,planned,next);
+        setStatus(enabled?'数式の採番を有効にしました（未保存）。':'数式の採番を解除しました（未保存）。');
+      });
+    }catch(e){setStatus(String(e.message??e));}
   }
   function openReference(){
-    const node=textarea.current;
-    if(busy||working.current||!file?.editable||!node||composing.current||node.value!==text)return;
-    const start=node.selectionStart,end=node.selectionEnd,job=generation.current;
-    if(start!==end){setStatus('参照挿入位置にカーソルを置いてください。');return;}
-    void io(async()=>{
-      const documents=await referenceDocuments(text);
-      if(generation.current!==job||node.value!==text||composing.current)throw Error('原稿が変更されました。');
-      const targets=equationReferenceTargets(documents,deps);
-      if(!targets.length)throw Error('ID付きの番号付き数式がありません。');
-      planEquationReference(documents,file.id,start,end,targets[0].id,'label-number',deps);
-      setReferenceDraft({start,end,job,fileId:file.id,revision:file.revision,source:text,documents,targets,targetId:targets[0].id,format:'label-number'});
-    });
+    if(busy||working.current)return;
+    const commandDeps=sourceCommandDeps();
+    try{
+      const command=captureSourceCommand(commandDeps);
+      if(!command)return;
+      const {text:raw,file:targetFile,start,end,job}=command;
+      if(start!==end){setStatus('参照挿入位置にカーソルを置いてください。');return;}
+      void io(async()=>{
+        const documents=await referenceDocuments(raw,targetFile);
+        if(!isSourceCommandCurrent(commandDeps,command))throw Error('原稿が変更されました。');
+        const targets=equationReferenceTargets(documents,deps);
+        if(!targets.length)throw Error('ID付きの番号付き数式がありません。');
+        planEquationReference(documents,targetFile.id,start,end,targets[0].id,'label-number',deps);
+        setReferenceDraft({start,end,job,fileId:targetFile.id,revision:targetFile.revision,source:raw,documents,targets,targetId:targets[0].id,format:'label-number',origin:command});
+      });
+    }catch(e){setStatus(String(e.message??e));}
   }
   function applyReference(){
-    const node=textarea.current,draft=referenceDraft;
-    if(!draft||busy||working.current||!file?.editable||!node||composing.current)return;
+    const draft=referenceDraft;
+    if(!draft||busy||working.current||composing.current)return;
+    const commandDeps=sourceCommandDeps();
     void io(async()=>{
-      if(referenceStale||node.value!==draft.source)throw Error('原稿が変更されました。参照選択を開き直してください。');
-      const documents=await referenceDocuments(text);
-      if(generation.current!==draft.job||node.value!==draft.source||composing.current||JSON.stringify(documents)!==JSON.stringify(draft.documents))throw Error('書籍が変更されました。参照選択を開き直してください。');
+      const command=captureDraftCommand(commandDeps,draft);
+      if(!command)throw Error('原稿が変更されました。参照選択を開き直してください。');
+      const {file,text}=command;
+      const documents=await referenceDocuments(text,file);
+      if(!isDraftCommandCurrent(commandDeps,command)||JSON.stringify(documents)!==JSON.stringify(draft.documents))throw Error('書籍が変更されました。参照選択を開き直してください。');
       if(draft.richReference){
         const structuredDraft=structuredDraftStore.getSnapshot();
         if(structuredComposing||structuredDraft!==draft.richReference)throw Error('文章の編集状態が変わりました。');
@@ -544,7 +561,7 @@ function App(){
       const plan=planEquationReference(documents,file.id,draft.start,draft.end,draft.targetId,draft.format,deps);
       const next=applyPatches(text,[plan.patch]);
       setReferenceDraft(null);if(draft.structured){setStructuredDraft(null);commitStructured(next);setStatus('数式参照を挿入しました（未保存）。参照を含む本文の追加編集はソース編集で行えます。');return;}edit(next);setStatus('数式参照を挿入しました（未保存）。');
-      pendingEditSelection.current={node,fileId:file.id,job:generation.current,value:next,start:plan.selection.start,end:plan.selection.end};
+      queueSourceCommandSelection(command,plan,next);
     });
   }
   const [inlineColor,setInlineColor]=useState('#c2410c'),[inlineFamily,setInlineFamily]=useState('monospace'),[inlineWeight,setInlineWeight]=useState(400),[inlineSize,setInlineSize]=useState('4.2');
