@@ -27,6 +27,7 @@ import {planListDraft,planListAction} from './structured-list.mjs';
 import {planMixedEdit,planMixedReference,planMixedRemoval,planMixedRange} from './structured-mixed.mjs';
 import {planStudyEdit} from './structured-study.mjs';
 import {inspectStudyLinks,planStudyLinks} from './structured-study-links.mjs';
+import {planStudyInstanceOperation} from './study-instance-operation.mjs';
 import {planStructuredEquation,structuredReferenceOffset} from './structured-equation.mjs';
 import {planBlockOperation} from './structured-operations.mjs';
 import {planStudyInsertion} from './study-insertion.mjs';
@@ -946,7 +947,7 @@ function App(){
   function structuredCommandDeps(){return {store:manuscriptStore,drafts:structuredDraftStore,generation};}
   function commitStructured(next,command){return commitStructuredCommand(structuredCommandDeps(),command,next,edit);}
   function restoreStructured(action){if(routeBlocked||working.current)return;if(!moveStructuredHistory(manuscriptStore,action,edit))return;setStatus(action==='undo'?'構造編集を元に戻しました。':'構造編集をやり直しました。');}
-  function performBlockOperation(request){if(routeBlocked||working.current||editorView!=='structured'||mode!=='writing')return;try{const command=captureStructuredCommand(structuredCommandDeps(),request.source);if(!command)return;const next=planBlockOperation(command.text,request,{scan:scanDocument,parseInline:parseStructuredInline,applyPatches,validateMath:parseDisplayMath,theme});commitStructured(next,command);setStatus('ブロック操作を反映しました。');return next;}catch(e){setStatus(String(e.message??e));}}
+  function performBlockOperation(request){if(routeBlocked||working.current||editorView!=='structured'||mode!=='writing')return;try{const command=captureStructuredCommand(structuredCommandDeps(),request.source);if(!command)return;if(request.action==='study-copy'||request.action==='study-delete'){void io(async()=>{const documents=await referenceDocuments(command.text,command.file);assertStructuredCommandCurrent(structuredCommandDeps(),command);const next=planStudyInstanceOperation(documents,command.file.id,request.range,request.action==='study-copy'?'duplicate':'delete',{deps,applyPatches,newId:request.action==='study-copy'?'study-'+crypto.randomUUID():undefined});commitStructured(next,command);setStatus('全冊の参照を確認し、教材部品の操作を反映しました（未保存）。');});return;}const next=planBlockOperation(command.text,request,{scan:scanDocument,parseInline:parseStructuredInline,applyPatches,validateMath:parseDisplayMath,theme});commitStructured(next,command);setStatus('ブロック操作を反映しました。');return next;}catch(e){setStatus(String(e.message??e));}}
   function structuredNumbering(source,row){
     if(routeBlocked||working.current||editorView!=='structured'||mode!=='writing')return;
     const command=captureStructuredCommand(structuredCommandDeps(),source);

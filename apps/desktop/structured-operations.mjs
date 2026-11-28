@@ -6,6 +6,9 @@ import {projectStudy} from './structured-study.mjs';
 const stripEnd=s=>s.replace(/(?:\r\n|\n)$/,'');
 const simple=row=>row&&row.payload!==null&&['paragraph','math'].includes(row.kind);
 const movable=row=>simple(row)||!!row?.study;
+// An anonymous, unlinked study block cannot be an explicit answer/reference
+// target in another manuscript. Identified or linked blocks remain protected.
+const copyable=row=>simple(row)||!!(row?.study&&!row.study.id&&!row.study.answerTo);
 // IDs and answer targets may move intact, but do not invert a linked pair.
 const linkedPair=(a,b)=>!!(a?.study?.id&&b?.study?.answerTo===a.study.id||b?.study?.id&&a?.study?.answerTo===b.study.id);
 const same=(a,b)=>a.kind===b.kind&&a.level===b.level&&stripEnd(a.raw)===stripEnd(b.raw);
@@ -34,14 +37,14 @@ export function canBlockOperation(source,rows,index,action){
     const other=action==='up'?index-1:index+1;
     return movable(row)&&movable(rows[other])&&!linkedPair(row,rows[other])&&blankGap(source,rows[Math.min(index,other)],rows[Math.max(index,other)]);
   }
-  if(!simple(row))return false;
+  if(!copyable(row))return false;
   if(action==='duplicate')return canBlockOperation(source,rows,index+1,'insert');
   if(action==='delete')return true;
   return false;
 }
 export function planBlockOperation(source,request,{scan,parseInline,applyPatches,validateMath,theme}){
-  const moving=request.action==='up'||request.action==='down';
-  const before=(moving?projectStructuredEditor:projectBlocks)(source,scan,parseInline),rows=before.rows;
+  const needsStudy=['up','down','duplicate','delete'].includes(request.action);
+  const before=(needsStudy?projectStructuredEditor:projectBlocks)(source,scan,parseInline),rows=before.rows;
   if(before.diagnostics.length||request.source!==source)throw Error('原稿が変化しました。構造を確認してください。');
   const {action,index}=request;
   const caretSplit=action==='split'&&Number.isSafeInteger(request.offset)&&rows[index]?.kind==='paragraph'&&rows[index].payload!==null;
