@@ -72,8 +72,9 @@ export function PaperSelectionOverlay({viewport,node,enabled,getDrop,onMove}){
 
 
 // Explicit move mode: overlays never enter the measured/printable tree.
-export function BookPositionOverlay({viewport,node,context,bounds,onCommit,onClose}){
+export function BookPositionOverlay({viewport,node,context,bounds,onCommit,onClose,preferredMode=false}){
   const [geometry,setGeometry]=useState(null),[proposal,setProposal]=useState(null),[ghost,setGhost]=useState(null),[invalid,setInvalid]=useState(false);
+  const [tx,setTx]=useState('5'),[ty,setTy]=useState('5');
   const gesture=useRef(null),latest=useRef(null);latest.current={context,proposal,onClose};
   const cancel=()=>{const g=gesture.current;gesture.current=null;setGhost(null);setInvalid(false);if(g?.node.hasPointerCapture(g.id))g.node.releasePointerCapture(g.id);};
   useLayoutEffect(()=>{
@@ -102,8 +103,10 @@ export function BookPositionOverlay({viewport,node,context,bounds,onCommit,onClo
   const display=ghost??position;
   const x=geometry.body.left+display.x/body.width*body.pixelWidth,y=geometry.body.top+display.y/body.height*body.pixelHeight;
   const rect=clipPaperRect({left:x,top:y,right:x+bounds.width/body.width*body.pixelWidth,bottom:y+bounds.height/body.height*body.pixelHeight},geometry.visible);
-  const panel=placePaperPropertyPanel(geometry.clipped,geometry.visible,{width:260,height:125});
+  const panel=placePaperPropertyPanel(geometry.clipped,geometry.visible,{width:260,height:preferredMode?235:125});
   const changed=!!proposal&&(proposal.x!==context.position.x||proposal.y!==context.position.y);
+  const parseTolerance=(v,max)=>/^\d+(?:\.\d{1,3})?$/.test(v)&&Number.isSafeInteger(Math.round(Number(v)*1000))&&Number(v)*1000<=max?Math.round(Number(v)*1000):null;
+  const tolerance={x:parseTolerance(tx,body.width),y:parseTolerance(ty,body.height)},validTolerance=tolerance.x!==null&&tolerance.y!==null;
   return <>
     <div className="paper-selection-frame" style={geometry.clipped}>
       <button id="book-paper-position-drag" type="button" className="paper-block-drag" aria-label="位置をドラッグ（矢印キーでも移動）" title="同じページ内で移動。矢印キーは1 mm、Shiftで5 mm"
@@ -113,10 +116,10 @@ export function BookPositionOverlay({viewport,node,context,bounds,onCommit,onClo
         onKeyDown={e=>{const dir={ArrowLeft:[-1,0],ArrowRight:[1,0],ArrowUp:[0,-1],ArrowDown:[0,1]}[e.key];if(!dir||!context.current()||gesture.current||e.ctrlKey||e.metaKey||e.altKey)return;e.preventDefault();e.stopPropagation();const step=e.shiftKey?5000:1000;const next={page:position.page,x:position.x+dir[0]*step,y:position.y+dir[1]*step};if(next.x>=0&&next.y>=0&&next.x<=bounds.maxX&&next.y<=bounds.maxY)setProposal(next);}}>✥</button>
     </div>
     {rect&&<div className="paper-drop-guide" aria-hidden="true" style={rect}/>}
-    <div className="paper-inline-area-toolbar" style={panel} role="group" aria-label="固定位置の移動案">
+    <div className="paper-inline-area-toolbar" style={panel} role="group" aria-label={preferredMode?'希望位置の移動案':'固定位置の移動案'}>
       <small role="status">{invalid?'本文領域外には移動できません。':display.page+1+'ページ · X '+display.x/1000+' / Y '+display.y/1000+' mm（未確定）'}</small>
-      <small>確定すると移動先を固定します。</small>
-      <div className="controls"><button id="book-paper-position-apply" type="button" disabled={!changed||!!gesture.current||!context.current()} onClick={()=>{if(changed&&!gesture.current&&context.current())onCommit(proposal);}}>移動先を固定して保存</button><button type="button" className="secondary-action" onClick={onClose}>取消</button></div>
+      {preferredMode?<><small>許容範囲内を優先。成立しない場合は通常配置に戻ります。</small><div className="controls"><label>横 ± mm <input type="number" min="0" max={body.width/1000} step="0.001" value={tx} onChange={e=>setTx(e.target.value)}/></label><label>縦 ± mm <input type="number" min="0" max={body.height/1000} step="0.001" value={ty} onChange={e=>setTy(e.target.value)}/></label></div></>:<small>確定すると移動先を固定します。</small>}
+      <div className="controls"><button id="book-paper-position-apply" type="button" disabled={(!preferredMode&&!changed)||(preferredMode&&!validTolerance)||!!gesture.current||!context.current()} onClick={()=>{if(!gesture.current&&context.current()){if(preferredMode&&validTolerance)onCommit({position,tolerance});else if(!preferredMode&&changed)onCommit(proposal);}}}>{preferredMode?'希望位置を保存':'移動先を固定して保存'}</button><button type="button" className="secondary-action" onClick={onClose}>取消</button></div>
     </div>
   </>;
 }
