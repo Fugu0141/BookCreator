@@ -1,5 +1,5 @@
 import React,{useLayoutEffect,useRef,useState} from 'react';
-import {clipPaperRect,placePaperPropertyPanel,paperPositionFromDrag,paperPositionFromPagePointer} from './paper-selection-geometry.mjs';
+import {clipPaperRect,placePaperPropertyPanel,paperPositionFromDrag,paperPositionFromPagePointer,resolvePaperSelectionNodes} from './paper-selection-geometry.mjs';
 import {createFullRetainedTextPagePreview,createParagraphMeasurementCache,createMathCompilationCache,createDisplayMathGeometryCache,createInlineMathGeometryCache} from '../../../BookCreator_LayoutEngine/dist/index.js';
 import {measurementLane} from './measurement-lane.mjs';
 import {createPreviewCheckpoint} from './preview-checkpoint.mjs';
@@ -188,4 +188,55 @@ export function BookPositionOverlay({viewport,node,context,bounds,onCommit,onClo
       <div className="controls"><button id="book-paper-position-apply" type="button" disabled={(!preferredMode&&!changed)||(preferredMode&&!validTolerance)||!!gesture.current||!context.current()||!!(liveKey&&live?.key===liveKey&&live.error)} onClick={()=>{if(!gesture.current&&context.current()){if(preferredMode&&validTolerance)onCommit({position,tolerance});else if(!preferredMode&&changed)onCommit(proposal);}}}>{preferredMode?'希望位置を保存':'移動先を固定して保存'}</button><button type="button" className="secondary-action" onClick={onClose}>取消</button></div>
     </div>
   </>;
+}
+
+
+// Read only the currently published shadow tree. Selection frames are
+// ordinary sibling UI, never layout inputs, printable DOM or hit targets.
+export function BookGroupSelectionOverlay({viewport,documentId,blockKeys,job,current,numbered=true,invalid=false}){
+  const [frames,setFrames]=useState([]),latest=useRef(null);
+  latest.current={current};
+  const keys=JSON.stringify(blockKeys);
+  useLayoutEffect(()=>{
+    const v=viewport.current,host=v?.firstElementChild,root=host?.shadowRoot;
+    if(!v||!root){setFrames([]);return;}
+    const selected=resolvePaperSelectionNodes(root.querySelectorAll('[data-block]'),documentId,JSON.parse(keys));
+    let raf=0,closed=false;
+    const update=()=>{
+      raf=0;if(closed)return;
+      if(!latest.current.current()||v.firstElementChild!==host||host.inert||!v.offsetWidth||!v.offsetHeight||!v.getClientRects().length){setFrames([]);return;}
+      const r=v.getBoundingClientRect(),sx=r.width/v.offsetWidth,sy=r.height/v.offsetHeight,left=r.left+v.clientLeft*sx,top=r.top+v.clientTop*sy;
+      const visible={left,top,right:left+v.clientWidth*sx,bottom:top+v.clientHeight*sy};
+      const next=selected.flatMap(({key,index,node})=>{
+        if(!node.isConnected||node.getRootNode()!==root)return [];
+        const rect=clipPaperRect(node.getBoundingClientRect(),visible);
+        return rect?[{key,index,rect}]:[];
+      });
+      setFrames(next);
+    };
+    const schedule=()=>{if(!closed&&!raf)raf=requestAnimationFrame(update);};
+    const observer=new ResizeObserver(schedule);
+    observer.observe(v);observer.observe(host);
+    for(const {node} of selected)observer.observe(node);
+    window.addEventListener('scroll',schedule,true);window.addEventListener('resize',schedule);
+    update();
+    return ()=>{closed=true;if(raf)cancelAnimationFrame(raf);observer.disconnect();window.removeEventListener('scroll',schedule,true);window.removeEventListener('resize',schedule);};
+  },[viewport,documentId,keys,job]);
+  return <div className="book-group-selection-layer" aria-hidden="true">{frames.map(({key,index,rect})=><div key={key} data-selection-index={index+1} className={'book-group-selection-frame'+(invalid?' is-incomplete':'')+(index===0?' is-anchor':'')} style={rect}>{numbered&&<span>{index+1}</span>}</div>)}</div>;
+}
+
+const groupLayoutNames={vertical:'縦並び',rows:'横並び・折返し',adaptiveRows:'適応型'};
+export function BookGroupControls({savedGroup,count,selecting,disabled,canStart,valid,anchorLabel,additional,layout,onLayout,onToggle,onRemove,onApply,onChange,onRelease}){
+  const [draft,setDraft]=useState(savedGroup?.layout??'vertical');
+  useLayoutEffect(()=>{setDraft(savedGroup?.layout??'vertical');},[savedGroup?.id,savedGroup?.layout]);
+  const choices=Object.entries(groupLayoutNames).map(([value,label])=><option key={value} value={value}>{label}</option>);
+  return <div className="paper-context-actions book-group-controls" role="group" aria-label="グループ配置">
+    {savedGroup?<><small className="book-group-state">グループ · {count}部品</small><label>配置 <select value={draft} disabled={disabled} onChange={e=>setDraft(e.target.value)}>{choices}</select></label><button type="button" disabled={disabled||draft===savedGroup.layout} onClick={()=>onChange(draft)}>配置を適用</button><button type="button" disabled={disabled} onClick={onRelease}>グループを解除</button></>:<>
+      <button id="book-paper-group-mode" type="button" aria-pressed={selecting} disabled={disabled||!canStart} onClick={onToggle}>{selecting?'選択を取消':'グループ化'}</button>
+      {selecting&&<><small className="book-group-instruction">紙面で追加選択・再クリックで解除。番号は選択順です。</small>
+      <div className="book-group-chips" aria-label="選択中の部品"><span className="book-group-chip is-anchor" title={anchorLabel}>1 · {anchorLabel}</span>{additional.map((entry,i)=><button type="button" key={entry.blockKey} className="book-group-chip" disabled={disabled} title={entry.label+' を選択解除'} aria-label={entry.label+' を選択解除'} onClick={()=>onRemove(entry.blockKey)}>{i+2} · {entry.label} ×</button>)}</div>
+      <small role="status" className="book-group-instruction">{count}件選択 · {valid?'グループ化できます':count<2?'もう1件以上選択してください':'同じ原稿内で連続する部品を選択してください'}</small>
+      <label>配置 <select value={layout} disabled={disabled} onChange={e=>onLayout(e.target.value)}>{choices}</select></label><button id="book-paper-group-apply" type="button" disabled={disabled||!valid} onClick={onApply}>グループ化して保存</button></>}
+    </>}
+  </div>;
 }
