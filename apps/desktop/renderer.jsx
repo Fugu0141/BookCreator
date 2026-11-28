@@ -85,7 +85,7 @@ async function registerProjectFonts(fonts){
   }
   return result;
 }
-async function resolvePreviewImage(token,id,current){if(typeof token!=='string'||!/^[a-f0-9]{64}$/.test(id))throw Error('Invalid preview image request');const bytes=await retryPreviewRead(()=>unwrap(api.readPreviewImage(token,id)),{current,category:'image'});return new Blob([bytes],{type:'image/png'});}
+async function resolvePreviewImage(token,id,current,signal){if(typeof token!=='string'||!/^[a-f0-9]{64}$/.test(id))throw Error('Invalid preview image request');const bytes=await retryPreviewRead(()=>unwrap(api.readPreviewImage(token,id)),{current,category:'image',signal});return new Blob([bytes],{type:'image/png'});}
 const unwrap=unwrapIpc;
 function validPaper(page){try{return page?paperGeometry(page):null;}catch{return null;}}
 function App(){
@@ -103,7 +103,7 @@ function App(){
   },[useFull]);
   const {dispatch:dispatchManuscript}=manuscriptStore;
   const [book,setBook]=useState(null),[status,setStatus]=useState('book.yaml を開いてください。'),[busy,setBusy]=useState(true);
-  const resolveImage=(id,current)=>resolvePreviewImage(book?.settingRecovery?.token,id,current);
+  const resolveImage=(id,current,signal)=>resolvePreviewImage(book?.settingRecovery?.token,id,current,signal);
   const [mode,setMode]=useState('home'),[showPaper,setShowPaper]=useState(false),[livePreview,setLivePreview]=useState(true);
   // CSS viewport width, not physical pixels: reacts to window size and UI zoom.
   const [compactWriting,setCompactWriting]=useState(()=>window.innerWidth<=900);
@@ -668,7 +668,7 @@ function App(){
     try{
       const input=describeLayoutInput({whole,file,raw,page,savedSettings,typography,theme,fonts,order,job,bundledFingerprint:__BUNDLED_FONT_FINGERPRINT__},{paperGeometry,hasDynamicLabels,hasStudyNumbering});
       const current=()=>layoutScheduler.isCurrent(job);
-      const snapshot=whole||input.needsContext?await retryPreviewRead(()=>unwrap(api.readPreviewBook(book.settingRecovery.token)),{current,category:'source'}):undefined;
+      const snapshot=whole||input.needsContext?await retryPreviewRead(()=>unwrap(api.readPreviewBook(book.settingRecovery.token)),{current,category:'source',signal}):undefined;
       if(!layoutScheduler.isCurrent(job))return;
       phase='prepare';const preparationStarted=performance.now();
       documents=collectLayoutDocuments(input,snapshot);
@@ -714,7 +714,7 @@ function App(){
         if(!stillCurrent)return;
       }
       const geometry=input.geometry;
-      const previewOptions={...options,paper:geometry.paper,measurementCache,paragraphCache,pageCache,...mathOptions,collectTimings:true,skipSinglePageProvisional:directSinglePage,resolveImage:id=>resolveImage(id,current)};
+      const previewOptions={...options,paper:geometry.paper,measurementCache,paragraphCache,pageCache,...mathOptions,collectTimings:true,skipSinglePageProvisional:directSinglePage,resolveImage:id=>resolveImage(id,current,signal)};
       const target=diagnosticTarget,display=paperDisplay;
       const sparse=(sparsePaperPages||retainedMode)&&!pageCache&&!reusePaperPages;
       const lease=sparse?display.getSparseBase(preview.current,target):null;
