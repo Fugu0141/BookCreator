@@ -178,7 +178,7 @@ export function ComponentLab({design,typography,width,height,onApply:saveDesign,
       if(!target.current)return;
       target.current.replaceChildren(result.element);
       const root=result.element.shadowRoot;
-      dragCleanup.current=installCanvasDrag(root,{smartSnap:()=>smartSnapRef.current,ratioLocked:id=>ratioRef.current.has(id),isLocked:id=>isComponentLocked(historyRef.current.present.children,id,locksRef.current),lookup:id=>locate(value.children,id),flowDirection:entry=>entry.parent?.direction??value.direction,onSelect:id=>{selectSingle(id);highlightCanvasSelection(root,id,id=>isComponentLocked(historyRef.current.present.children,id,locksRef.current));},onActive:setDragging,onReorder:(id,index)=>{
+      dragCleanup.current=installCanvasDrag(root,{smartSnap:()=>smartSnapRef.current,ratioLocked:id=>ratioRef.current.has(id),isLocked:id=>isComponentLocked(historyRef.current.present.children,id,locksRef.current),lookup:id=>locate(value.children,id),flowDirection:entry=>entry.parent?.direction??value.direction,flowContainer:entry=>entry.parent??value,onSelect:id=>{selectSingle(id);highlightCanvasSelection(root,id,id=>isComponentLocked(historyRef.current.present.children,id,locksRef.current));},onActive:setDragging,onReorder:(id,index)=>{
         if(!measurement.current.isCurrent(job))return;
         const current=historyRef.current.present,where=locate(current.children,id);
         const direction=where?.parent?.direction??current.direction;
@@ -187,6 +187,12 @@ export function ComponentLab({design,typography,width,height,onApply:saveDesign,
           const children=[...a];const [item]=children.splice(where.index,1);children.splice(index,0,item);return children;
         })};
         // commit also enforces locks of other siblings and records one undo step.
+        if(commit(next))void measure(next,id);
+      },onFlowResize:(id,patch)=>{
+        if(!measurement.current.isCurrent(job))return;
+        const current=historyRef.current.present,where=locate(current.children,id);
+        if(!where||isComponentLocked(current.children,id,locksRef.current)||!['row','column'].includes(where.parent?.direction??current.direction))return;
+        const next={...current,children:editChildren(current.children,where.parent?.id??null,a=>a.map(c=>c.id===id?{...c,...patch}:c))};
         if(commit(next))void measure(next,id);
       },onCommit:(id,geometry)=>{
         if(!measurement.current.isCurrent(job))return;
