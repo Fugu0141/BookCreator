@@ -93,13 +93,19 @@ export async function runBookBenchmark(win,app,root,fixture){
   if(await readFile(join(root,'book.yaml'),'utf8')!==fixture.manifest)throw Error('Benchmark changed manifest');
   await click('#performance-toggle');
   await until('metrics',"document.querySelector('#performance-summary tbody tr[data-stage=layout][data-category=book]')?.dataset.success>0&&document.querySelector('#performance-memory')?.dataset.phase==='ready'");
-  async function readPhaseSample(scope,enabled,mathEnabled=false,paragraphEnabled=false,pageEnabled=false,reuseEnabled=false){
-    const selector='#performance-phase-summary tr[data-scope='+scope+'][data-cache-enabled='+String(enabled)+'][data-math-cache-enabled='+String(mathEnabled)+'][data-paragraph-cache-enabled='+String(paragraphEnabled)+'][data-page-cache-enabled='+String(pageEnabled)+'][data-reuse-paper-pages='+String(reuseEnabled)+'][data-sparse-paper-pages=false]';
-    const sample=await raw("(()=>{const e=document.querySelector("+JSON.stringify(selector)+");return e?{count:Number(e.dataset.count),timings:JSON.parse(e.dataset.latest)}:null;})()");
+  function phaseSelector(scope,enabled,mathEnabled=false,paragraphEnabled=false,pageEnabled=false,reuseEnabled=false){
+    return '#performance-phase-summary tr[data-scope='+scope+'][data-cache-enabled='+String(enabled)+'][data-math-cache-enabled='+String(mathEnabled)+'][data-paragraph-cache-enabled='+String(paragraphEnabled)+'][data-page-cache-enabled='+String(pageEnabled)+'][data-reuse-paper-pages='+String(reuseEnabled)+'][data-sparse-paper-pages=false][data-retained-preview=false]';
+  }
+  function validatePhaseSample(sample,scope,enabled){
     if(!sample||!Number.isSafeInteger(sample.count)||sample.count<1||
       Object.keys(sample.timings).length!==phaseKeys.length||!phaseKeys.every(k=>Number.isFinite(sample.timings[k])&&sample.timings[k]>=0))
       throw Error('Missing or invalid phase metrics: '+scope+' '+enabled);
     return sample;
+  }
+  async function readPhaseSample(scope,enabled,mathEnabled=false,paragraphEnabled=false,pageEnabled=false,reuseEnabled=false){
+    const selector=phaseSelector(scope,enabled,mathEnabled,paragraphEnabled,pageEnabled,reuseEnabled);
+    const sample=await raw("(()=>{const e=document.querySelector("+JSON.stringify(selector)+");return e?{count:Number(e.dataset.count),timings:JSON.parse(e.dataset.latest)}:null;})()");
+    return validatePhaseSample(sample,scope,enabled);
   }
   await readPhaseSample('manuscript',false,false,true);
   await readPhaseSample('book',false,false,true);
@@ -365,8 +371,10 @@ export async function runBookBenchmark(win,app,root,fixture){
   }
   async function readPartial(enabled){
     await click('#performance-toggle');
-    const phase=await readPhaseSample('manuscript',false,false,true,false,enabled),stats=await paragraphStats();
-    await click('#performance-close');return {phase,stats};
+    // Read both snapshots in the same browser task and from the exact mode.
+    const selector=phaseSelector('manuscript',false,false,true,false,enabled);
+    const {phase,stats}=await raw("(()=>{const e=document.querySelector("+JSON.stringify(selector)+");return {phase:e?{count:Number(e.dataset.count),timings:JSON.parse(e.dataset.latest)}:null,stats:JSON.parse(document.querySelector('#performance-paragraph-cache').dataset.stats)};})()");
+    await click('#performance-close');return {phase:validatePhaseSample(phase,'manuscript',false),stats};
   }
   await setPartial(false);
   await measure('partial-open','manuscript',()=>click('[data-section='+large.id+']'),"document.querySelector('#source').value==="+JSON.stringify(large.source));
@@ -385,7 +393,8 @@ export async function runBookBenchmark(win,app,root,fixture){
       await setPartial(enabled);
       // A first partial-mode sample does not exist until the edit succeeds.
       await click('#performance-toggle');
-      const beforeCount=await raw("Number(document.querySelector('#performance-phase-summary tr[data-scope=manuscript][data-cache-enabled=false][data-math-cache-enabled=false][data-paragraph-cache-enabled=true][data-page-cache-enabled=false][data-reuse-paper-pages="+String(enabled)+"][data-sparse-paper-pages=false]')?.dataset.count??0)");
+      const selector=phaseSelector('manuscript',false,false,true,false,enabled);
+      const beforeCount=await raw("Number(document.querySelector("+JSON.stringify(selector)+")?.dataset.count??0)");
       await click('#performance-close');
       await raw("(()=>{const h=document.querySelector('#preview > div');window.__bcPartialBenchmark={host:h,pages:[...h.shadowRoot.querySelectorAll('[data-page]')]};document.querySelector('#source').focus();})()");
       const label='partial-edit-pair-'+pair+'-'+arm;
@@ -397,7 +406,7 @@ export async function runBookBenchmark(win,app,root,fixture){
       if(editedPaper===undefined)editedPaper=signature;
       else if(editedPaper!==signature)throw Error('Partial edit paper differs between modes');
       const after=await readPartial(enabled);
-      if(after.phase.count!==beforeCount+1||after.stats.misses-prime.stats.misses!==1||after.stats.hits<=prime.stats.hits)throw Error('Expected one edit and one remeasured paragraph');
+      if(after.phase.count!==beforeCount+1||after.stats.misses-prime.stats.misses!==1||after.stats.hits<=prime.stats.hits)throw Error('Expected one edit and one remeasured paragraph: '+JSON.stringify({label,beforeCount,afterCount:after.phase.count,prime:prime.stats,after:after.stats,missDelta:after.stats.misses-prime.stats.misses,hitDelta:after.stats.hits-prime.stats.hits,identity}));
       const sample=samples.find(s=>s.label===label);
       partialComparisons.push({pair,arm,elapsedMs:sample.elapsedMs,timings:after.phase.timings,memory:sample.memory,identity});
       await raw("document.querySelector('#source').focus()");
