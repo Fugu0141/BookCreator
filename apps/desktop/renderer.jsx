@@ -736,7 +736,7 @@ function App(){
       if(host){
         delete host.dataset.retainedWork;
         if(retainedMode&&!sparseFallback&&result.paginationWork&&result.measurementWork){
-          host.dataset.retainedWork=JSON.stringify({pagination:result.paginationWork,measurement:result.measurementWork,scan:{hits:scanAfter.hits-scanBefore.hits,misses:scanAfter.misses-scanBefore.misses},priorityPages,firstVisitedPage,provisionalCount,checkpoint:checkpoint?.snapshot(),cancelledJobs:cancelledPreviewLog.take(diagnosticTarget),hostTiming:{preparationMs,preparationYieldMs,publicationMs:performance.now()-presentationStarted,publicationStages}});
+          host.dataset.retainedWork=JSON.stringify({pagination:result.paginationWork,measurement:result.measurementWork,images:result.imageWork,scan:{hits:scanAfter.hits-scanBefore.hits,misses:scanAfter.misses-scanBefore.misses},priorityPages,firstVisitedPage,provisionalCount,checkpoint:checkpoint?.snapshot(),cancelledJobs:cancelledPreviewLog.take(diagnosticTarget),hostTiming:{preparationMs,preparationYieldMs,publicationMs:performance.now()-presentationStarted,publicationStages}});
         }
       }
       const {pages,retained}=publication;
