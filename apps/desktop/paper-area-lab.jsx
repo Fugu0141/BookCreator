@@ -44,12 +44,12 @@ export function PaperAreaLab({context,onClose}){
       const r=node.getBoundingClientRect(),b=body.getBoundingClientRect(),w=wrapper.getBoundingClientRect();
       const occupied=placed.placement.occupiedRect??placed.placement.rect;
       if(!b.width||!b.height){setRect(null);return;}
-      setRect({left:r.left-w.left,top:r.top-w.top,width:occupied.width/context.options.width*b.width,height:occupied.height/context.options.height*b.height,bodyWidth:b.width,bodyHeight:b.height});
+      setRect({left:r.left-w.left,top:r.top-w.top,width:occupied.width/context.options.width*b.width,height:Math.max(r.height,(occupied.height-(draft.document.entries.find(e=>e.documentId===selection.documentId&&e.persistentId===context.persistentId)?.spaceAfter??0))/context.options.height*b.height),bodyWidth:b.width,bodyHeight:b.height});
     };
     const observer=new ResizeObserver(measure);observer.observe(node);observer.observe(body);observer.observe(wrapper);
     window.addEventListener('resize',measure);measure();
     return ()=>{observer.disconnect();window.removeEventListener('resize',measure);};
-  },[placed,context,selection.documentId,selection.blockKey]);
+  },[placed,context,selection.documentId,selection.blockKey,draft.document]);
   function cancel(){
     const g=active.current;active.current=null;setGhost(null);
     if(g?.node.hasPointerCapture(g.id))g.node.releasePointerCapture(g.id);
