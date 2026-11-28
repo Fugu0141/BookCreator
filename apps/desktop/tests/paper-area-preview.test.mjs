@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {prepareSavedAreaPreview,verifySavedAreaPreview,measureInlineAreaProposal,resolvePaperAreaSelection,captureBookAreaLease,prepareBookAreaCommit,prepareBookAreaRestore,acknowledgeBookAreaCommit,prepareBookFixedRelease,resolveBookFixedSelection,prepareBookFixedCommit,resolveBookMoveBounds,prepareBookPreferredCommit} from '../paper-area-preview.mjs';
+import {prepareSavedAreaPreview,verifySavedAreaPreview,measureInlineAreaProposal,resolvePaperAreaSelection,captureBookAreaLease,prepareBookAreaCommit,prepareBookAreaRestore,acknowledgeBookAreaCommit,prepareBookFixedRelease,resolveBookFixedSelection,prepareBookFixedCommit,resolveBookMoveBounds,prepareBookPreferredCommit,prepareBookGroupCommit,prepareBookGroupRelease,resolveBookGroupMembers} from '../paper-area-preview.mjs';
 const origin=(documentId,blockKey,persistentId)=>({documentId,blockKey,persistentId});
 const options={revision:'r1',fingerprint:'f1',width:1000,height:2000,sections:[{id:'a',blocks:[{origin:origin('a','40','q')}]},{id:'b',blocks:[{origin:origin('b','70','q')}]}]};
 const snapshot={revision:'saved',document:{schemaVersion:1,entries:[{documentId:'a',persistentId:'q',minHeightPercent:30},{documentId:'b',persistentId:'q',minWidthPercent:50}]}};
@@ -258,4 +258,31 @@ test('preferred position is distinct from hard lock; both honored and fallback m
   assert.deepEqual(prepareBookFixedRelease(saved,'a','q','preferred').value.entries,snapshot.document.entries.slice(0,1));
   assert.equal(prepareBookPreferredCommit(saved,preferred),null);
   assert.throws(()=>prepareBookPreferredCommit(context,{...preferred,tolerance:{x:-1,y:0}}));
+});
+
+
+test('group commits are atomic, consecutive, within one manuscript, and verified on one page',()=>{
+  const blocks=['a','b','c'].map((k,i)=>({origin:origin('a',k,k+'-id')}));
+  const groupOptions={...options,sections:[{id:'a',blocks}]};
+  const areaSnapshot={revision:'a'.repeat(64),document:{schemaVersion:1,entries:[{documentId:'a',persistentId:'a-id',minWidthPercent:30}]}};
+  const fragments=blocks.map((b,i)=>({...b,placement:{page:0,fixed:false,rect:{x:0,y:i*100,width:300,height:100}}}));
+  const plan={revision:'r1',fingerprint:'f1',fragments},selected=resolveBookFixedSelection(plan,'a','a');
+  const context={scope:'book',bookLease:{documents:[{documentId:'a'}]},areaSnapshot,areaPrepared:prepareSavedAreaPreview(groupOptions,areaSnapshot,{whole:true}),options:groupOptions,plan,...selected};
+  assert.equal(resolveBookGroupMembers(context,'a',['a','c']),null);
+  assert.equal(resolveBookGroupMembers(context,'a',['a','a']),null);
+  assert.equal(resolveBookGroupMembers({...context,options:{...groupOptions,sections:[{id:'a',blocks:[blocks[0],{kind:'pagebreak'},blocks[1],blocks[2]]}]}},'a',['a','b']),null);
+  assert.deepEqual(resolveBookGroupMembers(context,'a',['b','a']),['a-id','b-id']);
+  const commit=prepareBookGroupCommit(context,{groupId:'g',blockKeys:['a','b'],layout:'rows'});
+  assert.equal(commit.value.entries.length,2);
+  assert.equal(commit.value.entries[0].minWidthPercent,30);
+  assert.deepEqual(commit.prepared.intents[1].placement,{keepTogetherGroup:'g',keepTogetherLayout:'rows',sideBySide:true});
+  const result=fragments=>({intelligentLayout:{status:'placed',revision:'r1',fingerprint:'f1',fragments}});
+  assert.doesNotThrow(()=>verifySavedAreaPreview(commit.prepared,result(fragments)));
+  assert.throws(()=>verifySavedAreaPreview(commit.prepared,result([fragments[0],{...fragments[1],placement:{...fragments[1].placement,page:1}},fragments[2]])),/同一ページ/);
+  const saved={...context,areaPrepared:commit.prepared,areaSnapshot:{...areaSnapshot,document:commit.prepared.document}};
+  assert.throws(()=>prepareBookFixedCommit(saved,'lock'));
+  assert.throws(()=>prepareBookGroupCommit(context,{groupId:'g',blockKeys:['a','c'],layout:'vertical'}));
+  assert.deepEqual(prepareBookGroupCommit(saved,{groupId:'g',layout:'vertical'}).prepared.intents[1].placement,{keepTogetherGroup:'g',keepTogetherLayout:'vertical'});
+  assert.deepEqual(prepareBookGroupCommit(saved,{groupId:'g',layout:null}).value,areaSnapshot.document);
+  assert.deepEqual(prepareBookGroupRelease(saved,'a','g').value,areaSnapshot.document);
 });
