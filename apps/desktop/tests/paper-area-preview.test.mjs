@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {prepareSavedAreaPreview,verifySavedAreaPreview,measureInlineAreaProposal,resolvePaperAreaSelection,captureBookAreaLease,prepareBookAreaCommit,prepareBookAreaRestore,acknowledgeBookAreaCommit,prepareBookFixedRelease,resolveBookFixedSelection,prepareBookFixedCommit,resolveBookMoveBounds,prepareBookPreferredCommit,prepareBookGroupCommit,prepareBookGroupRelease,resolveBookGroupMembers,validBookMovePage,createBookPositionPreviewSession} from '../paper-area-preview.mjs';
+import {prepareSavedAreaPreview,verifySavedAreaPreview,measureInlineAreaProposal,resolvePaperAreaSelection,captureBookAreaLease,prepareBookAreaCommit,prepareBookAreaRestore,acknowledgeBookAreaCommit,prepareBookFixedRelease,resolveBookFixedSelection,prepareBookFixedCommit,resolveBookMoveBounds,prepareBookPreferredCommit,prepareBookGroupCommit,prepareBookGroupRelease,resolveBookGroupMembers,validBookMovePage,createBookPositionPreviewSession,measureBookPositionGeometry} from '../paper-area-preview.mjs';
 const origin=(documentId,blockKey,persistentId)=>({documentId,blockKey,persistentId});
 const options={revision:'r1',fingerprint:'f1',width:1000,height:2000,sections:[{id:'a',blocks:[{origin:origin('a','40','q')}]},{id:'b',blocks:[{origin:origin('b','70','q')}]}]};
 const snapshot={revision:'saved',document:{schemaVersion:1,entries:[{documentId:'a',persistentId:'q',minHeightPercent:30},{documentId:'b',persistentId:'q',minWidthPercent:50}]}};
@@ -325,4 +325,22 @@ test('position live session adopts only verified complete current results and re
   session.clear();
   await session.measure(context,'move',first,async(o,previous)=>{assert.equal(previous,undefined);return result(first,one);},()=>true);
   assert.equal(context.areaSnapshot.document.entries[0].bookFixed,undefined);
+});
+
+
+test('geometry-only position guide verifies intents and rejects obsolete generations without a printable result',async()=>{
+  const fragment={origin:origin('a','40','q'),placement:{page:2,fixed:false,rect:{x:100,y:300,width:400,height:600},occupiedRect:{x:100,y:300,width:500,height:700}}};
+  const other={origin:origin('b','70','q'),placement:{page:2,fixed:false,rect:{x:0,y:1200,width:500,height:100}}};
+  const plan={revision:'r1',fingerprint:'f1',pageCount:5,fragments:[fragment,other]};
+  const selected=resolveBookFixedSelection(plan,'a','40');
+  const context={scope:'book',bookLease:{documents:[{documentId:'a'},{documentId:'b'}]},areaPrepared:prepareSavedAreaPreview(options,snapshot,{whole:true}),areaSnapshot:snapshot,options,plan,...selected};
+  const position={page:3,x:100,y:300},locked={...fragment,placement:{...fragment.placement,page:3,fixed:true}};
+  const layout={status:'placed',revision:'r1',fingerprint:'f1',fragments:[locked,other]};
+  const outcome={status:'ready',generation:1,draft:{kind:'intelligent-geometry-draft',pageCount:5,layout}};
+  const session={request:async input=>{assert.deepEqual(input.intents[0].placement.fixed,position);return outcome;},isCurrent:g=>g===1};
+  const result=await measureBookPositionGeometry(context,'move',position,session,()=>true);
+  assert.equal(result.changed.length,1);assert.equal(result.changed[0].page,3);assert.equal(result.changed[0].selected,true);assert.equal(result.element,undefined);
+  assert.equal(await measureBookPositionGeometry(context,'move',position,{...session,isCurrent:()=>false},()=>true),undefined);
+  await assert.rejects(()=>measureBookPositionGeometry(context,'move',position,{...session,request:async()=>({...outcome,draft:{...outcome.draft,layout:{...layout,fragments:[fragment,other]}}})},()=>true),/固定位置/);
+  assert.equal(snapshot.document.entries[0].bookFixed,undefined);
 });
