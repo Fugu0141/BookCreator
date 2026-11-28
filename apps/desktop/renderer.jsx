@@ -32,7 +32,7 @@ import {planStructuredEquation,structuredReferenceOffset} from './structured-equ
 import {planBlockOperation,canBlockOperation,paperMoveBounds,planPaperRangeMove} from './structured-operations.mjs';
 import {projectStructuredEditor} from './structured-projection.mjs';
 import {resolvePaperBlock,resolvePaperDrop} from './paper-block-selection.mjs';
-import {paperBindingAtPoint} from './paper-navigation.mjs';
+import {paperBindingAtPoint,paperBlockRangeForNode} from './paper-navigation.mjs';
 import {PaperSelectionOverlay} from './paper-selection-overlay.jsx';
 import {planStudyInsertion} from './study-insertion.mjs';
 const parseStructuredInline=value=>parsePreviewInline(value,0,parsePreviewMath);
@@ -850,7 +850,7 @@ function App(){
       const command=captureStructuredCommand(structuredCommandDeps(),source,null);
       if(!command||command.file.id!==documentId)return true;
       const model=projectStructuredEditor(source,scanDocument,parseStructuredInline);
-      const selected=model.diagnostics.length?null:resolvePaperBlock(model.rows,range);
+      const selected=model.diagnostics.length?null:resolvePaperBlock(model.rows,paperBlockRangeForNode(node));
       if(!selected){setStatus('この紙面断片は安全に編集対象を特定できません。');return true;}
       const {row,index}=selected;
       setPaperBlock({command,job,index,rows:model.rows,bounds:paperMoveBounds(source,model.rows,index),node:node?.closest('[data-block]')??null,label:row.raw.trim().slice(0,80),up:canBlockOperation(source,model.rows,index,'up'),down:canBlockOperation(source,model.rows,index,'down')});
@@ -864,7 +864,7 @@ function App(){
     const r=v.getBoundingClientRect(),sx=r.width/v.offsetWidth,sy=r.height/v.offsetHeight;
     const left=r.left+v.clientLeft*sx,top=r.top+v.clientTop*sy;
     if(x<left||x>=left+v.clientWidth*sx||y<top||y>=top+v.clientHeight*sy)return null;
-    const binding=paperBindingAtPoint(root,x,y),target=resolvePaperDrop(paperBlock,binding);
+    const binding=paperBindingAtPoint(root,x,y),target=resolvePaperDrop(paperBlock,binding&&{...binding,range:binding.blockRange});
     const node=binding?.node?.closest('[data-block]');
     return target!==null&&node&&node.getRootNode()===root?{target,node}:null;
   }
