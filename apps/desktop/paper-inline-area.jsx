@@ -1,4 +1,5 @@
 import React,{useLayoutEffect,useRef,useState} from 'react';
+import {createPortal} from 'react-dom';
 import {beginPaperAreaDrag,previewPaperAreaDrag,finishPaperAreaDrag,beginPaperGapDrag,previewPaperGapDrag,finishPaperGapDrag,parsePaperPropertyNumber} from './paper-area-intent.mjs';
 import {clipPaperRect,placePaperPropertyPanel} from './paper-selection-geometry.mjs';
 import {createPlainTextPagePreview,createParagraphMeasurementCache,createMathCompilationCache,createDisplayMathGeometryCache} from '../../../BookCreator_LayoutEngine/dist/index.js';
@@ -8,7 +9,7 @@ import {MAX_PAPER_TRAILING_SPACE} from './paper-area-store.mjs';
 
 // Separate from the measured shadow tree, just like the reorder overlay.
 // The preview is local to the gesture; a confirmed save is handled by App.
-export function PaperInlineArea({viewport,node,context,onCommit,previewOnly=false,onPendingChange,detailsRequest}){
+export function PaperInlineArea({viewport,node,context,onCommit,previewOnly=false,onPendingChange,detailsRequest,dockTarget,onUndock}){
   const [geometry,setGeometry]=useState(null),[proposal,setProposal]=useState({}),[ghost,setGhost]=useState(null);
   const active=useRef(null),liveMount=useRef(null);
   const isGap=axis=>axis==='before'||axis==='gap';
@@ -24,9 +25,8 @@ export function PaperInlineArea({viewport,node,context,onCommit,previewOnly=fals
     return ()=>{draftCaches.current=null;for(const cache of Object.values(caches))cache.clear();};
   },[node,context.target.revision,context.target.fingerprint]);
   const {target,placement}=context;
-  useLayoutEffect(()=>{
-    if(detailsRequest&&detailsRequest.job===context.job&&detailsRequest.documentId===target.documentId&&detailsRequest.blockKey===target.blockKey&&context.current())setDetails(true);
-  },[detailsRequest,context.job,target.documentId,target.blockKey]);
+  const docked=!!dockTarget&&!!detailsRequest&&detailsRequest.job===context.job&&detailsRequest.documentId===target.documentId&&detailsRequest.blockKey===target.blockKey;
+  useLayoutEffect(()=>{if(docked&&context.current())setDetails(true);},[docked,detailsRequest]);
   const stored=placement.sizeConstraints??{};
   const latest=useRef(null);latest.current={proposal,context,numberText};
   const storedValue=axis=>axis==='before'?(placement.spaceBefore??0):axis==='gap'?(placement.spaceAfter??0):(stored[axis==='width'?'minWidthPercent':'minHeightPercent']??0);
@@ -153,7 +153,7 @@ export function PaperInlineArea({viewport,node,context,onCommit,previewOnly=fals
     const update=()=>{const r=panel.getBoundingClientRect();setPanelSize(old=>Math.abs(old.width-r.width)<.5&&Math.abs(old.height-r.height)<.5?old:{width:r.width,height:r.height});};
     const observer=new ResizeObserver(update);observer.observe(panel);update();
     return ()=>observer.disconnect();
-  },[panelVisible]);
+  },[panelVisible,docked]);
   if(!geometry)return null;
   const {full,clipped,bounds,host}=geometry;
   const panelPosition=placePaperPropertyPanel(clipped,bounds,{width:260,height:panelSize.height});
@@ -171,17 +171,9 @@ export function PaperInlineArea({viewport,node,context,onCommit,previewOnly=fals
   const guide=(pending||ghost)?clipPaperRect({left:full.left,top:full.top,right:full.left+width,bottom:full.top+height,width,height},bounds):null;
   const style=r=>({left:r.left,top:r.top,width:r.width,height:r.height});
   const label=axis=>{const value=preview[axis]??storedValue(axis);return value?value+'%':'自動';};
-  return <>
-    {shown&&<div className="paper-inline-live" aria-hidden="true" inert={true} style={{left:bounds.left,top:bounds.top,width:bounds.right-bounds.left,height:bounds.bottom-bounds.top}}><div ref={liveMount} style={{position:'absolute',left:host.left,top:host.top,width:host.width,transformOrigin:'top left',transform:'scale('+host.sx+','+host.sy+')'}}/></div>}
-    {beforeRect&&<div className="paper-inline-area-guide" aria-hidden="true" style={{...style(beforeRect),borderStyle:'dotted',background:'#d99b2633'}}/>}
-    {gapRect&&<div className="paper-inline-area-guide" aria-hidden="true" style={{...style(gapRect),borderStyle:'dotted',background:'#d99b2633'}}/>}
-    {guide&&<div className="paper-inline-area-guide" aria-hidden="true" style={style(guide)}/>}
-    <div className="paper-inline-area-frame" style={style(clipped)}>
-      {['width','height'].map(axis=>(axis==='width'?geometry.rightVisible:geometry.bottomVisible)&&<button key={axis} id={'paper-inline-area-'+axis} type="button" className={'paper-area-handle '+axis} aria-label={axis==='width'?'横の最小占有率を調整':'縦の最小占有率を調整'} disabled={context.disabled} onPointerDown={e=>begin(e,axis)} onPointerMove={move} onPointerUp={finish} onPointerCancel={e=>{if(active.current?.id===e.pointerId)cancel();}} onLostPointerCapture={e=>{if(active.current?.id===e.pointerId)cancel();}} onKeyDown={e=>keyAdjust(e,axis)}/>)}
-    </div>
-    {[['before',beforeHandleVisible,before,beforeStart,-9,'前'],['gap',gapHandleVisible,gap,gapEnd,9,'後']].map(([axis,visible,value,edge,offset,label])=>visible&&<button key={axis} id={axis==='before'?'paper-inline-gap-before-handle':'paper-inline-gap-handle'} type="button" className="paper-inline-gap-handle" style={{left:clipped.left+Math.min(18,clipped.width/4),top:Math.max(bounds.top+8,Math.min(edge+(value===0?offset:0),bounds.bottom-8))}} aria-label={label+'の余白を調整（'+value/1000+' mm）'} title={axis==='before'?'上にドラッグして前の余白を増やす':'下にドラッグして後ろの余白を増やす'} disabled={context.disabled} onPointerDown={e=>begin(e,axis)} onPointerMove={move} onPointerUp={finish} onPointerCancel={e=>{if(active.current?.id===e.pointerId)cancel();}} onLostPointerCapture={e=>{if(active.current?.id===e.pointerId)cancel();}} onKeyDown={e=>keyAdjust(e,axis)}>{label}↕</button>)}
-    <div ref={panelRef} className="paper-inline-area-toolbar" style={panelPosition} role="group" aria-label="選択ブロックの配置プロパティ">
+  const panel=<div ref={panelRef} className={'paper-inline-area-toolbar'+(docked?' paper-area-docked':'')} style={docked?undefined:panelPosition} role="group" aria-label="選択ブロックの配置プロパティ">
       <div className="paper-inline-summary"><small aria-live="polite">横 {label('width')} · 縦 {label('height')}<br/>余白 前 {before/1000} / 後 {gap/1000} mm{pending||ghost?'（未確定）':''}</small>
+        {docked&&<button id="paper-inline-undock" type="button" className="secondary-action" onClick={onUndock}>紙面上に戻す</button>}
         {!ghost&&<button id="paper-inline-details" type="button" className="secondary-action" aria-expanded={details} aria-controls="paper-inline-properties" onClick={()=>setDetails(v=>!v)}>{details?'閉じる':'調整'}</button>}
       </div>
       {canPreview&&<small className="paper-inline-live-status" role="status">{shown?'実測配置案（未保存）':live?.key===liveKey&&live.error?'配置できません：'+live.error:live?.key===liveKey?'配置変更なし':'配置を計算中…'}</small>}
@@ -201,6 +193,16 @@ export function PaperInlineArea({viewport,node,context,onCommit,previewOnly=fals
       {invalidNumbers.length>0&&<small role="alert" className="paper-property-error">数値を確認してください。占有率は0〜100の整数、余白は本文高さ以内のmm値（小数3桁まで）です。</small>}
       {previewOnly&&<small className="paper-inline-live-status">全冊の試験配置（保存条件未成立）</small>}
       {hasInput&&!ghost&&<>{!previewOnly&&<button id="paper-inline-area-commit" type="button" disabled={context.disabled||!pending||invalidNumbers.length>0} onClick={()=>{if(!context.current()||invalidNumbers.length)return;void onCommit({...proposal});}}>適用して保存</button>}<button type="button" disabled={context.disabled} onClick={discardProposal}>取消</button></>}
+    </div>;
+  return <>
+    {shown&&<div className="paper-inline-live" aria-hidden="true" inert={true} style={{left:bounds.left,top:bounds.top,width:bounds.right-bounds.left,height:bounds.bottom-bounds.top}}><div ref={liveMount} style={{position:'absolute',left:host.left,top:host.top,width:host.width,transformOrigin:'top left',transform:'scale('+host.sx+','+host.sy+')'}}/></div>}
+    {beforeRect&&<div className="paper-inline-area-guide" aria-hidden="true" style={{...style(beforeRect),borderStyle:'dotted',background:'#d99b2633'}}/>}
+    {gapRect&&<div className="paper-inline-area-guide" aria-hidden="true" style={{...style(gapRect),borderStyle:'dotted',background:'#d99b2633'}}/>}
+    {guide&&<div className="paper-inline-area-guide" aria-hidden="true" style={style(guide)}/>}
+    <div className="paper-inline-area-frame" style={style(clipped)}>
+      {['width','height'].map(axis=>(axis==='width'?geometry.rightVisible:geometry.bottomVisible)&&<button key={axis} id={'paper-inline-area-'+axis} type="button" className={'paper-area-handle '+axis} aria-label={axis==='width'?'横の最小占有率を調整':'縦の最小占有率を調整'} disabled={context.disabled} onPointerDown={e=>begin(e,axis)} onPointerMove={move} onPointerUp={finish} onPointerCancel={e=>{if(active.current?.id===e.pointerId)cancel();}} onLostPointerCapture={e=>{if(active.current?.id===e.pointerId)cancel();}} onKeyDown={e=>keyAdjust(e,axis)}/>)}
     </div>
+    {[['before',beforeHandleVisible,before,beforeStart,-9,'前'],['gap',gapHandleVisible,gap,gapEnd,9,'後']].map(([axis,visible,value,edge,offset,label])=>visible&&<button key={axis} id={axis==='before'?'paper-inline-gap-before-handle':'paper-inline-gap-handle'} type="button" className="paper-inline-gap-handle" style={{left:clipped.left+Math.min(18,clipped.width/4),top:Math.max(bounds.top+8,Math.min(edge+(value===0?offset:0),bounds.bottom-8))}} aria-label={label+'の余白を調整（'+value/1000+' mm）'} title={axis==='before'?'上にドラッグして前の余白を増やす':'下にドラッグして後ろの余白を増やす'} disabled={context.disabled} onPointerDown={e=>begin(e,axis)} onPointerMove={move} onPointerUp={finish} onPointerCancel={e=>{if(active.current?.id===e.pointerId)cancel();}} onLostPointerCapture={e=>{if(active.current?.id===e.pointerId)cancel();}} onKeyDown={e=>keyAdjust(e,axis)}>{label}↕</button>)}
+    {docked?createPortal(panel,dockTarget):panel}
   </>;
 }

@@ -805,3 +805,11 @@ body{font-family:BCFont_NotoSansJP,system-ui,sans-serif}.font-control,.typograph
 .book-property-section small{font-size:11px;overflow-wrap:anywhere;}
 .book-property-section button{font-size:12px;min-height:26px;padding:4px 6px;}
 .book-property-section .controls{flex-wrap:wrap;}
+
+#book-inspector-area-editor:empty{display:none;}
+#book-inspector-area-editor{margin:0 0 12px;}
+.paper-inline-area-toolbar.paper-area-docked{position:static;z-index:auto;width:100%;max-width:none;max-height:none;box-shadow:none;padding:8px;overflow:visible;}
+.paper-area-docked .paper-inline-summary{flex-wrap:wrap;}
+.paper-area-docked .paper-inline-summary small{flex-basis:100%;}
+.paper-area-docked .paper-property-grid{grid-template-columns:minmax(0,1fr);}
+.paper-area-docked .paper-property-resets{flex-wrap:wrap;}
