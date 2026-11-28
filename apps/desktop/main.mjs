@@ -38,7 +38,7 @@ const ASSETS=new Map([['/index.html',['index.html','text/html; charset=utf-8']],
 let win,workspace,closing=false,busy=false,projectFontAssets=new Map();
 const previewReadLane=createPreviewReadLane();
 const previewImageLane=createPreviewReadLane();
-let smokeFontImports=0;
+let smokeFontImports=0,smokeTrialPdfDialogs=0;
 async function loadProjectFonts(next){
   const faces=await next.fonts(true);const assets=new Map();
   const info=faces.map(({bytes,...face})=>{assets.set('/project-fonts/'+face.sha256,{bytes,format:face.format});return face;});
@@ -192,6 +192,8 @@ async function run(){
     if(typeof token!=='string'||token!==settingsToken)throw Error('Invalid PDF export session');
     return exportSavedTrialPdf({workspace:current,request,BrowserWindow,isCurrent:()=>workspace===current&&settingsToken===token&&!closing&&!win.isDestroyed(),
       chooseDestination:async()=>{
+        // Only isolated CLI test profiles bypass the native save dialog.
+        if(SMOKE)return smokeTrialPdfDialogs++===0?null:join(smokeRoot,'smoke-trial.pdf');
         const result=await dialog.showSaveDialog(win,{title:'試しPDFを書き出す（新規保存）',defaultPath:'BookCreator-trial.pdf',filters:[{name:'PDF',extensions:['pdf']}]});
         return result.canceled?null:result.filePath;
       }});
@@ -1414,6 +1416,14 @@ async function packageSmoke(){
   await until("document.querySelector('#workspace-save-state').textContent==='保存済み'");
   await exec("document.querySelector('#mode-writing').click()");
   await until("document.querySelector('.workspace-shell').dataset.workspaceMode==='writing'");
+  // The package exercises the same real PDF generation and save path.
+  await exec("document.querySelector('#mode-layout').click()");
+  await until("document.querySelector('.workspace-shell').dataset.workspaceMode==='layout'");
+  await exec("document.querySelector('#preview-book').click()");
+  await until("document.querySelector('#workspace-layout-state').dataset.phase==='ready'&&document.querySelector('#workspace-layout-state').dataset.scope==='book'");
+  await trialPdfJourneySmoke();
+  await exec("document.querySelector('#mode-writing').click()");
+  await until("document.querySelector('.workspace-shell').dataset.workspaceMode==='writing'");
   const navigationSample=sample+'\n'+Array.from({length:10},()=>('ページ移動のための日本語本文を確認します。'.repeat(22))).join('\n\n')+'\n';
   const setNavigationSource=value=>exec("(()=>{const e=document.querySelector('#source');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(e,"+JSON.stringify(value)+");e.dispatchEvent(new Event('input',{bubbles:true}));})()");
   await setNavigationSource(navigationSample);
@@ -2153,6 +2163,33 @@ async function nativeCloseSmoke(decision){
   if(await readFile(path,'utf8')!==draft||await readFile(themePath,'utf8')===oldTheme||!(await readFile(manifestPath,'utf8')).includes('size: '+size))throw Error('Save and exit failed to persist every target');
   console.log('PASS UX-10e native close blocks drafts and conflicts, then saves all targets and exits');
 }
+// Exercise the real Electron PDF path via the production GUI and IPC. Only
+// the native save dialog is replaced with a deterministic isolated destination.
+async function trialPdfJourneySmoke(){
+  const raw=js=>win.webContents.executeJavaScript(js);
+  const until=async(label,js)=>{for(let i=0;i<300;i++){if(await raw(js))return;await new Promise(r=>setTimeout(r,100));}throw Error('Trial PDF journey: '+label+'; '+await raw("document.querySelector('#status')?.textContent"));};
+  const pageCount=await raw("document.querySelector('#preview > div').shadowRoot.querySelectorAll('[data-page]').length");
+  const paper=await raw("(()=>{const p=document.querySelector('#preview > div').shadowRoot.querySelector('[data-page]');return {width:Math.round(parseFloat(p.style.width)*25400/96),height:Math.round(parseFloat(p.style.height)*25400/96)};})()");
+  const destination=join(smokeRoot,'smoke-trial.pdf');
+  const {inspectTrialPdfStructure}=await import('./trial-pdf-inspection.mjs');
+  await raw("document.querySelector('#layout-to-publication').click()");
+  const ready="document.querySelector('#publication-export-trial-pdf')&&!document.querySelector('#publication-export-trial-pdf').disabled";
+  await until('export enabled',ready);
+  const click=()=>raw("document.querySelector('#publication-export-trial-pdf').click()");
+  await click();
+  await until('cancelled',ready+"&&document.querySelector('#status').textContent.includes('取り消しました')");
+  await readFile(destination).then(()=>{throw Error('Cancelled PDF was saved');},e=>{if(e.code!=='ENOENT')throw e;});
+  await click();
+  await until('saved',ready+"&&document.querySelector('#status').textContent.includes('試しPDFを保存しました')");
+  const bytes=await readFile(destination);
+  const report=await inspectTrialPdfStructure(bytes,{pageCount,paper,expectedNonblank:Array(pageCount).fill(true)});
+  if(!report.structureVerified||report.publicationReady!==false)throw Error('Trial PDF structure mismatch');
+  await click();
+  await until('exclusive save refused',ready+"&&document.querySelector('#status').textContent.includes('同名のPDF')");
+  if(!(await readFile(destination)).equals(bytes))throw Error('Existing PDF changed');
+  if(!await raw("document.querySelector('#publication-output').dataset.state==='unavailable'"))throw Error('Formal export gate changed');
+  console.log('PASS PRACTICAL-05d GUI -> isolated Electron print -> actual PDF -> safe save '+JSON.stringify({pageCount,bytes:bytes.length,paper}));
+}
 // Practical acceptance: create a real starter through the visible UI, edit a
 // chapter, save, compose the whole book and reopen without touching other files.
 async function textbookJourneySmoke(){
@@ -2204,6 +2241,7 @@ async function textbookJourneySmoke(){
   await until('saved chapter reopened',"document.querySelector('#source').value==="+JSON.stringify(expected));
   await click('#mode-layout');await click('#preview-book');
   await until('recomposed textbook',whole+"&&"+paper);
+  await trialPdfJourneySmoke();
   if(await readFile(chapter,'utf8')!==expected||!(await readFile(join(root,'book.yaml'))).equals(manifest))throw Error('Textbook journey: saved source or manifest mismatch');
   for(let i=0;i<otherPaths.length;i++)if(!(await readFile(otherPaths[i])).equals(other[i]))throw Error('Textbook journey: unrelated chapter changed');
   console.log('PASS PRACTICAL-01 textbook UI creation, structured edit, save, whole-book paper and reopen');
