@@ -384,12 +384,19 @@ export async function runBookBenchmark(win,app,root,fixture){
   await measure('partial-open','manuscript',()=>click('[data-section='+large.id+']'),"document.querySelector('#source').value==="+JSON.stringify(large.source));
   if(await paperSignature()!==originalPaper)throw Error('Partial baseline differs');
   const partialComparisons=[];
+  // This comparison deliberately measures an already-warm paragraph cache.
+  // The performance panel itself introduces Japanese glyphs from lazy CSS
+  // font subsets. Load the fixture and UI glyph coverage before priming.
+  await click('#performance-toggle');
+  await raw(`(async()=>{const text=document.body.textContent+' '+${JSON.stringify(edited)};await Promise.all([document.fonts.load('400 16px BCFont_NotoSansJP',text),document.fonts.load('700 16px BCFont_NotoSansJP',text)]);await document.fonts.ready;})()`);
+  await click('#performance-close');
+  await raw('document.fonts.ready.then(()=>true)');
   // Diagnostic only: identify environment invalidation without weakening the
   // exact one-miss assertion or changing the measured editing path.
   await raw(`(()=>{
     const faces=new WeakMap();let next=0,events=[];
     const snapshot=()=>({scale:devicePixelRatio,fontStatus:document.fonts.status,
-      faces:[...document.fonts].map(f=>{if(!faces.has(f))faces.set(f,++next);return {identity:faces.get(f),family:f.family,style:f.style,weight:f.weight,stretch:f.stretch,unicodeRange:f.unicodeRange,status:f.status,ascent:f.ascentOverride,descent:f.descentOverride,lineGap:f.lineGapOverride,feature:f.featureSettings,variation:f.variationSettings};}),
+      faces:[...document.fonts].map(f=>{const descriptors=JSON.stringify([f.family,f.style,f.weight,f.stretch,f.unicodeRange,f.ascentOverride,f.descentOverride,f.lineGapOverride,f.featureSettings,f.variationSettings]);let entry=faces.get(f);if(!entry){entry={identity:++next,descriptors,revision:0};faces.set(f,entry);}else if(entry.descriptors!==descriptors){entry.descriptors=descriptors;entry.revision++;}return {identity:entry.identity,family:f.family,status:f.status,descriptorRevision:entry.revision};}),
       visibility:document.visibilityState});
     const record=event=>{events.push({event:event.type,at:performance.now(),environment:snapshot()});if(events.length>64)events.shift();};
     const types=['loading','loadingdone','loadingerror'];
@@ -404,6 +411,7 @@ export async function runBookBenchmark(win,app,root,fixture){
       const enabled=arm==='warm';
       await setPartial(false);
       await setParagraphComparison(true);
+      await raw('document.fonts.ready.then(()=>true)');
       await raw("document.querySelector('#preview > div').dataset.paperProbe='old'");
       await measure('partial-prime-'+pair+'-'+arm,'manuscript',()=>click('#preview-button'),"document.querySelector('#preview > div').dataset.paperProbe!=='old'");
       if(await paperSignature()!==originalPaper)throw Error('Partial prime differs');
@@ -520,6 +528,29 @@ async function benchmarkBookPositionDrag({win,raw,click,until,ready,paperSignatu
       await until('draft closed',"!document.querySelector('#book-paper-position-drag')&&!document.querySelector('.paper-inline-live')&&document.querySelector('.book-paper-toolbar')?.dataset.tool==='select'&&!!document.querySelector('#book-paper-area-undo')&&!!document.querySelector('#book-paper-group-mode')");
       if(await paperSignature()!==baseline||await readFile(path,'utf8')!==source)throw Error('Cancelled drag changed published paper or manuscript');
     }
+    await raw(target+".scrollIntoView({block:'center',inline:'center'})");
+    await raw("new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))");
+    await raw(target+".click()");
+    await click('#book-paper-preferred-mode');
+    await until('coordinate fields',"!!document.querySelector('#book-paper-coordinate-y')");
+    const field=(value)=>raw("(()=>{const e=document.querySelector('#book-paper-coordinate-y');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,"+JSON.stringify(value)+");e.dispatchEvent(new Event('input',{bubbles:true}));})()");
+    const oldY=await raw("Number(document.querySelector('#book-paper-coordinate-y').value)");
+    const maxY=await raw("Number(document.querySelector('#book-paper-position-drag').dataset.maxY)/1000");
+    const nextY=String(Math.round((oldY+1<=maxY?oldY+1:oldY-1)*1000)/1000);
+    await field('-1');
+    await until('invalid coordinate rejected',"document.querySelector('#book-paper-coordinate-y').getAttribute('aria-invalid')==='true'&&document.querySelector('#book-paper-coordinate-apply').disabled&&document.querySelector('#book-paper-position-apply').disabled");
+    await field(nextY);
+    await until('valid coordinate staged',"!document.querySelector('#book-paper-coordinate-apply').disabled&&document.querySelector('#book-paper-position-apply').disabled");
+    await click('#book-paper-coordinate-apply');
+    await until('exact coordinate reflected',"document.querySelector('#book-paper-coordinate-y')?.value==="+JSON.stringify(nextY)+"&&!document.querySelector('#book-paper-coordinate-apply')").catch(async e=>{throw Error(e.message+'; '+JSON.stringify(await dragState())+'; coordinate='+await raw("document.querySelector('#book-paper-coordinate-y')?.value"));});
+    await readTiming('paper-ready');
+    const reflected=await raw("(()=>{const e=document.querySelector('[data-position-phase=paper-ready]');return {y:document.querySelector('#book-paper-coordinate-y').value,key:JSON.parse(e.dataset.proposalKey)};})()");
+    if(reflected.y!==nextY||reflected.key[3]!==Math.round(Number(nextY)*1000))throw Error('Exact coordinate was not reflected: '+JSON.stringify({expected:nextY,reflected}));
+    await raw("window.dispatchEvent(new Event('resize'))");
+    await until('coordinate retained on viewport resize',"document.querySelector('#book-paper-coordinate-y')?.value==="+JSON.stringify(nextY)+"&&!!document.querySelector('[data-position-phase=paper-ready]')");
+    await click('#book-paper-preferred-mode');
+    await until('coordinate draft closed',"!document.querySelector('#book-paper-coordinate-y')&&!document.querySelector('.paper-inline-live')");
+    if(await paperSignature()!==baseline||await readFile(path,'utf8')!==source)throw Error('Cancelled coordinate edit changed published paper or manuscript');
     await readFile(join(root,'layouts','paper-area.json')).then(()=>{throw Error('Unsaved drag persisted paper intent');},e=>{if(e.code!=='ENOENT')throw e;});
     const median=values=>{const v=[...values].sort((a,b)=>a-b);return (v[1]+v[2])/2;};
     const report={pages,samples:rows,geometryMedianMs:median(rows.map(r=>r.geometry.elapsedMs)),paperMedianMs:median(rows.map(r=>r.paper.elapsedMs)),pointerToGuideMedianMs:median(rows.map(r=>r.pointerToGuideMs)),dropToPaperMedianMs:median(rows.map(r=>r.dropToPaperMs))};

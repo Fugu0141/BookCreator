@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {clipPaperRect,placePaperPropertyPanel,paperPositionFromDrag,paperPositionFromPagePointer,resolvePaperSelectionNodes,preferredPositionEditStart,placeBookPositionPanel} from '../paper-selection-geometry.mjs';
+import {clipPaperRect,placePaperPropertyPanel,paperPositionFromDrag,paperPositionFromPagePointer,resolvePaperSelectionNodes,preferredPositionEditStart,placeBookPositionPanel,parsePaperMillimetres,paperPositionFromCoordinates} from '../paper-selection-geometry.mjs';
 const v={left:10,top:20,right:110,bottom:120};
 test('visible rectangle and partial clipping',()=>{
   assert.deepEqual(clipPaperRect({left:20,top:30,right:70,bottom:80},v),{left:20,top:30,width:50,height:50});
@@ -72,4 +72,16 @@ test('position property panel avoids the drag handle even in a short viewport',(
   };
   assertFree(bounds,selection,handle);
   assertFree({left:0,top:0,right:220,bottom:150},{left:0,top:55,width:220,height:60},{left:2,top:57,width:32,height:32});
+});
+
+
+test('physical position input parses exact millimetres without rounding or clamping',()=>{
+  assert.equal(parsePaperMillimetres('1.001',1001),1001);
+  assert.equal(parsePaperMillimetres('0.009',1001),9);
+  assert.equal(parsePaperMillimetres('0',0),0);
+  for(const v of ['','-1','1.','1.0001','1e2',' 1','Infinity','999999999999999999999999','1.002'])assert.equal(parsePaperMillimetres(v,1001),null);
+  const bounds={maxX:50000,maxY:100000},position={page:2,x:0,y:0};
+  assert.deepEqual(paperPositionFromCoordinates(position,bounds,{x:'12.345',y:'99.999'}),{page:2,x:12345,y:99999});
+  assert.equal(paperPositionFromCoordinates(position,bounds,{x:'50.001',y:'0'}),null);
+  assert.equal(paperPositionFromCoordinates(position,bounds,{x:'0',y:''}),null);
 });
