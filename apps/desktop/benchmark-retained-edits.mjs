@@ -80,7 +80,7 @@ export async function benchmarkRetainedEdits({raw,click,until,ready,paperSignatu
   // A separate numbered-equation workload leaves the historical latency
   // fixture untouched. Compare the actual retained DOM with full composition.
   await setRetained(false);
-  const eq=(id,formula,numbered='true')=>'\n::pagebreak{side="any"}\n\n:::layout{#'+id+' numbered="'+numbered+'"}\n$\n'+formula+'\n$\n:::\n';
+  const eq=(id,formula,numbered='true')=>'\n::pagebreak{side="any"}\n\n:::layout{#'+id+' numbered="'+numbered+'"}\n$$\n'+formula+'\n$$\n:::\n';
   const equationSource=(formula='x^2',numbered='true')=>large.source+eq('retained-eq-a',formula,numbered)+eq('retained-eq-b','y^2');
   const equationBase=equationSource(),equationEdit=equationSource('x^3'),equationRenumber=equationSource('x^2','false');
   const baseSample=await edit(equationBase),baseSignature=await paperSignature();
