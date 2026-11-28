@@ -2399,6 +2399,20 @@ async function smoke(){
   await exec("document.querySelector('#lab-undo').click()");
   await until("!document.querySelector('#lab-apply').disabled&&JSON.stringify([...document.querySelectorAll('[data-lab-node]')].map(e=>e.dataset.labNode))==="+JSON.stringify(JSON.stringify(flowOrder)));
 
+  // Contextual tools target only the selected part; use the same draft history.
+  await exec("document.querySelector('[data-lab-node=content]').click()");
+  await until("document.querySelector('.lab-selection-toolbar').dataset.selectionKind==='content'&&!!document.querySelector('#lab-quick-font')&&document.querySelector('#lab-quick-remove').disabled");
+  const quickSize=await exec("Number(document.querySelector('#lab-font-size').value)");
+  await exec("document.querySelector('#lab-quick-size-up').click()");
+  await until("Number(document.querySelector('#lab-font-size').value)==="+(quickSize+.5)+"&&!document.querySelector('#lab-apply').disabled");
+  await exec("document.querySelector('#lab-undo').click()");
+  await until("Number(document.querySelector('#lab-font-size').value)==="+quickSize+"&&!document.querySelector('#lab-apply').disabled");
+  await exec("document.querySelector('[data-lab-node=bar]').click()");
+  await until("document.querySelector('.lab-selection-toolbar').dataset.selectionKind==='rect'&&!document.querySelector('#lab-quick-font')&&!!document.querySelector('#lab-quick-color')");
+  await exec("document.querySelector('#lab-quick-lock').click()");
+  await until("document.querySelector('#lab-quick-lock').getAttribute('aria-pressed')==='true'&&document.querySelector('#lab-quick-color').disabled&&document.querySelector('#lab-quick-remove').disabled");
+  await exec("document.querySelector('#lab-quick-lock').click()");
+  await until("!document.querySelector('#lab-quick-color').disabled");
   const spacingStart=await exec("Number(document.querySelector('#lab-visual-padding').value)");
   await exec("document.querySelector('#lab-visual-padding').dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true,cancelable:true}))");
   await until("Number(document.querySelector('#lab-visual-padding').value)==="+(spacingStart+500)+"&&Number(document.querySelector('#lab-padding').value)==="+((spacingStart+500)/1000)+"&&!document.querySelector('#lab-apply').disabled");
