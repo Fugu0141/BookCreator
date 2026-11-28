@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {prepareSavedAreaPreview,verifySavedAreaPreview,measureInlineAreaProposal,resolvePaperAreaSelection,captureBookAreaLease,prepareBookAreaCommit,prepareBookAreaRestore,acknowledgeBookAreaCommit} from '../paper-area-preview.mjs';
+import {prepareSavedAreaPreview,verifySavedAreaPreview,measureInlineAreaProposal,resolvePaperAreaSelection,captureBookAreaLease,prepareBookAreaCommit,prepareBookAreaRestore,acknowledgeBookAreaCommit,prepareBookFixedRelease} from '../paper-area-preview.mjs';
 const origin=(documentId,blockKey,persistentId)=>({documentId,blockKey,persistentId});
 const options={revision:'r1',fingerprint:'f1',width:1000,height:2000,sections:[{id:'a',blocks:[{origin:origin('a','40','q')}]},{id:'b',blocks:[{origin:origin('b','70','q')}]}]};
 const snapshot={revision:'saved',document:{schemaVersion:1,entries:[{documentId:'a',persistentId:'q',minHeightPercent:30},{documentId:'b',persistentId:'q',minWidthPercent:50}]}};
@@ -165,4 +165,28 @@ test('absolute page lock cannot be applied with manuscript-local page numbers an
   const exact={page:2,fixed:true,rect:{x:100,y:300,width:500,height:100}};
   assert.doesNotThrow(()=>verifySavedAreaPreview(p,result(exact)));
   for(const bad of [{...exact,page:1},{...exact,fixed:false},{...exact,rect:{...exact.rect,x:101}},{...exact,rect:{...exact.rect,y:301}}])assert.throws(()=>verifySavedAreaPreview(p,result(bad)),/固定位置/);
+});
+
+
+test('failed whole-book recovery removes only the requested existing lock without a measured plan',()=>{
+  const lock={page:2,x:20,y:30};
+  const areaSnapshot={revision:'a'.repeat(64),document:{schemaVersion:1,entries:[
+    {documentId:'a',persistentId:'q',bookFixed:lock,minWidthPercent:40,spaceAfter:100},
+    {documentId:'a',persistentId:'other',bookFixed:lock},
+    {documentId:'b',persistentId:'q',bookFixed:lock}
+  ]}};
+  const bookLease={documents:[{documentId:'a'},{documentId:'b'}]};
+  const context={areaSnapshot,bookLease};
+  const result=prepareBookFixedRelease(context,'a','q');
+  assert.deepEqual(result.value,{schemaVersion:1,entries:[
+    {documentId:'a',persistentId:'other',bookFixed:lock},
+    {documentId:'a',persistentId:'q',minWidthPercent:40,spaceAfter:100}
+  ]});
+  assert.equal(result.lease,bookLease);
+  assert.equal(result.expectedRevision,areaSnapshot.revision);
+  assert.equal(areaSnapshot.document.entries[0].bookFixed,lock);
+  assert.throws(()=>prepareBookFixedRelease(context,'a','missing'));
+  assert.throws(()=>prepareBookFixedRelease({...context,bookLease:{documents:[{documentId:'b'}]}},'a','q'));
+  assert.throws(()=>prepareBookFixedRelease({...context,areaSnapshot:{...areaSnapshot,revision:null}},'a','q'));
+  assert.deepEqual(prepareBookFixedRelease(context,'a','other').value.entries.map(e=>e.persistentId),['q']);
 });
