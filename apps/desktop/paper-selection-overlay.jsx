@@ -1,5 +1,5 @@
 import React,{useLayoutEffect,useRef,useState} from 'react';
-import {clipPaperRect,placePaperPropertyPanel,paperPositionFromDrag,paperPositionFromPagePointer,resolvePaperSelectionNodes,preferredPositionEditStart,placeBookPositionPanel} from './paper-selection-geometry.mjs';
+import {clipPaperRect,placePaperPropertyPanel,paperPositionFromDrag,paperPositionFromPagePointer,resolvePaperSelectionNodes,preferredPositionEditStart,placeBookPositionPanel,parsePaperMillimetres,paperPositionFromCoordinates} from './paper-selection-geometry.mjs';
 import {createIntelligentGeometryDraftSession,createFullRetainedTextPagePreview,createParagraphMeasurementCache,createMathCompilationCache,createDisplayMathGeometryCache,createInlineMathGeometryCache} from '../../../BookCreator_LayoutEngine/dist/index.js';
 import {measurementLane} from './measurement-lane.mjs';
 import {createPreviewCheckpoint} from './preview-checkpoint.mjs';
@@ -83,8 +83,8 @@ export function BookPositionOverlay({viewport,node,context,bounds,onCommit,onClo
   const [tx,setTx]=useState(()=>String((initial?.tolerance.x??5000)/1000)),[ty,setTy]=useState(()=>String((initial?.tolerance.y??5000)/1000)),[rebased,setRebased]=useState(false);
   const needsRebase=!!initial?.requiresRebase&&!rebased;
   const basePosition=preferredMode&&!rebased?initial.position:context.position;
-  const [live,setLive]=useState(null),[quick,setQuick]=useState(null),[dragging,setDragging]=useState(false),liveMount=useRef(null),draft=useRef(null);
-  const gesture=useRef(null),latest=useRef(null);latest.current={context,proposal,onClose};
+  const [live,setLive]=useState(null),[quick,setQuick]=useState(null),[dragging,setDragging]=useState(false),[coordinates,setCoordinates]=useState(null),liveMount=useRef(null),draft=useRef(null);
+  const gesture=useRef(null),latest=useRef(null);latest.current={context,proposal,coordinates,onClose};
   useLayoutEffect(()=>{
     const session=createBookPositionPreviewSession(context),caches={paragraphCache:createParagraphMeasurementCache(document),mathCache:createMathCompilationCache(),displayMathCache:createDisplayMathGeometryCache(document),...(context.options.inlineMathCache?{inlineMathCache:createInlineMathGeometryCache(document)}:{})};
     let geometrySession;
@@ -100,7 +100,7 @@ export function BookPositionOverlay({viewport,node,context,bounds,onCommit,onClo
     const v=viewport.current,body=node?.closest('[data-page]')?.querySelector('[data-content-guide]');
     if(!v||!body||!node)return;
     const update=()=>{
-      cancel();setProposal(null);
+      cancel();setProposal(null);setCoordinates(null);
       const host=v.firstElementChild,vr=v.getBoundingClientRect(),b=body.getBoundingClientRect();
       if(!host||host.inert||node.getRootNode()!==host.shadowRoot||!node.isConnected||!v.offsetWidth||!v.offsetHeight||!v.getClientRects().length||!b.width||!b.height){setGeometry(null);return;}
       const sx=vr.width/v.offsetWidth,sy=vr.height/v.offsetHeight,left=vr.left+v.clientLeft*sx,top=vr.top+v.clientTop*sy;
@@ -116,14 +116,19 @@ export function BookPositionOverlay({viewport,node,context,bounds,onCommit,onClo
       const hr=host.getBoundingClientRect();
       setGeometry(clipped?{body:{left:b.left,top:b.top,width:b.width,height:b.height},pages,visible,clipped,host:{left:hr.left-left,top:hr.top-top,width:host.offsetWidth,sx,sy}}:null);
     };
-    const escape=e=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();if(gesture.current)cancel();else if(latest.current.proposal)setProposal(null);else latest.current.onClose();}};
-    const blur=()=>{cancel();setProposal(null);};
+    const escape=e=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();if(gesture.current)cancel();else if(latest.current.coordinates)setCoordinates(null);else if(latest.current.proposal)setProposal(null);else latest.current.onClose();}};
+    const blur=()=>{cancel();setProposal(null);setCoordinates(null);};
+    const scroll=e=>{if(e.target instanceof Element&&e.target.closest('.book-position-panel'))return;update();};
     const observer=new ResizeObserver(update);observer.observe(v);observer.observe(node);observer.observe(body);
-    window.addEventListener('scroll',update,true);window.addEventListener('resize',update);window.addEventListener('blur',blur);window.addEventListener('keydown',escape,true);update();
-    return ()=>{const g=gesture.current;gesture.current=null;if(g?.node.hasPointerCapture(g.id))g.node.releasePointerCapture(g.id);observer.disconnect();window.removeEventListener('scroll',update,true);window.removeEventListener('resize',update);window.removeEventListener('blur',blur);window.removeEventListener('keydown',escape,true);};
+    window.addEventListener('scroll',scroll,true);window.addEventListener('resize',update);window.addEventListener('blur',blur);window.addEventListener('keydown',escape,true);update();
+    return ()=>{const g=gesture.current;gesture.current=null;if(g?.node.hasPointerCapture(g.id))g.node.releasePointerCapture(g.id);observer.disconnect();window.removeEventListener('scroll',scroll,true);window.removeEventListener('resize',update);window.removeEventListener('blur',blur);window.removeEventListener('keydown',escape,true);};
   },[viewport,node,context.selection.revision,context.selection.fingerprint]);
   const body={width:context.options.width,height:context.options.height,pixelWidth:geometry?.body.width,pixelHeight:geometry?.body.height};
   const position=proposal??basePosition;
+  const coordinateValues=coordinates??{x:String(position.x/1000),y:String(position.y/1000)};
+  const coordinatePosition=paperPositionFromCoordinates(position,bounds,coordinateValues);
+  const coordinateDirty=coordinates!==null;
+  const applyCoordinates=()=>{if(!context.current()||gesture.current||needsRebase||!coordinatePosition||!coordinateDirty)return;setProposal(coordinatePosition);setCoordinates(null);};
   const get=e=>{
     const g=gesture.current;
     if(!g||g.id!==e.pointerId||!context.current())return null;
@@ -146,13 +151,13 @@ export function BookPositionOverlay({viewport,node,context,bounds,onCommit,onClo
   const crossPage=!preferredMode&&Number.isSafeInteger(pageCount)&&pageCount>0&&pageCount<=512;
   const panel=geometry?placeBookPositionPanel(geometry.clipped,handleRect?{left:handleRect.left+2,top:handleRect.top+2,width:32,height:32}:null,geometry.visible,{width:260,height:preferredMode?270:220}):null;
   const changed=!!proposal&&(proposal.page!==context.position.page||proposal.x!==context.position.x||proposal.y!==context.position.y);
-  const parseTolerance=(v,max)=>/^\d+(?:\.\d{1,3})?$/.test(v)&&Number.isSafeInteger(Math.round(Number(v)*1000))&&Number(v)*1000<=max?Math.round(Number(v)*1000):null;
+  const parseTolerance=parsePaperMillimetres;
   const tolerance={x:parseTolerance(tx,body.width),y:parseTolerance(ty,body.height)},validTolerance=tolerance.x!==null&&tolerance.y!==null;
   const displayChanged=display.page!==context.position.page||display.x!==context.position.x||display.y!==context.position.y;
   const action=preferredMode?'preferred':'move';
   const quickMode=dragging&&!!draft.current?.geometrySession;
   const preferenceChanged=preferredMode&&(!stored||display.page!==stored.position.page||display.x!==stored.position.x||display.y!==stored.position.y||tolerance.x!==stored.tolerance.x||tolerance.y!==stored.tolerance.y);
-  const proposalKey=geometry&&!invalid&&!needsRebase&&context.current()&&(preferredMode?validTolerance&&preferenceChanged:displayChanged)?JSON.stringify([action,display.page,display.x,display.y,preferredMode?tolerance.x:null,preferredMode?tolerance.y:null]):null;
+  const proposalKey=geometry&&!invalid&&!needsRebase&&!coordinateDirty&&context.current()&&(preferredMode?validTolerance&&preferenceChanged:displayChanged)?JSON.stringify([action,display.page,display.x,display.y,preferredMode?tolerance.x:null,preferredMode?tolerance.y:null]):null;
   const liveKey=quickMode?null:proposalKey;
   const quickKey=quickMode&&ghost?proposalKey:null;
   useLayoutEffect(()=>{
@@ -210,10 +215,10 @@ export function BookPositionOverlay({viewport,node,context,bounds,onCommit,onClo
     {shown&&<div className="paper-inline-live" aria-hidden="true" inert={true} style={{left:visible.left,top:visible.top,width:visible.right-visible.left,height:visible.bottom-visible.top}}><div ref={liveMount} style={{position:'absolute',left:host.left,top:host.top,width:host.width,transformOrigin:'top left',transform:'scale('+host.sx+','+host.sy+')'}}/></div>}
     {handleRect&&!needsRebase&&<div className="paper-selection-frame book-position-frame" style={handleRect}>
       <button id="book-paper-position-drag" data-dragging={dragging} data-geometry-available={!!draft.current?.geometrySession} data-invalid={invalid} data-origin-y={position.y} data-max-y={bounds.maxY} data-body-height={body.height} data-body-pixels={body.pixelHeight} type="button" className="paper-block-drag" aria-label="位置をドラッグ（矢印キーでも移動）" title={preferredMode?'同一ページ内で希望位置を指定':'表示中の別ページへもドラッグ可能。矢印キーは1 mm、Shiftで5 mm'}
-        onPointerDown={e=>{if(e.button!==0||!e.isPrimary||gesture.current||!context.current())return;e.preventDefault();e.currentTarget.focus({preventScroll:true});try{e.currentTarget.setPointerCapture(e.pointerId);}catch{return;}const page=preferredMode?geometry.body:geometry.pages.get(position.page);if(!page){e.currentTarget.releasePointerCapture(e.pointerId);return;}setDragging(true);gesture.current={id:e.pointerId,x:e.clientX,y:e.clientY,position,node:e.currentTarget,grab:{x:(e.clientX-page.left)/page.width*body.width-position.x,y:(e.clientY-page.top)/page.height*body.height-position.y}};}}
+        onPointerDown={e=>{if(e.button!==0||!e.isPrimary||gesture.current||coordinateDirty||!context.current())return;e.preventDefault();e.currentTarget.focus({preventScroll:true});try{e.currentTarget.setPointerCapture(e.pointerId);}catch{return;}const page=preferredMode?geometry.body:geometry.pages.get(position.page);if(!page){e.currentTarget.releasePointerCapture(e.pointerId);return;}setDragging(true);gesture.current={id:e.pointerId,x:e.clientX,y:e.clientY,position,node:e.currentTarget,grab:{x:(e.clientX-page.left)/page.width*body.width-position.x,y:(e.clientY-page.top)/page.height*body.height-position.y}};}}
         onPointerMove={e=>{if(gesture.current?.id!==e.pointerId)return;const next=get(e);setGhost(next);setInvalid(!next);}}
         onPointerUp={finish} onPointerCancel={cancel} onLostPointerCapture={cancel}
-        onKeyDown={e=>{const dir={ArrowLeft:[-1,0],ArrowRight:[1,0],ArrowUp:[0,-1],ArrowDown:[0,1]}[e.key];if(!dir||!context.current()||gesture.current||e.ctrlKey||e.metaKey||e.altKey)return;e.preventDefault();e.stopPropagation();const step=e.shiftKey?5000:1000;const next={page:position.page,x:position.x+dir[0]*step,y:position.y+dir[1]*step};if(next.x>=0&&next.y>=0&&next.x<=bounds.maxX&&next.y<=bounds.maxY)setProposal(next);}}>✥</button>
+        onKeyDown={e=>{const dir={ArrowLeft:[-1,0],ArrowRight:[1,0],ArrowUp:[0,-1],ArrowDown:[0,1]}[e.key];if(!dir||!context.current()||gesture.current||coordinateDirty||e.ctrlKey||e.metaKey||e.altKey)return;e.preventDefault();e.stopPropagation();const step=e.shiftKey?5000:1000;const next={page:position.page,x:position.x+dir[0]*step,y:position.y+dir[1]*step};if(next.x>=0&&next.y>=0&&next.x<=bounds.maxX&&next.y<=bounds.maxY)setProposal(next);}}>✥</button>
     </div>}
     {quickFrames.map(f=><div key={f.key} className={'book-geometry-draft-frame'+(f.selected?' is-selected':'')} aria-hidden="true" style={f.rect}/>)}
     {rect&&!needsRebase&&<div className="paper-drop-guide" aria-hidden="true" style={rect}/>}
@@ -222,10 +227,11 @@ export function BookPositionOverlay({viewport,node,context,bounds,onCommit,onClo
       {needsRebase&&<><small>保存済み：{stored.position.page+1}ページ X {stored.position.x/1000} / Y {stored.position.y/1000} mm、許容 ±{stored.tolerance.x/1000} / ±{stored.tolerance.y/1000} mm</small><button type="button" id="book-paper-preferred-rebase" onClick={()=>{if(!context.current())return;setProposal(null);setRebased(true);}}>現在の紙面を基準に再指定</button></>}
       {quickMode&&<small className="paper-inline-live-status" data-position-phase={quickResult?'geometry-ready':quick?.key===quickKey&&quick.error?'geometry-conflict':'geometry-pending'} data-elapsed-ms={quickResult?quick.elapsedMs:undefined} data-queue-ms={quickResult?quick.queueMs:undefined} role="status">{invalid?'':quick?.key===quickKey&&quick.error?'配置案が成立しません：'+quick.error:quickResult?'軽量配置案 · 移動 '+quickResult.changed.length+'件 · '+quickResult.pageCount+'ページ（未確定）':'配置ガイド（ドロップ後に実測）'}</small>}
       {liveKey&&<small className="paper-inline-live-status" data-position-phase={shown?'paper-ready':live?.key===liveKey&&live.error?'paper-conflict':'paper-pending'} data-measurement-work={shown?.measurementWork?JSON.stringify(shown.measurementWork):undefined} data-elapsed-ms={shown?live.elapsedMs:undefined} data-queue-ms={shown?live.queueMs:undefined} role="status">{shown?(placement?.preference==='fallback'?'実測配置案：希望範囲外（未保存）':'実測配置案（未保存）'):live?.key===liveKey&&live.error?'配置できません：'+live.error:live?.key===liveKey?'配置変更なし':'配置を計算中…'}</small>}
-      {crossPage&&<label>移動先ページ <select id="book-paper-position-page" value={position.page} disabled={!!gesture.current} onChange={e=>{if(!context.current()||gesture.current)return;const page=Number(e.target.value);if(Number.isSafeInteger(page)&&page>=0&&page<pageCount)setProposal({...position,page});}}>{Array.from({length:pageCount},(_,i)=><option key={i} value={i}>{i+1}ページ</option>)}</select></label>}
+      {crossPage&&<label>移動先ページ <select id="book-paper-position-page" value={position.page} disabled={!!gesture.current||coordinateDirty} onChange={e=>{if(!context.current()||gesture.current||coordinateDirty)return;const page=Number(e.target.value);if(Number.isSafeInteger(page)&&page>=0&&page<pageCount)setProposal({...position,page});}}>{Array.from({length:pageCount},(_,i)=><option key={i} value={i}>{i+1}ページ</option>)}</select></label>}
       {crossPage&&!handleRect&&<small>移動先が画面外です。ページ番号と座標を確認してください。</small>}
+      {!needsRebase&&<div className="book-position-coordinates"><small>本文領域の左上からの距離（mm）</small><div className="paper-property-grid">{['x','y'].map(axis=><label className="paper-property-number" key={axis}>{axis.toUpperCase()} <input id={'book-paper-coordinate-'+axis} type="text" inputMode="decimal" value={coordinateValues[axis]} aria-invalid={parsePaperMillimetres(coordinateValues[axis],axis==='x'?bounds.maxX:bounds.maxY)===null} disabled={dragging} onChange={e=>setCoordinates({...coordinateValues,[axis]:e.target.value})} onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();applyCoordinates();}}}/><span>mm</span></label>)}</div>{coordinateDirty&&<><small role="status">{coordinatePosition?'座標を反映してから紙面を確認してください。':'座標は X 0〜'+bounds.maxX/1000+' / Y 0〜'+bounds.maxY/1000+' mm（小数3桁まで）です。'}</small><div className="controls"><button id="book-paper-coordinate-apply" type="button" disabled={!coordinatePosition||dragging||!context.current()} onClick={applyCoordinates}>座標を反映</button><button type="button" onClick={()=>setCoordinates(null)}>入力を取消</button></div></>}</div>}
       {preferredMode&&!needsRebase?<><small>許容範囲内を優先。成立しない場合は通常配置に戻ります。</small><div className="controls"><label>横 ± mm <input type="number" min="0" max={body.width/1000} step="0.001" value={tx} onChange={e=>setTx(e.target.value)}/></label><label>縦 ± mm <input type="number" min="0" max={body.height/1000} step="0.001" value={ty} onChange={e=>setTy(e.target.value)}/></label></div></>:!preferredMode?<small>確定すると移動先を固定します。</small>:null}
-      <div className="controls"><button id="book-paper-position-apply" type="button" disabled={(!preferredMode&&!changed)||(preferredMode&&(!validTolerance||!preferenceChanged||needsRebase))||!!gesture.current||!context.current()||!!(liveKey&&live?.key===liveKey&&live.error)} onClick={()=>{if(!gesture.current&&context.current()){if(preferredMode&&validTolerance&&preferenceChanged&&!needsRebase)onCommit({position,tolerance});else if(!preferredMode&&changed)onCommit(proposal);}}}>{preferredMode?'希望位置を保存':'移動先を固定して保存'}</button><button type="button" className="secondary-action" onClick={onClose}>取消</button></div>
+      <div className="controls"><button id="book-paper-position-apply" type="button" disabled={(!preferredMode&&!changed)||(preferredMode&&(!validTolerance||!preferenceChanged||needsRebase))||coordinateDirty||!!gesture.current||!context.current()||!!(liveKey&&live?.key===liveKey&&live.error)} onClick={()=>{if(!coordinateDirty&&!gesture.current&&context.current()){if(preferredMode&&validTolerance&&preferenceChanged&&!needsRebase)onCommit({position,tolerance});else if(!preferredMode&&changed)onCommit(proposal);}}}>{preferredMode?'希望位置を保存':'移動先を固定して保存'}</button><button type="button" className="secondary-action" onClick={onClose}>取消</button></div>
     </div>
   </>;
 }
