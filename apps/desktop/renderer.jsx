@@ -37,7 +37,7 @@ import {PaperSelectionOverlay,BookPositionOverlay} from './paper-selection-overl
 import {PaperAreaLab} from './paper-area-lab.jsx';
 import {PaperInlineArea} from './paper-inline-area.jsx';
 import {setPaperAreaValues,createSavedPaperAreaHistory,encodePaperAreaDocument} from './paper-area-store.mjs';
-import {prepareSavedAreaPreview,verifySavedAreaPreview,resolvePaperAreaSelection,captureBookAreaLease,prepareBookAreaCommit,prepareBookAreaRestore,acknowledgeBookAreaCommit,prepareBookFixedRelease,resolveBookFixedSelection,prepareBookFixedCommit,resolveBookMoveBounds,prepareBookPreferredCommit} from './paper-area-preview.mjs';
+import {prepareSavedAreaPreview,verifySavedAreaPreview,resolvePaperAreaSelection,captureBookAreaLease,prepareBookAreaCommit,prepareBookAreaRestore,acknowledgeBookAreaCommit,prepareBookFixedRelease,resolveBookFixedSelection,prepareBookFixedCommit,resolveBookMoveBounds,prepareBookPreferredCommit,prepareBookGroupCommit,prepareBookGroupRelease,resolveBookGroupMembers} from './paper-area-preview.mjs';
 import {planStudyInsertion} from './study-insertion.mjs';
 const parseStructuredInline=value=>parsePreviewInline(value,0,parsePreviewMath);
 const deps={scan:scanDocument,validate:validateScannedBlocks,index:indexBlockIds,validateDisplayMath:parseDisplayMath,validateInlineMath:parsePreviewMath,parseReference:parseReferenceToken};
@@ -140,7 +140,7 @@ function App(){
   const [areaLab,setAreaLab]=useState(null),paperAreaContext=useRef(null),bookFixedRecovery=useRef(null);
   const [applySavedAreas,setApplySavedAreas]=useState(false);
   const [savedAreaHistory]=useState(createSavedPaperAreaHistory);
-  const [bookAreaHistory]=useState(createSavedPaperAreaHistory),[bookAreaPending,setBookAreaPending]=useState(false),[bookMoveMode,setBookMoveMode]=useState(false);
+  const [bookAreaHistory]=useState(createSavedPaperAreaHistory),[bookAreaPending,setBookAreaPending]=useState(false),[bookMoveMode,setBookMoveMode]=useState(false),[groupSelection,setGroupSelection]=useState([]),[groupLayout,setGroupLayout]=useState('vertical');
   const paperEditRef=useRef(null);
   const [showPerformance,setShowPerformance]=useState(false);
   const [reusePaperPages,setReusePaperPages]=useState(false);
@@ -863,12 +863,12 @@ function App(){
   const routeBlockRef=useRef(false);routeBlockRef.current=routeBlocked;
   useEffect(()=>{setPaperBlock(null);setAreaLab(null);if(mode!=='writing'&&mode!=='layout')setPaperEditMode(false);},[mode,file?.id,layoutState.phase]);
   useEffect(()=>{setPaperEditMode(false);},[mode]);
-  useEffect(()=>{setBookMoveMode(false);},[paperBlock]);
+  useEffect(()=>{setBookMoveMode(false);setGroupSelection([]);},[paperBlock]);
   useEffect(()=>{if(!paperEditMode){setAreaLab(null);setPaperBlock(null);}},[paperEditMode]);
   paperEditRef.current={select(documentId,range,source,job,node,lineRange,lineNode){
     if((mode!=='writing'&&mode!=='layout')||!paperEditMode)return false;
     if(mode==='layout'&&navigationBlocked())return true;
-    setPaperBlock(null);setAreaLab(null);
+    if(bookMoveMode!=='group')setPaperBlock(null);setAreaLab(null);
     if(mode==='layout'){
       const context=paperAreaContext.current,block=node?.closest('[data-block]');
       if(layoutState.phase!=='ready'||layoutState.scope!=='book'||navigationBlocked()||dirty||themeDirty||settingsDirty||!applySavedAreas||!context?.areaPrepared||context.scope!=='book'||context.job!==job||!context.current()||!block||block.getRootNode()!==preview.current?.firstElementChild?.shadowRoot||block.dataset.document!==documentId){
@@ -877,10 +877,17 @@ function App(){
       const fixedTarget=resolveBookFixedSelection(context.plan,documentId,block.dataset.block);
       const selected=fixedTarget??resolvePaperAreaSelection(context.plan,documentId,block.dataset.block);
       if(!selected){setStatus('このブロックは配置編集に必要な単一の永続IDを特定できません。');return true;}
+      const entry=context.areaPrepared.document.entries.find(e=>e.documentId===documentId&&e.persistentId===selected.persistentId);
+      if(bookMoveMode==='group'){
+        if(documentId!==paperBlock?.documentId||job!==paperBlock?.job||fixedTarget?.fixed||entry?.bookPreferred||entry?.bookGroup){setStatus('同一原稿の未固定・未グループ部品を選択してください。');return true;}
+        const blockKey=block.dataset.block,anchor=paperBlock.node.dataset.block;
+        if(blockKey!==anchor)setGroupSelection(old=>old.some(e=>e.blockKey===blockKey)?old.filter(e=>e.blockKey!==blockKey):[...old,{blockKey,label:(block.textContent??'').trim().slice(0,60)||selected.persistentId}]);
+        return true;
+      }
       const persisted=context.bookSources?.find(d=>d.documentId===documentId);
       const moveRange=paperBlockRangeForNode(node);
       const move=persisted&&moveRange?resolveBookPaperMove(persisted.source,moveRange,{scan:scanDocument,parseInline:parseStructuredInline}):null;
-      setPaperBlock({job,node:block,label:documentId+' · '+(block.textContent??'').trim().slice(0,60),up:!fixedTarget?.fixed&&!!move?.up,down:!fixedTarget?.fixed&&!!move?.down,whole:true,documentId,moveRange});
+      setPaperBlock({job,node:block,label:documentId+' · '+(block.textContent??'').trim().slice(0,60),up:!fixedTarget?.fixed&&!entry?.bookGroup&&!!move?.up,down:!fixedTarget?.fixed&&!entry?.bookGroup&&!!move?.down,whole:true,documentId,moveRange});
       return true;
     }
     if(layoutState.phase!=='ready'||navigationBlocked()||!layoutScheduler.isCurrent(job)||documentId!==file?.id){
@@ -1031,14 +1038,14 @@ function App(){
   }
   async function saveBookAreaProposal(context,values,action='edit'){
     const host=bookAreaHistoryContext();
-    if(!host||navigationBlocked()||manuscriptStore.getMetadata().dirty||(action!=='edit'&&bookAreaPending)||(bookMoveMode&&!['move','preferred'].includes(action)))return;
-    const editing=['edit','fixed','move','preferred'].includes(action);
-    const candidate=['fixed','move','preferred'].includes(action)?bookFixedCandidate():action==='edit'?paperAreaCandidate():null;
+    if(!host||navigationBlocked()||manuscriptStore.getMetadata().dirty||(action!=='edit'&&bookAreaPending)||(bookMoveMode&&!['move','preferred','group'].includes(action)))return;
+    const editing=['edit','fixed','move','preferred','group'].includes(action);
+    const candidate=['fixed','move','preferred','group'].includes(action)?bookFixedCandidate():action==='edit'?paperAreaCandidate():null;
     if(editing&&(!candidate?.bookLease||candidate.job!==context?.job||candidate.selection.documentId!==context.selection.documentId||candidate.selection.blockKey!==context.selection.blockKey||candidate.persistentId!==context.persistentId))return;
     const current=()=>paperAreaContext.current===host.context&&host.context.current()&&!manuscriptStore.getMetadata().dirty;
     let saved=false;
     await io(async()=>{
-      const edit=action==='preferred'?prepareBookPreferredCommit(candidate,values):action==='move'?prepareBookFixedCommit(candidate,'move',values):action==='fixed'?prepareBookFixedCommit(candidate,values):action==='edit'?prepareBookAreaCommit(candidate,values):null;
+      const edit=action==='group'?prepareBookGroupCommit(candidate,values):action==='preferred'?prepareBookPreferredCommit(candidate,values):action==='move'?prepareBookFixedCommit(candidate,'move',values):action==='fixed'?prepareBookFixedCommit(candidate,values):action==='edit'?prepareBookAreaCommit(candidate,values):null;
       if(editing&&!edit)return;
       const ticket=bookAreaHistory.plan(host.scope,host.snapshot,editing?'edit':action,edit?.prepared.document);
       if(!ticket)return;
@@ -1067,7 +1074,7 @@ function App(){
     if(!host||navigationBlocked()||manuscriptStore.getMetadata().dirty)return;
     let saved=false;
     await io(async()=>{
-      const commit=prepareBookFixedRelease(host,documentId,persistentId,kind);
+      const commit=kind==='group'?prepareBookGroupRelease(host,documentId,persistentId):prepareBookFixedRelease(host,documentId,persistentId,kind);
       if(bookFixedRecovery.current!==host||!host.current()||manuscriptStore.getMetadata().dirty)throw Error('全冊紙面が変更されました。');
       const result=await unwrap(api.saveBookPaperArea(host.token,commit.documentId,commit.lease,commit.expectedRevision,commit.value));
       // A release may leave other conflicts; never treat it as accepted layout.
@@ -1079,12 +1086,16 @@ function App(){
   }
   const fixedRecovery=fixedRecoveryContext();
   const failedFixedEntries=fixedRecovery?.areaSnapshot.document.entries.filter(e=>(e.bookFixed||e.bookPreferred)&&fixedRecovery.bookLease.documents.some(d=>d.documentId===e.documentId))??[];
+  const failedGroups=[...new Map((fixedRecovery?.areaSnapshot.document.entries??[]).filter(e=>e.bookGroup&&fixedRecovery.bookLease.documents.some(d=>d.documentId===e.documentId)).map(e=>[e.bookGroup.id,e])).values()];
   const wholeAreaHistory=bookAreaHistoryContext(),fixedCandidate=bookFixedCandidate();
   const areaHistory=savedAreaHistoryContext();
   const savedPreference=fixedCandidate?.areaPrepared.document.entries.find(e=>e.documentId===fixedCandidate.selection.documentId&&e.persistentId===fixedCandidate.persistentId)?.bookPreferred;
+  const savedGroup=fixedCandidate?.areaPrepared.document.entries.find(e=>e.documentId===fixedCandidate.selection.documentId&&e.persistentId===fixedCandidate.persistentId)?.bookGroup;
+  const selectedGroupKeys=fixedCandidate?[fixedCandidate.selection.blockKey,...groupSelection.map(e=>e.blockKey)]:[];
+  const groupMembers=bookMoveMode==='group'&&fixedCandidate?resolveBookGroupMembers(fixedCandidate,fixedCandidate.selection.documentId,selectedGroupKeys):null;
   const preferenceResult=fixedCandidate?.plan.fragments.find(f=>f.origin.documentId===fixedCandidate.selection.documentId&&f.origin.blockKey===fixedCandidate.selection.blockKey)?.placement?.preference;
   const moveBounds=fixedCandidate?resolveBookMoveBounds(fixedCandidate,fixedCandidate):null;
-  const movingBook=bookMoveMode&&!!fixedCandidate&&!!moveBounds;
+  const movingBook=(bookMoveMode===true||bookMoveMode==='preferred')&&!!fixedCandidate&&!!moveBounds;
   const inlineArea=bookMoveMode?null:inlineAreaCandidate();
   function openPaperArea(){
     const candidate=paperAreaCandidate();
@@ -1093,7 +1104,7 @@ function App(){
     const sourceRevision=file.revision,command=paperBlock.command;
     void io(async()=>{
       const stored=await unwrap(api.readPaperArea(token,id));
-      if(stored.document.entries.some(e=>e.bookFixed||e.bookPreferred))throw Error('固定位置を含む原稿は全冊紙面で確認してください。');
+      if(stored.document.entries.some(e=>e.bookFixed||e.bookPreferred||e.bookGroup))throw Error('固定位置を含む原稿は全冊紙面で確認してください。');
       if(!candidate.current()||manuscriptStore.getPreviewInput().file?.id!==id)return;
       // A saved trial is bound to the persisted source revision. Unsaved
       // manuscript edits may be previewed, but must not be persisted as layout.
@@ -1492,7 +1503,8 @@ function App(){
       <label className="paper-il-toggle"><input id="paper-area-apply-saved" type="checkbox" checked={applySavedAreas} disabled={routeBlocked||measuring||!!areaLab} onChange={e=>changeSavedAreaPreview(e.target.checked)}/>配置案を反映 <small>（試験・PDF不可）</small></label>
     </div>}
     {failedFixedEntries.length>0&&<details id="book-fixed-recovery" className="insertion-details"><summary>位置設定を解除して復旧（{failedFixedEntries.length}件）</summary><p className="muted">組版に失敗しています。解除する部品を選んでください。指定した位置設定だけを解除します。原稿・占有率・余白は変更しません。他の競合が残る場合があります。</p><div style={{maxHeight:240,overflowY:'auto'}}>{failedFixedEntries.map(e=><div key={JSON.stringify([e.documentId,e.persistentId])} className="controls"><small>{e.documentId} / {e.persistentId} · {e.bookFixed?'固定':'希望'} · {(e.bookFixed??e.bookPreferred.position).page+1}ページ · X {(e.bookFixed??e.bookPreferred.position).x/1000} mm / Y {(e.bookFixed??e.bookPreferred.position).y/1000} mm</small><button type="button" className="secondary-action" disabled={routeBlocked||measuring} onClick={()=>void releaseFailedBookFixed(e.documentId,e.persistentId,e.bookFixed?'fixed':'preferred')}>この位置設定を解除して保存</button></div>)}</div></details>}
-    {mode==='layout'&&paperEditMode&&<div className="paper-block-toolbar"><small role="status">{paperBlock?'選択：'+paperBlock.label:'全冊紙面から部品を選択してください。'} · {(inlineArea?.bookLease||fixedCandidate?.bookLease)?'配置保存可（試験・PDF不可）':'保存には最新の保存済み原稿・テーマ・設定が必要です。'}</small>{fixedCandidate&&<div className="paper-context-actions" role="group" aria-label="絶対位置の固定"><small>{fixedCandidate.position.page+1}ページ · X {fixedCandidate.position.x/1000} mm / Y {fixedCandidate.position.y/1000} mm{fixedCandidate.fixed?' · 固定済み':''}</small><button id="book-paper-fixed-toggle" type="button" disabled={bookAreaPending||routeBlocked||!!bookMoveMode||!!savedPreference} title="全冊を再計測して検証後に保存します" onClick={()=>void saveBookAreaProposal(fixedCandidate,fixedCandidate.fixed?'unlock':'lock','fixed')}>{fixedCandidate.fixed?'固定を解除して保存':'現在の位置に固定して保存'}</button>{moveBounds&&!savedPreference&&<button id="book-paper-position-mode" type="button" aria-pressed={bookMoveMode===true} disabled={bookAreaPending||routeBlocked||bookMoveMode==='preferred'} onClick={()=>setBookMoveMode(v=>!v)}>{bookMoveMode===true?'移動を終了':'位置を移動'}</button>}{!fixedCandidate.fixed&&moveBounds&&<button id="book-paper-preferred-mode" type="button" aria-pressed={bookMoveMode==='preferred'} disabled={bookAreaPending||routeBlocked||bookMoveMode===true} onClick={()=>setBookMoveMode(v=>v==='preferred'?false:'preferred')}>{bookMoveMode==='preferred'?'希望位置の編集を終了':savedPreference?'希望位置を変更':'希望位置を指定'}</button>}{savedPreference&&<><small>希望：{savedPreference.position.page+1}ページ X {savedPreference.position.x/1000} / Y {savedPreference.position.y/1000} mm（許容 ±{savedPreference.tolerance.x/1000} / ±{savedPreference.tolerance.y/1000} mm） · {preferenceResult==='honored'?'希望範囲内':'通常配置に戻りました'}</small><button type="button" disabled={bookAreaPending||routeBlocked||!!bookMoveMode} onClick={()=>void saveBookAreaProposal(fixedCandidate,null,'preferred')}>希望位置を解除</button></>}</div>}{paperBlock?.whole&&<div className="paper-context-actions" role="group" aria-label="原稿内の順序（未保存編集）"><span>原稿順</span><button id="book-paper-block-up" type="button" title="原稿を開いて前へ移動（未保存）" disabled={bookMoveMode||bookAreaPending||routeBlocked||!paperBlock.up||!wholeAreaHistory||!!recoveryCandidate} onClick={()=>moveBookPaperBlock('up')}>↑ 前へ</button><button id="book-paper-block-down" type="button" title="原稿を開いて次へ移動（未保存）" disabled={bookMoveMode||bookAreaPending||routeBlocked||!paperBlock.down||!wholeAreaHistory||!!recoveryCandidate} onClick={()=>moveBookPaperBlock('down')}>↓ 次へ</button></div>}<div className="paper-context-actions" role="group" aria-label="全冊配置の変更履歴"><span>全冊配置</span><button id="book-paper-area-undo" type="button" aria-label="全冊配置を元に戻す" title="全冊配置を元に戻す" disabled={bookMoveMode||bookAreaPending||!wholeAreaHistory?.canUndo} onClick={()=>void saveBookAreaProposal(null,null,'undo')}>↶</button><button id="book-paper-area-redo" type="button" aria-label="全冊配置をやり直す" title="全冊配置をやり直す" disabled={bookMoveMode||bookAreaPending||!wholeAreaHistory?.canRedo} onClick={()=>void saveBookAreaProposal(null,null,'redo')}>↷</button></div></div>}
+    {failedGroups.length>0&&<details className="insertion-details"><summary>グループを解除して復旧（{failedGroups.length}件）</summary><p className="muted">グループ全体の関連付けだけを解除します。占有率・余白・本文は保持します。</p>{failedGroups.map(e=><div key={e.bookGroup.id} className="controls"><small>{e.documentId} / {e.bookGroup.id}</small><button type="button" disabled={routeBlocked||measuring} onClick={()=>void releaseFailedBookFixed(e.documentId,e.bookGroup.id,'group')}>グループを解除して保存</button></div>)}</details>}
+    {mode==='layout'&&paperEditMode&&<div className="paper-block-toolbar"><small role="status">{paperBlock?'選択：'+paperBlock.label:'全冊紙面から部品を選択してください。'} · {(inlineArea?.bookLease||fixedCandidate?.bookLease)?'配置保存可（試験・PDF不可）':'保存には最新の保存済み原稿・テーマ・設定が必要です。'}</small>{fixedCandidate&&!savedGroup&&bookMoveMode!=='group'&&<div className="paper-context-actions" role="group" aria-label="絶対位置の固定"><small>{fixedCandidate.position.page+1}ページ · X {fixedCandidate.position.x/1000} mm / Y {fixedCandidate.position.y/1000} mm{fixedCandidate.fixed?' · 固定済み':''}</small><button id="book-paper-fixed-toggle" type="button" disabled={bookAreaPending||routeBlocked||!!bookMoveMode||!!savedPreference} title="全冊を再計測して検証後に保存します" onClick={()=>void saveBookAreaProposal(fixedCandidate,fixedCandidate.fixed?'unlock':'lock','fixed')}>{fixedCandidate.fixed?'固定を解除して保存':'現在の位置に固定して保存'}</button>{moveBounds&&!savedPreference&&<button id="book-paper-position-mode" type="button" aria-pressed={bookMoveMode===true} disabled={bookAreaPending||routeBlocked||bookMoveMode==='preferred'} onClick={()=>setBookMoveMode(v=>!v)}>{bookMoveMode===true?'移動を終了':'位置を移動'}</button>}{!fixedCandidate.fixed&&moveBounds&&<button id="book-paper-preferred-mode" type="button" aria-pressed={bookMoveMode==='preferred'} disabled={bookAreaPending||routeBlocked||bookMoveMode===true} onClick={()=>setBookMoveMode(v=>v==='preferred'?false:'preferred')}>{bookMoveMode==='preferred'?'希望位置の編集を終了':savedPreference?'希望位置を変更':'希望位置を指定'}</button>}{savedPreference&&<><small>希望：{savedPreference.position.page+1}ページ X {savedPreference.position.x/1000} / Y {savedPreference.position.y/1000} mm（許容 ±{savedPreference.tolerance.x/1000} / ±{savedPreference.tolerance.y/1000} mm） · {preferenceResult==='honored'?'希望範囲内':'通常配置に戻りました'}</small><button type="button" disabled={bookAreaPending||routeBlocked||!!bookMoveMode} onClick={()=>void saveBookAreaProposal(fixedCandidate,null,'preferred')}>希望位置を解除</button></>}</div>}{fixedCandidate&&!fixedCandidate.fixed&&!savedPreference&&<div className="paper-context-actions" role="group" aria-label="グループ配置">{savedGroup?<><small>グループ：{fixedCandidate.areaPrepared.document.entries.filter(e=>e.bookGroup?.id===savedGroup.id).length}部品</small><label>配置 <select value={savedGroup.layout} disabled={bookAreaPending||routeBlocked||!!bookMoveMode} onChange={e=>void saveBookAreaProposal(fixedCandidate,{groupId:savedGroup.id,layout:e.target.value},'group')}><option value="vertical">縦並び</option><option value="rows">横並び・折返し</option><option value="adaptiveRows">適応型</option></select></label><button type="button" disabled={bookAreaPending||routeBlocked||!!bookMoveMode} onClick={()=>void saveBookAreaProposal(fixedCandidate,{groupId:savedGroup.id,layout:null},'group')}>グループを解除</button></>:<><button id="book-paper-group-mode" type="button" aria-pressed={bookMoveMode==='group'} disabled={bookAreaPending||routeBlocked||!!bookMoveMode&&bookMoveMode!=='group'} onClick={()=>{setGroupSelection([]);setGroupLayout('vertical');setBookMoveMode(v=>v==='group'?false:'group');}}>{bookMoveMode==='group'?'取消':'グループ化'}</button>{bookMoveMode==='group'&&<><small>紙面で部品を追加選択（再クリックで解除）。同一原稿の連続した部品が対象です。</small><div aria-live="polite"><small>選択：{paperBlock.label}{groupSelection.map(e=>' / '+e.label).join('')}（{selectedGroupKeys.length}件）</small></div><label>配置 <select value={groupLayout} onChange={e=>setGroupLayout(e.target.value)}><option value="vertical">縦並び</option><option value="rows">横並び・折返し</option><option value="adaptiveRows">適応型</option></select></label><button id="book-paper-group-apply" type="button" disabled={!groupMembers||routeBlocked||bookAreaPending} onClick={()=>void saveBookAreaProposal(fixedCandidate,{groupId:crypto.randomUUID(),blockKeys:selectedGroupKeys,layout:groupLayout},'group')}>グループ化して保存</button></>}</>}</div>}{paperBlock?.whole&&<div className="paper-context-actions" role="group" aria-label="原稿内の順序（未保存編集）"><span>原稿順</span><button id="book-paper-block-up" type="button" title="原稿を開いて前へ移動（未保存）" disabled={bookMoveMode||bookAreaPending||routeBlocked||!paperBlock.up||!wholeAreaHistory||!!recoveryCandidate} onClick={()=>moveBookPaperBlock('up')}>↑ 前へ</button><button id="book-paper-block-down" type="button" title="原稿を開いて次へ移動（未保存）" disabled={bookMoveMode||bookAreaPending||routeBlocked||!paperBlock.down||!wholeAreaHistory||!!recoveryCandidate} onClick={()=>moveBookPaperBlock('down')}>↓ 次へ</button></div>}<div className="paper-context-actions" role="group" aria-label="全冊配置の変更履歴"><span>全冊配置</span><button id="book-paper-area-undo" type="button" aria-label="全冊配置を元に戻す" title="全冊配置を元に戻す" disabled={bookMoveMode||bookAreaPending||!wholeAreaHistory?.canUndo} onClick={()=>void saveBookAreaProposal(null,null,'undo')}>↶</button><button id="book-paper-area-redo" type="button" aria-label="全冊配置をやり直す" title="全冊配置をやり直す" disabled={bookMoveMode||bookAreaPending||!wholeAreaHistory?.canRedo} onClick={()=>void saveBookAreaProposal(null,null,'redo')}>↷</button></div></div>}
     {mode==='writing'&&paperEditMode&&<div className="paper-block-toolbar">
       <small className="paper-context-selection" role="status">{paperBlock?'選択：'+paperBlock.label:layoutState.phase==='ready'?'紙面のブロックを選択してください。':'最新の紙面を待っています。'}</small>
       <div className="paper-context-actions" role="group" aria-label="選択ブロックの順序" hidden={!paperBlock}>
