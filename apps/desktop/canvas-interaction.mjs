@@ -48,7 +48,7 @@ export function flowDropIndex(index,centers,coordinate){
 export function flowResizeLimits(node,direction,availableWidth,availableHeight,otherWidth=0){
   const min=node.type==='group'?2*node.padding+1:1;
   const fixedWidth=node.type!=='content'&&Number.isSafeInteger(node.width);
-  const fixedHeight=['rect','image'].includes(node.type)||(node.type==='group'&&node.direction==='canvas');
+  const fixedHeight=['rect','image'].includes(node.type)||(node.type==='group'&&node.direction==='canvas'&&node.heightMode!=='auto');
   if(!fixedWidth&&!fixedHeight)return null;
   if(![availableWidth,availableHeight,otherWidth,min].every(Number.isFinite))return null;
   const maxWidth=Math.min(100000,Math.max(fixedWidth?node.width:0,Math.floor(availableWidth-(direction==='row'?otherWidth:0))));
@@ -76,7 +76,7 @@ export function installCanvasDrag(root,{lookup,onSelect,onActive,onCommit,onReor
       const entry=lookup(id);if(!entry||entry.parent?.direction!=='canvas')continue;
       el.dataset.labDraggable='true';el.style.cursor='grab';el.style.touchAction='none';el.style.userSelect='none';
       // These editor-only children never enter the book preview or the saved definition.
-      const fixedHeight=entry.node.type==='rect'||entry.node.type==='image'||(entry.node.type==='group'&&entry.node.direction==='canvas');
+      const fixedHeight=entry.node.type==='rect'||entry.node.type==='image'||(entry.node.type==='group'&&entry.node.direction==='canvas'&&entry.node.heightMode!=='auto');
       const handle=el.ownerDocument.createElement('span');
       handle.dataset.labResizeHandle=fixedHeight?'both':'width';
       handle.setAttribute('aria-hidden','true');
@@ -185,7 +185,7 @@ export function installCanvasDrag(root,{lookup,onSelect,onActive,onCommit,onReor
     el.style.cursor=movable?'grab':'pointer';
     el.style.touchAction='none';
     const node=entry.node,container=flowContainer(entry);
-    const canWidth=node.type!=='content'&&Number.isSafeInteger(node.width),canHeight=['rect','image'].includes(node.type)||(node.type==='group'&&node.direction==='canvas');
+    const canWidth=node.type!=='content'&&Number.isSafeInteger(node.width),canHeight=['rect','image'].includes(node.type)||(node.type==='group'&&node.direction==='canvas'&&node.heightMode!=='auto');
     let handle;
     if((canWidth||canHeight)&&container&&['row','column'].includes(direction)){
       handle=el.ownerDocument.createElement('span');

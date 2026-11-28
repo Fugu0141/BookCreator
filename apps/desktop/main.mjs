@@ -647,12 +647,27 @@ function workspaceSmokeExec(){
         await raw("document.querySelector('#component-quick-select summary').click()");
         if(!await raw("document.querySelector('#component-quick-select').open"))throw Error('Cannot open direct component selector');
       }
+      if(selectors.some(s=>/^#lab-(measure|smart-snap)$/.test(s))&&await raw("document.querySelector('#lab-view-options')?.hidden===true")){
+        await raw("document.querySelector('#lab-view-options-toggle').click()");
+      }
+      if(selectors.some(s=>/^#lab-visual-(padding|gap)$/.test(s))&&await raw("document.querySelector('#lab-spacing-fields')?.hidden===true")){
+        await raw("document.querySelector('#lab-spacing-toggle').click()");
+      }
+      const side=await raw("(()=>{for(const selector of "+JSON.stringify(selectors)+"){const el=document.querySelector(selector);if(el?.closest('#lab-library-fields'))return 'library';if(el?.closest('#lab-layer-fields'))return 'layers';}return null;})()");
+      if(side&&await raw("document.querySelector('#lab-"+(side==='library'?'library':'layer')+"-fields')?.hidden===true")){
+        await raw("document.querySelector('#lab-"+side+"-toggle').click()");
+        if(await raw("document.querySelector('#lab-"+(side==='library'?'library':'layer')+"-fields')?.hidden===true"))throw Error('Cannot open editor side panel '+side);
+      }
       if(selectors.some(s=>/^#lab-add(?:-image|-slot|-dynamic|-label)?$/.test(s))&&!await raw("document.querySelector('#lab-add-menu')?.getAttribute('aria-expanded')==='true'")){
         await raw("document.querySelector('#lab-add-menu').click()");
         if(!await raw("!document.querySelector('#lab-add-options').hidden"))throw Error('Cannot open element insertion menu');
       }
       // Inspector actions are routed through the corresponding visible category.
       const property=await raw("(()=>{for(const selector of "+JSON.stringify(selectors)+"){const el=document.querySelector(selector),p=el?.closest('[data-property-tab]');if(p)return p.dataset.propertyTab;}return null;})()");
+      if((property||selectors.some(s=>s.startsWith('[data-property-choice=')))&&await raw("document.querySelector('#lab-precision-panel')?.hidden===true")){
+        await raw("document.querySelector('#lab-precision-toggle').click()");
+        if(await raw("document.querySelector('#lab-precision-panel')?.hidden===true"))throw Error('Cannot open precision panel');
+      }
       if(property&&!await raw("document.querySelector('[data-property-tab="+property+"]')?.hidden===false")){
         await raw("document.querySelector('[data-property-choice="+property+"]').click()");
         if(!await raw("document.querySelector('[data-property-tab="+property+"]')?.hidden===false"))throw Error('Cannot open property category '+property);
@@ -1616,7 +1631,10 @@ async function writingJourneySmoke(){
   await click('#catalog-custom-new');
   await until('custom editor',"!!document.querySelector('#lab-library-name')&&!document.querySelector('#lab-library-bind')");
   await until('initial custom live preview',"document.querySelector('#lab-preview').dataset.previewPhase==='ready'&&!!document.querySelector('#lab-preview > div')?.shadowRoot?.querySelector('[data-content-slot]')&&document.querySelector('#lab-preview').dataset.previewConfirmed==='true'");
+  if(await raw("document.querySelector('#lab-library-fields')?.hidden===true"))await click('#lab-library-toggle');
   await input('#lab-library-name',customName);
+  await until('component editor mounted',"!!document.querySelector('#lab-precision-panel')");
+  if(await raw("document.querySelector('#lab-precision-panel').hidden"))await click('#lab-precision-toggle');
   await click('[data-property-choice=layout]');
   const padding=await raw("Number(document.querySelector('#lab-padding').value)===5?6:5");
   await input('#lab-padding',String(padding));
@@ -1624,16 +1642,27 @@ async function writingJourneySmoke(){
   await until('edited live preview',"document.querySelector('#lab-preview').dataset.previewPhase==='ready'&&document.querySelector('#lab-preview').dataset.previewConfirmed==='true'&&!document.querySelector('#lab-library-add').disabled&&[...document.querySelector('#lab-preview > div')?.shadowRoot?.querySelectorAll('[data-fixed-label]')??[]].some(e=>e.textContent==="+JSON.stringify(customName+'：サンプル')+")");
   console.log('PASS UX-10h-1 initial and edited custom component preview without pressing measure');
   // UX-10c: one required named slot and one independently optional slot.
+  if(await raw("document.querySelector('#lab-layer-fields')?.hidden===true"))await click('#lab-layers-toggle');
   await click('#lab-add-menu');
+  if(await raw("document.querySelector('#lab-layer-fields')?.hidden===true"))await click('#lab-layers-toggle');
   await click('#lab-add-slot');
+  await until('component editor mounted',"!!document.querySelector('#lab-precision-panel')");
+  if(await raw("document.querySelector('#lab-precision-panel').hidden"))await click('#lab-precision-toggle');
   await click('[data-property-choice=details]');
   await input('#lab-slot-name','strategy');
+  if(await raw("document.querySelector('#lab-layer-fields')?.hidden===true"))await click('#lab-layers-toggle');
   await click('#lab-add-menu');
+  if(await raw("document.querySelector('#lab-layer-fields')?.hidden===true"))await click('#lab-layers-toggle');
   await click('#lab-add-slot');
+  await until('component editor mounted',"!!document.querySelector('#lab-precision-panel')");
+  if(await raw("document.querySelector('#lab-precision-panel').hidden"))await click('#lab-precision-toggle');
   await click('[data-property-choice=details]');
   await input('#lab-slot-name','extension');
   await click('#lab-slot-optional');
+  if(await raw("document.querySelector('#lab-layer-fields')?.hidden===true"))await click('#lab-layers-toggle');
   await click('#lab-group');
+  await until('component editor mounted',"!!document.querySelector('#lab-precision-panel')");
+  if(await raw("document.querySelector('#lab-precision-panel').hidden"))await click('#lab-precision-toggle');
   await click('[data-property-choice=details]');
   await click('#lab-group-optional');
   await click('#lab-sample-toggle');
@@ -1646,6 +1675,7 @@ async function writingJourneySmoke(){
   await until('custom measured',"!document.querySelector('#lab-library-add').disabled&&[...document.querySelector('#lab-preview > div')?.shadowRoot?.querySelectorAll('[data-fixed-label]')??[]].some(e=>e.textContent==="+JSON.stringify(customName+'：サンプル')+")");
   if(await readFile(themePath,'utf8')!==themeBefore||await readFile(manuscript,'utf8')!==expected)throw Error('Writing journey: unregistered component changed disk');
   await until('custom draft recorded',"document.querySelector('#component-recovery-state')?.dataset.phase==='recorded'");
+  if(await raw("document.querySelector('#lab-library-fields')?.hidden===true"))await click('#lab-library-toggle');
   await click('#lab-library-add');
   await until('custom registered',"[...document.querySelector('#lab-library-select')?.options??[]].some(e=>e.textContent==="+JSON.stringify(customName)+")&&!document.querySelector('#lab-cancel').disabled");
   const customId=await raw("[...document.querySelector('#lab-library-select').options].find(e=>e.textContent==="+JSON.stringify(customName)+").value");
@@ -1720,6 +1750,8 @@ async function writingJourneySmoke(){
   await click('#mode-design');
   await click('#design-tab-components');
   await click('[data-catalog-edit=registered-'+customId+']');
+  await until('component editor mounted',"!!document.querySelector('#lab-precision-panel')");
+  if(await raw("document.querySelector('#lab-precision-panel').hidden"))await click('#lab-precision-toggle');
   await click('[data-property-choice=layout]');
   await until('reloaded component geometry',"Number(document.querySelector('#lab-padding').value)==="+padding+"&&document.querySelector('#lab-library-name').value==="+JSON.stringify(customName));
   await until('reloaded slot definitions',"[...document.querySelectorAll('[data-lab-node]')].some(e=>e.textContent.includes('原稿スロット strategy'))&&[...document.querySelectorAll('[data-lab-node]')].some(e=>e.textContent.includes('原稿スロット extension'))");
@@ -1766,6 +1798,8 @@ async function packageRestartSmoke(){
   await click('#mode-design');
   await click('#design-tab-components');
   await click('[data-catalog-edit=registered-'+oracle.customId+']');
+  await until('component editor mounted',"!!document.querySelector('#lab-precision-panel')");
+  if(await raw("document.querySelector('#lab-precision-panel').hidden"))await click('#lab-precision-toggle');
   await click('[data-property-choice=layout]');
   await until('restored component definition',"Number(document.querySelector('#lab-padding').value)==="+oracle.padding+"&&document.querySelector('#lab-library-name').value==="+JSON.stringify(oracle.customName));
   await click('#lab-cancel');
@@ -1827,6 +1861,8 @@ async function productionDataCrashSmoke(mode){
     }else{
       await click('#mode-design');await click('#design-tab-components');
       await click('[data-catalog-edit=registered-'+restart.customId+']');
+      await until('component editor mounted',"!!document.querySelector('#lab-precision-panel')");
+      if(await raw("document.querySelector('#lab-precision-panel').hidden"))await click('#lab-precision-toggle');
       await click('[data-property-choice=layout]');
       await until('component ready',"!document.querySelector('#lab-padding').disabled");
       const padding=await raw("Number(document.querySelector('#lab-padding').value)===7?8:7");
@@ -1870,11 +1906,13 @@ async function productionDataCrashSmoke(mode){
   }else{
     await hub(1);
     await click('[data-recovery-entry='+oracle.values.id+'] .hub-recovery-open');
+    await until('component editor mounted',"!!document.querySelector('#lab-precision-panel')");
+    if(await raw("document.querySelector('#lab-precision-panel').hidden"))await click('#lab-precision-toggle');
     await click('[data-property-choice=layout]');
     await until('registered candidate locked',"!!document.querySelector('#component-recovery-restore')&&document.querySelector('#lab-padding').disabled");
     await click('#component-recovery-restore');
     await until('restored and unmeasured',"Number(document.querySelector('#lab-padding').value)==="+oracle.values.padding+"&&document.querySelector('#lab-library-replace').disabled&&!document.querySelector('#lab-measure').disabled");
-    await click('#lab-measure');await until('measured',"!document.querySelector('#lab-library-replace').disabled");
+    if(await raw("document.querySelector('#lab-measure')?.hidden===true"))await click('#lab-view-options-toggle');await click('#lab-measure');await until('measured',"!document.querySelector('#lab-library-replace').disabled");
     if(!same(await hashes(),saved))throw Error('Component recovery silently updated theme');
     await click('#lab-cancel');await until('closed',"!document.querySelector('#lab-measure')");
     if((await records()).length||!same(await hashes(),saved))throw Error('Component cancel lost original or retained working draft');
@@ -2049,7 +2087,7 @@ async function componentRecoveryJourneySmoke(){
   const store=recoveryStore(smokeRoot,'components');
   const oracle=JSON.parse(await readFile(join(smokeRoot,'ux10-restart.json'),'utf8'));
   const selector='[data-catalog-edit=registered-'+oracle.customId+']';
-  async function openLab(){await click('#mode-design');await click('#design-tab-components');await click(selector);await click('[data-property-choice=layout]');}
+  async function openLab(){await click('#mode-design');await click('#design-tab-components');await click(selector);await click('#lab-precision-toggle');await click('[data-property-choice=layout]');}
   await openLab();
   const padding=oracle.padding===7?8:7;
   await input('#lab-padding',padding);
@@ -2063,6 +2101,8 @@ async function componentRecoveryJourneySmoke(){
     await click('#hub-recovery');
     await until('registered component listed',"document.querySelector('#hub-recovery-summary')?.textContent==='1 件の復旧候補'&&!!document.querySelector("+JSON.stringify('[data-recovery-entry='+oracle.customId+'] .hub-recovery-open')+")");
     await click('[data-recovery-entry='+oracle.customId+'] .hub-recovery-open');
+    await until('component editor opened',"!!document.querySelector('#lab-precision-toggle')");
+    if(await raw("document.querySelector('#lab-precision-panel').hidden"))await click('#lab-precision-toggle');
     await click('[data-property-choice=layout]');
     await until('candidate',"!!document.querySelector('#component-recovery-restore')&&document.querySelector('#lab-padding').disabled");
   }
@@ -2071,7 +2111,7 @@ async function componentRecoveryJourneySmoke(){
   if((await store.list()).records[0]?.version!==snapshot[0].version)throw Error('Deferred recovery was modified');
   await openLab();await click('#component-recovery-restore');
   await until('restored design requires measurement',"Number(document.querySelector('#lab-padding').value)==="+padding+"&&!document.querySelector('#lab-measure').disabled&&document.querySelector('#lab-library-replace').disabled");
-  await click('#lab-measure');
+  if(await raw("document.querySelector('#lab-measure')?.hidden===true"))await click('#lab-view-options-toggle');await click('#lab-measure');
   await until('restored design measured',"!document.querySelector('#lab-library-replace').disabled");
   if(await readFile(themePath,'utf8')!==savedTheme)throw Error('Recovery implicitly changed registered component');
   await click('#lab-cancel');await until('discarded close',"!document.querySelector('#lab-measure')");
@@ -2380,7 +2420,23 @@ async function smoke(){
   if(!await exec("Math.abs(parseFloat(document.querySelector('#preview > div').shadowRoot.querySelector('[data-page]').style.width)-210*96/25.4)<0.1"))throw Error('Physical A4 preview width mismatch');
   await exec("document.querySelector('#component-lab').click()");
   await until("!!document.querySelector('#lab-measure')");
+  await until("document.querySelector('#lab-precision-panel').hidden&&!document.querySelector('#lab-padding').getClientRects().length&&document.querySelector('#lab-precision-toggle').getAttribute('aria-expanded')==='false'");
+  const wideCanvas=await exec("document.querySelector('.lab-canvas').getBoundingClientRect().width");
+  await until("!document.querySelector('#lab-layer-fields').hidden&&document.querySelector('#lab-library-fields').hidden");
+  await exec("document.querySelector('#lab-library-toggle').click()");
+  await until("document.querySelector('#lab-layer-fields').hidden&&!document.querySelector('#lab-library-fields').hidden&&!!document.querySelector('#lab-library-name').getClientRects().length");
+  await exec("document.querySelector('#lab-left-close').click()");
+  await until("document.querySelector('#lab-left-panel').hidden&&document.querySelector('.lab-canvas').getBoundingClientRect().width>"+wideCanvas);
+  await exec("document.querySelector('#lab-layers-toggle').click()");
+  await until("!document.querySelector('#lab-left-panel').hidden&&!document.querySelector('#lab-layer-fields').hidden&&Math.abs(document.querySelector('.lab-canvas').getBoundingClientRect().width-"+wideCanvas+")<1");
+
+  await exec("document.querySelector('#lab-quick-precision').click()");
+  await until("!document.querySelector('#lab-precision-panel').hidden&&document.querySelector('#lab-precision-toggle').getAttribute('aria-expanded')==='true'");
   if(!await exec("(()=>{const q=s=>document.querySelector(s),a=q('.lab-layers').getBoundingClientRect(),b=q('.lab-canvas').getBoundingClientRect(),c=q('.lab-inspector').getBoundingClientRect();return a.width>0&&b.width>0&&c.width>0&&a.right<=b.left&&b.right<=c.left&&q('.lab-layers').contains(q('[data-lab-node]'))&&q('.lab-inspector').contains(q('#lab-padding'))&&q('.lab-canvas').contains(q('#lab-preview'));})()"))throw Error('Component editor pane order or controls incorrect');
+  if(!await exec("document.querySelector('.lab-canvas').getBoundingClientRect().width<"+wideCanvas))throw Error('Precision panel does not resize canvas');
+  await exec("document.querySelector('#lab-precision-close').click()");
+  await until("document.querySelector('#lab-precision-panel').hidden&&Math.abs(document.querySelector('.lab-canvas').getBoundingClientRect().width-"+wideCanvas+")<1");
+
   await until("document.querySelector('#lab-add-options').hidden&&document.querySelector('#lab-property-appearance').hidden===false&&document.querySelector('#lab-property-layout').hidden&&document.querySelector('#lab-property-details').hidden");
   // Row/column parts must be selectable from the measured canvas, not only the layer list.
   await until("!!document.querySelector('#lab-preview > div')?.shadowRoot?.querySelector('[data-component-node=content][data-lab-selectable]')");
@@ -2413,16 +2469,28 @@ async function smoke(){
   await until("document.querySelector('#lab-quick-lock').getAttribute('aria-pressed')==='true'&&document.querySelector('#lab-quick-color').disabled&&document.querySelector('#lab-quick-remove').disabled");
   await exec("document.querySelector('#lab-quick-lock').click()");
   await until("!document.querySelector('#lab-quick-color').disabled");
+  await until("document.querySelector('#lab-spacing-fields').hidden&&document.querySelector('#lab-view-options').hidden&&document.querySelector('#lab-measure').hidden");
+  await exec("document.querySelector('#lab-spacing-toggle').click()");
+  await until("!document.querySelector('#lab-spacing-fields').hidden");
   const spacingStart=await exec("Number(document.querySelector('#lab-visual-padding').value)");
   await exec("document.querySelector('#lab-visual-padding').dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true,cancelable:true}))");
   await until("Number(document.querySelector('#lab-visual-padding').value)==="+(spacingStart+500)+"&&Number(document.querySelector('#lab-padding').value)==="+((spacingStart+500)/1000)+"&&!document.querySelector('#lab-apply').disabled");
   await exec("document.querySelector('#lab-undo').click()");
   await until("Number(document.querySelector('#lab-visual-padding').value)==="+spacingStart+"&&Number(document.querySelector('#lab-padding').value)==="+(spacingStart/1000)+"&&!document.querySelector('#lab-apply').disabled");
+  await exec("document.querySelector('#lab-spacing-toggle').click()");
+  await until("document.querySelector('#lab-spacing-fields').hidden&&!!document.querySelector('#lab-zoom').getClientRects().length");
+  await exec("document.querySelector('#lab-view-options-toggle').click()");
+  await until("!document.querySelector('#lab-view-options').hidden&&!document.querySelector('#lab-measure').hidden");
+  await exec("document.querySelector('#lab-view-options-toggle').click()");
+  await until("document.querySelector('#lab-measure').hidden");
+
 
   await exec("document.querySelector('#lab-add-menu').click()");
   await until("!document.querySelector('#lab-add-options').hidden&&!!document.querySelector('#lab-add-label').getClientRects().length");
   await exec("document.querySelector('#lab-add-menu').click()");
   await until("document.querySelector('#lab-add-options').hidden&&!document.querySelector('#lab-add-label').getClientRects().length");
+  await exec("document.querySelector('#lab-precision-toggle').click()");
+  await until("!document.querySelector('#lab-precision-panel').hidden");
   for(const category of ['layout','details','appearance']){
     await exec("document.querySelector('[data-property-choice="+category+"]').click()");
     await until("!document.querySelector('[data-property-tab="+category+"]').hidden&&[...document.querySelectorAll('.lab-inspector [data-property-tab]')].filter(p=>!p.hidden).length===1");
@@ -2437,6 +2505,8 @@ async function smoke(){
     if(await exec("innerWidth<=650")){
       await until("(()=>{const a=document.querySelector('.lab-layers').getBoundingClientRect(),b=document.querySelector('.lab-canvas').getBoundingClientRect(),c=document.querySelector('.lab-inspector').getBoundingClientRect();return a.bottom<=b.top+1&&b.bottom<=c.top+1;})()");
     }
+    await exec("document.querySelector('#lab-view-options-toggle').click()");
+    await until("!document.querySelector('#lab-measure').hidden");
     await exec("document.querySelector('#lab-measure').scrollIntoView({block:'center',inline:'nearest'})");
     await until("(()=>{const r=document.querySelector('#lab-measure').getBoundingClientRect(),g=document.querySelector('.lab-grid-three').getBoundingClientRect();return r.top>=g.top-1&&r.bottom<=g.bottom+1;})()");
     await exec("document.querySelector('#lab-measure').click()");
@@ -2518,7 +2588,28 @@ async function smoke(){
   await exec("Array.from(document.querySelectorAll('[data-lab-node]')).find(e=>e.textContent.includes('グループ')).click()");
   await until("!!document.querySelector('#lab-group-direction')");
   await exec("(()=>{const e=document.querySelector('#lab-group-direction');e.value='canvas';e.dispatchEvent(new Event('change',{bubbles:true}));})()");
-  await until("!!document.querySelector('#lab-canvas-height')");
+  await until("!!document.querySelector('#lab-canvas-height')&&!document.querySelector('#lab-fit-canvas').disabled");
+  const initialAreaHeight=await exec("Number(document.querySelector('#lab-canvas-height').value)");
+  const setAreaMode=mode=>exec("(()=>{const e=document.querySelector('#lab-area-mode');e.value="+JSON.stringify(mode)+";e.dispatchEvent(new Event('change',{bubbles:true}));})()");
+  await setAreaMode('auto');
+  await until("document.querySelector('#lab-area-mode').value==='auto'&&!document.querySelector('#lab-apply').disabled&&!document.querySelector('#lab-canvas-height')");
+  const autoHeight=await exec("parseFloat(document.querySelector('#lab-preview > div').shadowRoot.querySelector('[data-component-canvas]').style.height)");
+  if(!Number.isFinite(autoHeight)||autoHeight<=0||autoHeight>initialAreaHeight*96/25.4+.02)throw Error('Automatic occupied height incorrect');
+  await setAreaMode('minimum');
+  await until("document.querySelector('#lab-area-mode').value==='minimum'&&!document.querySelector('#lab-apply').disabled");
+  if(!await exec("Number(document.querySelector('#lab-area-minimum').value)>0"))throw Error('Minimum height mode lost its floor');
+  await exec("document.querySelector('#lab-undo').click()");
+  await until("document.querySelector('#lab-area-mode').value==='auto'&&!document.querySelector('#lab-apply').disabled");
+  await exec("document.querySelector('#lab-undo').click()");
+  await until("document.querySelector('#lab-area-mode').value==='fixed'&&Number(document.querySelector('#lab-canvas-height').value)==="+initialAreaHeight+"&&!document.querySelector('#lab-apply').disabled");
+
+  const fitAreaHeight=await exec("(()=>{const c=document.querySelector('#lab-preview > div').shadowRoot.querySelector('[data-component-canvas]'),pad=Number(document.querySelector('#lab-group-padding').value)*1000,um=v=>Math.round(parseFloat(v)*25400/96);return (pad+Math.max(...[...c.children].filter(e=>e.dataset.componentNode).map(e=>um(e.style.top)+um(e.style.height))))/1000;})()");
+  await exec("document.querySelector('#lab-fit-canvas').click()");
+  await until("Number(document.querySelector('#lab-canvas-height').value)==="+fitAreaHeight+"&&!document.querySelector('#lab-apply').disabled");
+  if(initialAreaHeight!==fitAreaHeight){
+    await exec("document.querySelector('#lab-undo').click()");
+    await until("Number(document.querySelector('#lab-canvas-height').value)==="+initialAreaHeight+"&&!document.querySelector('#lab-apply').disabled");
+  }
   await exec("document.querySelector('[data-lab-node=content]').click()");
   await until("!!document.querySelector('#lab-canvas-x')");
   await exec("(()=>{const e=document.querySelector('#lab-canvas-x');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,'3');e.dispatchEvent(new Event('input',{bubbles:true}));})()");
