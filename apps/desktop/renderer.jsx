@@ -921,8 +921,8 @@ function App(){
     const fragment=plan.fragments.find(f=>f.origin.documentId===selection.documentId&&f.origin.blockKey===selection.blockKey);
     if(fragment?.placement?.fixed)return null;
     const entry=areaPrepared.document.entries.find(e=>e.documentId===selection.documentId&&e.persistentId===persistentId);
-    const {minWidthPercent,minHeightPercent,spaceAfter}=entry??{};
-    return {...candidate,target:{...selection,fragmentCount:1},placement:{...(spaceAfter?{spaceAfter}:{}),sizeConstraints:{...(minWidthPercent?{minWidthPercent}:{}),...(minHeightPercent?{minHeightPercent}:{})}},occupied:fragment?.placement?.occupiedRect??fragment?.placement?.rect,width:candidate.options.width,height:candidate.options.height,disabled:routeBlocked||measuring};
+    const {minWidthPercent,minHeightPercent,spaceAfter,spaceBefore}=entry??{};
+    return {...candidate,target:{...selection,fragmentCount:1},placement:{...(spaceAfter?{spaceAfter}:{}),...(spaceBefore?{spaceBefore}:{}),sizeConstraints:{...(minWidthPercent?{minWidthPercent}:{}),...(minHeightPercent?{minHeightPercent}:{})}},occupied:fragment?.placement?.occupiedRect??fragment?.placement?.rect,width:candidate.options.width,height:candidate.options.height,disabled:routeBlocked||measuring};
   }
   function savedAreaHistoryContext(){
     const context=paperAreaContext.current;
