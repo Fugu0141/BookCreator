@@ -720,3 +720,8 @@ body{font-family:BCFont_NotoSansJP,system-ui,sans-serif}.font-control,.typograph
 .paper-inline-area-toolbar{position:fixed;z-index:22;display:flex;align-items:center;flex-wrap:wrap;gap:4px;max-width:260px;padding:5px;background:var(--panel,#fff);color:#1e3a5f;border:1px solid #c1ccda;border-radius:5px;box-shadow:0 2px 8px #0002;}
 .paper-inline-area-toolbar button{font-size:12px;min-height:25px;padding:3px 6px;}
 .paper-inline-area-frame .paper-area-handle:disabled{opacity:.45;}
+
+/* Inert draft overlay. The committed host remains mounted below and is
+   restored simply by removing the layer; no draft enters paper navigation. */
+.paper-inline-live{position:fixed;z-index:19;overflow:hidden;pointer-events:none;background:#e7edf2;}
+.paper-inline-live-status{flex-basis:100%;overflow-wrap:anywhere;max-height:4em;overflow:auto;}
