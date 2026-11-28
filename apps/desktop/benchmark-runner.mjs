@@ -439,5 +439,76 @@ export async function runBookBenchmark(win,app,root,fixture){
   await raw('window.__bcPartialEnvironment.close()');
   const partialComparison=summarizeCacheComparison(partialComparisons.map(s=>({label:'cache-pair-'+s.pair+'-'+s.arm,scope:'manuscript',elapsedMs:s.elapsedMs})),'manuscript');
   const retainedEdits=await benchmarkRetainedEdits({raw,click,until,ready,paperSignature,large,root});
-  console.log('BENCH report '+JSON.stringify({version:12,fixtureVersion:2,editorSubscription,retainedEdits,defaultParagraphCacheEnabled:true,partialComparison,partialComparisons,baselinePage,pageComparison,pageComparisons,paragraphEditComparison,paragraphEditComparisons,cacheComparison,phaseComparisons,mathComparison,mathComparisons,paragraphComparison,paragraphComparisons,chapters:fixture.chapters.map(c=>({id:c.id,characters:c.source.length,sections:c.sections,blocks:c.blocks})),initialMemory,finalMemory:memory(),samples,summary,baselineCache,baselineMath,baselineParagraph,finalCache}));
+  const positionDrag=await benchmarkBookPositionDrag({win,raw,click,until,ready,paperSignature,root,fixture});
+  console.log('BENCH report '+JSON.stringify({version:13,fixtureVersion:2,editorSubscription,retainedEdits,positionDrag,defaultParagraphCacheEnabled:true,partialComparison,partialComparisons,baselinePage,pageComparison,pageComparisons,paragraphEditComparison,paragraphEditComparisons,cacheComparison,phaseComparisons,mathComparison,mathComparisons,paragraphComparison,paragraphComparisons,chapters:fixture.chapters.map(c=>({id:c.id,characters:c.source.length,sections:c.sections,blocks:c.blocks})),initialMemory,finalMemory:memory(),samples,summary,baselineCache,baselineMath,baselineParagraph,finalCache}));
+}
+
+
+// Real GUI drag on the existing synthetic long book; never persist a proposal.
+// Add an ID only after the historical comparison arms have finished.
+async function benchmarkBookPositionDrag({win,raw,click,until,ready,paperSignature,root,fixture}){
+  const small=fixture.chapters[0],path=join(root,'manuscript',small.id+'.md');
+  const source=small.source.replace(':::component{name="example"}',':::component{name="example" #bench-drag}');
+  if(source===small.source)throw Error('Missing drag fixture');
+  await click('#mode-home');
+  await writeFile(path,source);
+  try{
+    await click('#open');
+    await until('drag project reopened',"document.querySelector('.workspace-shell').dataset.workspaceMode==='writing'&&!!document.querySelector('[data-section=small]')");
+    await click('[data-section=small]');
+    await until('drag source loaded',"document.querySelector('#source').value==="+JSON.stringify(source));
+    await click('#performance-toggle');
+    const pageCache="#performance-page-cache-enabled";
+    if(await raw("document.querySelector("+JSON.stringify(pageCache)+").checked"))await click(pageCache);
+    await click('#performance-close');
+    await click('#mode-layout');
+    await click('#paper-area-apply-saved');
+    await click('#preview-book');
+    await until('drag full IL paper',ready('book'));
+    const pages=await raw("document.querySelector('#preview > div').shadowRoot.querySelectorAll('[data-page]').length");
+    if(pages<10)throw Error('Long-book drag fixture is too small: '+pages);
+    const baseline=await paperSignature();
+    await click('#paper-edit-mode');
+    const target="(()=>{const r=document.querySelector('#preview > div').shadowRoot;return [...r.querySelectorAll('[data-block]')].find(n=>n.dataset.document==='small'&&n.textContent.includes('例題の本文です。'));})()";
+    const phase=p=>"(!!document.querySelector('[data-position-phase="+p+"]'))";
+    const readTiming=async p=>{
+      await until('drag '+p,phase(p));
+      const row=await raw("(()=>{const e=document.querySelector('[data-position-phase="+p+"]');return {elapsedMs:Number(e.dataset.elapsedMs),queueMs:Number(e.dataset.queueMs)};})()");
+      if(![row.elapsedMs,row.queueMs].every(n=>Number.isFinite(n)&&n>=0))throw Error('Invalid position timing');
+      return row;
+    };
+    const rows=[];
+    for(let i=0;i<4;i++){
+      await raw(target+".scrollIntoView({block:'center',inline:'center'})");
+      await raw("new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))");
+      await raw(target+".click()");
+      await click('#book-paper-preferred-mode');
+      await until('drag handle',"!!document.querySelector('#book-paper-position-drag')?.getClientRects().length");
+      const point=await raw("(()=>{const r=document.querySelector('#book-paper-position-drag').getBoundingClientRect();return {x:Math.round(r.left+r.width/2),y:Math.round(r.top+r.height/2)};})()");
+      const end={x:point.x,y:point.y+8+i*2};
+      const started=performance.now();
+      win.webContents.sendInputEvent({type:'mouseMove',...point});
+      win.webContents.sendInputEvent({type:'mouseDown',...point,button:'left',clickCount:1});
+      try{
+        win.webContents.sendInputEvent({type:'mouseMove',...end,button:'left'});
+        const geometry=await readTiming('geometry-ready');
+        const pointerToGuideMs=performance.now()-started;
+        const drop=performance.now();
+        win.webContents.sendInputEvent({type:'mouseUp',...end,button:'left',clickCount:1});
+        const paper=await readTiming('paper-ready');
+        const dropToPaperMs=performance.now()-drop;
+        if(!await raw("!!document.querySelector('.paper-inline-live')"))throw Error('Complete draft DOM missing');
+        rows.push({sample:i+1,geometry,paper,pointerToGuideMs,dropToPaperMs});
+      }finally{win.webContents.sendInputEvent({type:'mouseUp',...end,button:'left',clickCount:1});}
+      await click('#book-paper-preferred-mode');
+      await until('draft closed',"!document.querySelector('#book-paper-position-drag')&&!document.querySelector('.paper-inline-live')");
+      if(await paperSignature()!==baseline||await readFile(path,'utf8')!==source)throw Error('Cancelled drag changed published paper or manuscript');
+    }
+    await readFile(join(root,'layouts','paper-area.json')).then(()=>{throw Error('Unsaved drag persisted paper intent');},e=>{if(e.code!=='ENOENT')throw e;});
+    const median=values=>{const v=[...values].sort((a,b)=>a-b);return (v[1]+v[2])/2;};
+    const report={pages,samples:rows,geometryMedianMs:median(rows.map(r=>r.geometry.elapsedMs)),paperMedianMs:median(rows.map(r=>r.paper.elapsedMs)),pointerToGuideMedianMs:median(rows.map(r=>r.pointerToGuideMs)),dropToPaperMedianMs:median(rows.map(r=>r.dropToPaperMs))};
+    console.log('BENCH IL position drag '+JSON.stringify(report));
+    await click('#mode-home');
+    return report;
+  }finally{await writeFile(path,small.source);}
 }
