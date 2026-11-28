@@ -1,7 +1,7 @@
 import {installPaperNavigation} from './paper-navigation.mjs';
 // A reused page preserves physical geometry; source bindings must still be
 // rebuilt. Weak keys keep geometry from extending the lifetime of old DOM.
-const thumbnailCache=new WeakMap();
+const pageMetadataCache=new WeakMap();
 // A sparse lease guarantees that reused fragments retain their DOM structure.
 // Cache only node topology and local geometry offsets, never source ranges.
 const fragmentTopology=new WeakMap();
@@ -35,10 +35,14 @@ export function describeMeasuredPaper(result,options,{previewSourceRange,paperTh
   }
   let cursor=0;
   const pages=pageRecords.map(({node:page,reuse,fragments},index)=>{
-    const documents=new Set();
+    const cached=reuse?pageMetadataCache.get(page):undefined;
+    // Validate the document sequence while rebinding current source ranges.
+    // A reused DOM page can share its immutable UI summary, not its bindings.
+    const pageStart=cursor;
+    let sameDocuments=!!cached&&cached.documentSequence.length===fragments.length;
     for(const el of fragments){
-      const slice=result.slices[cursor++];if(!slice)continue;
-      documents.add(slice.origin.documentId);
+      const slice=result.slices[cursor++];if(!slice){sameDocuments=false;continue;}
+      if(sameDocuments&&cached.documentSequence[cursor-pageStart-1]!==slice.origin.documentId)sameDocuments=false;
       const bind=(node,range)=>{
         if(!range){if(reuse){node.removeAttribute('tabindex');node.style.removeProperty('cursor');}return;}
         if(node.tabIndex!==0)node.tabIndex=0;
@@ -58,13 +62,16 @@ export function describeMeasuredPaper(result,options,{previewSourceRange,paperTh
       }
     }
     let thumbnail;
-    const cached=reuse?thumbnailCache.get(page):undefined;
-    if(cached&&cached.adapter===paperThumbnail)thumbnail=cached.value;
+    if(cached&&cached.adapter===paperThumbnail)thumbnail=cached.metadata.thumbnail;
     else{
       thumbnail=paperThumbnail(page,fragments);
-      thumbnailCache.set(page,{adapter:paperThumbnail,value:thumbnail});
     }
-    return {number:index+1,documents:[...documents],blocks:fragments.length,thumbnail};
+    if(sameDocuments&&cached.adapter===paperThumbnail&&cached.metadata.number===index+1)return cached.metadata;
+    const documentSequence=sameDocuments?cached.documentSequence:Array.from({length:fragments.length},(_,i)=>result.slices[pageStart+i]?.origin.documentId);
+    const documents=Object.freeze([...new Set(documentSequence.filter(id=>id!==undefined))]);
+    const metadata=Object.freeze({number:index+1,documents,blocks:fragments.length,thumbnail});
+    pageMetadataCache.set(page,{adapter:paperThumbnail,documentSequence,metadata});
+    return metadata;
   });
   installPaperNavigation(root,bindings,onNavigate);
   return pages;

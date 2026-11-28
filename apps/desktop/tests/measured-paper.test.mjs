@@ -54,6 +54,7 @@ test('reused paper thumbnail geometry is shared, but current navigation is rebui
   }
   const first=publish(false,1),next=publish(true,5);
   assert.equal(next.thumbnail,first.thumbnail);assert.equal(calls.length,1);
+  assert.equal(next,first);assert.ok(Object.isFrozen(next));assert.ok(Object.isFrozen(next.documents));
   listeners.click({composedPath:()=>[block,root],stopPropagation(){}});
   assert.deepEqual(nav,[['doc',{start:5,end:6}]]);
   assert.notEqual(publish(false,9).thumbnail,first.thumbnail);
@@ -100,4 +101,22 @@ test('source index isolates document and block keys and resolves the current sou
   assert.equal(seen[0][0],current);
   assert.deepEqual(seen.map(([,slice])=>slice),slices);
   assert.equal(fragments[3].tabIndex,undefined);
+});
+
+test('reused page metadata is shared only with matching document order and page number',()=>{
+  const root={addEventListener(){}},page={},emptyPage={};
+  const fragments=Array.from({length:3},()=>({style:{},querySelectorAll:()=>[]}));
+  const a={documentId:'a',blockKey:'a'},b={documentId:'b',blockKey:'b'};
+  const options={sections:[{blocks:[{origin:a},{origin:b}]}]};
+  const adapter={previewSourceRange:()=>({start:1,end:2}),paperThumbnail:()=>null,onNavigate:()=>{}};
+  const publish=(origins,reuse,shift=false)=>describeMeasuredPaper({slices:origins.map(origin=>({origin}))},options,adapter,{root,pages:[...(shift?[{node:emptyPage,reuse:false,fragments:[]}]:[]),{node:page,reuse,fragments}]}).at(-1);
+  const first=publish([a,b,a],false);
+  assert.deepEqual(first.documents,['a','b']);
+  assert.equal(publish([a,b,a],true),first);
+  const changed=publish([b,a,b],true);
+  assert.notEqual(changed,first);assert.deepEqual(changed.documents,['b','a']);
+  const shifted=publish([b,a,b],true,true);
+  assert.notEqual(shifted,changed);assert.equal(shifted.number,2);
+  assert.equal(publish([b,a,b],true,true),shifted);
+  assert.notEqual(publish([b,a,b],false,true),shifted);
 });
