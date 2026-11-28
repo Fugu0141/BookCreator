@@ -1,6 +1,7 @@
 import {mkdir,writeFile,readFile} from 'node:fs/promises';
 import {join} from 'node:path';
 import {benchmarkFixture} from './benchmark-fixture.mjs';
+import {benchmarkEditorSubscription} from './benchmark-editor-subscription.mjs';
 import {benchmarkRetainedEdits} from './benchmark-retained-edits.mjs';
 import {cacheComparisonPlan,summarizeCacheComparison} from './benchmark-comparison.mjs';
 import {benchmarkPaperSignature} from './benchmark-paper-signature.mjs';
@@ -76,6 +77,7 @@ export async function runBookBenchmark(win,app,root,fixture){
     for(let i=1;i<=5;i++){await setSource(large.source+'\n連続編集確認 '+i+'\n');if(i<5)await sleep(35);}
   },paperText('連続編集確認 5')+"&&!"+paperText('連続編集確認 4')+"&&document.activeElement.id==='source'");
   await measure('large-revert','manuscript',()=>setSource(large.source),"!"+paperText('連続編集確認 5')+"&&document.querySelector('#workspace-save-state').textContent==='保存済み'");
+  const editorSubscription=await benchmarkEditorSubscription({raw,click,until,ready,setSource,sleep,large});
   // Exercise the existing hard boundary separately from the successful workloads.
   await setSource(fixture.oversizedSource);
   await until('oversized input committed',"document.querySelector('#source').value==="+JSON.stringify(fixture.oversizedSource));
@@ -406,5 +408,5 @@ export async function runBookBenchmark(win,app,root,fixture){
   await setPartial(false);
   const partialComparison=summarizeCacheComparison(partialComparisons.map(s=>({label:'cache-pair-'+s.pair+'-'+s.arm,scope:'manuscript',elapsedMs:s.elapsedMs})),'manuscript');
   const retainedEdits=await benchmarkRetainedEdits({raw,click,until,ready,paperSignature,large,root});
-  console.log('BENCH report '+JSON.stringify({version:12,fixtureVersion:2,retainedEdits,defaultParagraphCacheEnabled:true,partialComparison,partialComparisons,baselinePage,pageComparison,pageComparisons,paragraphEditComparison,paragraphEditComparisons,cacheComparison,phaseComparisons,mathComparison,mathComparisons,paragraphComparison,paragraphComparisons,chapters:fixture.chapters.map(c=>({id:c.id,characters:c.source.length,sections:c.sections,blocks:c.blocks})),initialMemory,finalMemory:memory(),samples,summary,baselineCache,baselineMath,baselineParagraph,finalCache}));
+  console.log('BENCH report '+JSON.stringify({version:12,fixtureVersion:2,editorSubscription,retainedEdits,defaultParagraphCacheEnabled:true,partialComparison,partialComparisons,baselinePage,pageComparison,pageComparisons,paragraphEditComparison,paragraphEditComparisons,cacheComparison,phaseComparisons,mathComparison,mathComparisons,paragraphComparison,paragraphComparisons,chapters:fixture.chapters.map(c=>({id:c.id,characters:c.source.length,sections:c.sections,blocks:c.blocks})),initialMemory,finalMemory:memory(),samples,summary,baselineCache,baselineMath,baselineParagraph,finalCache}));
 }
