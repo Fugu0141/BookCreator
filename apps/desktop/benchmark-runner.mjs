@@ -542,8 +542,12 @@ async function benchmarkBookPositionDrag({win,raw,click,until,ready,paperSignatu
     await field(nextY);
     await until('valid coordinate staged',"!document.querySelector('#book-paper-coordinate-apply').disabled&&document.querySelector('#book-paper-position-apply').disabled");
     await click('#book-paper-coordinate-apply');
+    await until('exact coordinate reflected',"document.querySelector('#book-paper-coordinate-y')?.value==="+JSON.stringify(nextY)+"&&!document.querySelector('#book-paper-coordinate-apply')").catch(async e=>{throw Error(e.message+'; '+JSON.stringify(await dragState())+'; coordinate='+await raw("document.querySelector('#book-paper-coordinate-y')?.value"));});
     await readTiming('paper-ready');
-    if(!await raw("document.querySelector('#book-paper-coordinate-y').value==="+JSON.stringify(nextY)+"&&!document.querySelector('#book-paper-coordinate-apply')"))throw Error('Exact coordinate was not reflected');
+    const reflected=await raw("(()=>{const e=document.querySelector('[data-position-phase=paper-ready]');return {y:document.querySelector('#book-paper-coordinate-y').value,key:JSON.parse(e.dataset.proposalKey)};})()");
+    if(reflected.y!==nextY||reflected.key[3]!==Math.round(Number(nextY)*1000))throw Error('Exact coordinate was not reflected: '+JSON.stringify({expected:nextY,reflected}));
+    await raw("window.dispatchEvent(new Event('resize'))");
+    await until('coordinate retained on viewport resize',"document.querySelector('#book-paper-coordinate-y')?.value==="+JSON.stringify(nextY)+"&&!!document.querySelector('[data-position-phase=paper-ready]')");
     await click('#book-paper-preferred-mode');
     await until('coordinate draft closed',"!document.querySelector('#book-paper-coordinate-y')&&!document.querySelector('.paper-inline-live')");
     if(await paperSignature()!==baseline||await readFile(path,'utf8')!==source)throw Error('Cancelled coordinate edit changed published paper or manuscript');
