@@ -67,9 +67,16 @@ export async function benchmarkFrameOpportunity({raw,click,until,ready,paperSign
   const original=await paperSignature(),from='実測組版を確認します。',to='増分組版を確認します。',edited=large.source.replace(from,to);
   if(edited===large.source||edited.length!==large.source.length)throw Error('Invalid visible frame fixture');
   const setSource=value=>raw("(()=>{const e=document.querySelector('#source');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,'value').set.call(e,"+JSON.stringify(value)+");e.dispatchEvent(new Event('input',{bubbles:true}));})()");
-  async function mode(direct){
+  async function mode(direct,{reset=false}={}){
     await click('#performance-toggle');
     const checked=id=>raw("document.querySelector("+JSON.stringify(id)+").checked");
+    // A retained no-op prime can legitimately keep the host (and paperProbe).
+    // Reset the sparse lease and preparation caches in BOTH arms before marking
+    // the host; this forces a new host and equalizes primer state.
+    if(reset&&await checked('#performance-retained-preview')){
+      await click('#performance-retained-preview');
+      if(await checked('#performance-retained-preview'))throw Error('Frame comparison reset failed');
+    }
     for(const [id,on] of [['#performance-retained-preview',true],['#performance-short-warm-window',true],['#performance-worker-preparation',false],['#performance-direct-single-page',direct]]){
       if(await checked(id)!==on)await click(id);
       if(await checked(id)!==on)throw Error('Frame comparison mode mismatch: '+id);
@@ -80,19 +87,22 @@ export async function benchmarkFrameOpportunity({raw,click,until,ready,paperSign
   for(const {pair,order} of cacheComparisonPlan()){
     for(const arm of order){
       const direct=arm==='warm';
-      await mode(direct);
+      await mode(direct,{reset:true});
       await raw("document.querySelector('#preview > div').dataset.paperProbe='old'");
       await click('#preview-button');
       await until('frame prime',ready('manuscript')+"&&document.querySelector('#preview > div').dataset.paperProbe!=='old'&&!!document.querySelector('#preview > div').dataset.retainedWork");
       if(await paperSignature()!==original)throw Error('Frame prime paper differs');
+      const prime=await raw("JSON.parse(document.querySelector('#preview > div').dataset.retainedWork)");
+      if(prime.directSinglePage!==direct||prime.hostTiming.preparationMode!=='main')throw Error('Frame prime used incorrect preparation/publication mode');
       // Flush initial rendering before starting the timed input.
       await raw("new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve(true))))");
+      await raw("window.__bcFramePrime={host:document.querySelector('#preview > div'),pages:Array.from(document.querySelector('#preview > div').shadowRoot.children)}");
       const s=await raw("("+observeEditFrames.toString()+")("+JSON.stringify({value:edited,marker:to})+")");
       const signature=await paperSignature();
       if(signature===original||(oracle!==undefined&&signature!==oracle))throw Error('Frame comparison paper parity failed');
       oracle=signature;
-      const work=await raw("(()=>{const h=document.querySelector('#preview > div');return {work:JSON.parse(h.dataset.retainedWork),reused:Number(h.dataset.reusedPages),pages:h.shadowRoot.children.length};})()");
-      if(work.work.directSinglePage!==direct||work.work.hostTiming.preparationMode!=='main'||work.reused!==work.pages-1)throw Error('Frame comparison did not use expected retained path');
+      const work=await raw("(()=>{const h=document.querySelector('#preview > div'),p=window.__bcFramePrime,nodes=Array.from(h.shadowRoot.children);delete window.__bcFramePrime;return {work:JSON.parse(h.dataset.retainedWork),reused:Number(h.dataset.reusedPages),pages:nodes.length,sameHost:h===p.host,reusedIdentity:nodes.filter((n,i)=>n===p.pages[i]).length,clean:!h.dataset.provisionalPages&&!h.shadowRoot.querySelector('[data-provisional-layer]')};})()");
+      if(work.work.directSinglePage!==direct||work.work.hostTiming.preparationMode!=='main'||work.reused!==work.pages-1||!work.sameHost||work.reusedIdentity!==work.pages-1||!work.clean)throw Error('Frame comparison did not use expected retained path');
       rows.push({pair,arm,...s});
       await setSource(large.source);
       await until('frame fixture restored',ready('manuscript')+"&&document.querySelector('#source').value==="+JSON.stringify(large.source)+"&&!document.querySelector('#preview > div').shadowRoot.textContent.includes("+JSON.stringify(to)+")");
