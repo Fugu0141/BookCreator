@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {validatePaperAreaDocument,encodePaperAreaDocument,decodePaperAreaDocument,setPaperAreaValue,bindPaperAreaDocument,createPaperAreaDraft} from '../paper-area-store.mjs';
+import {validatePaperAreaDocument,encodePaperAreaDocument,decodePaperAreaDocument,setPaperAreaValue,setPaperAreaValues,bindPaperAreaDocument,createPaperAreaDraft} from '../paper-area-store.mjs';
 const empty={schemaVersion:1,entries:[]};
 const width={documentId:'ch',persistentId:'q-1',axis:'width',value:50};
 const height={...width,axis:'height',value:25};
@@ -50,4 +50,15 @@ test('unidentified or unrelated fragment sharing a current key is also ambiguous
     const result=bindPaperAreaDocument(doc,[fragment('10'),other]);
     assert.equal(result.status,'conflict');assert.deepEqual(result.intents,[]);
   }
+});
+
+test('combined area proposal preserves omitted dimensions and applies both axes as one document',()=>{
+  const next=setPaperAreaValues(doc,{documentId:'ch',persistentId:'q-1',values:{width:60,height:0}});
+  assert.deepEqual(next.entries,[{documentId:'ch',persistentId:'q-1',minWidthPercent:60}]);
+  assert.deepEqual(setPaperAreaValues(doc,{documentId:'ch',persistentId:'q-1',values:{height:35}}).entries,[{documentId:'ch',persistentId:'q-1',minWidthPercent:50,minHeightPercent:35}]);
+  assert.deepEqual(setPaperAreaValues(empty,{documentId:'ch',persistentId:'q-1',values:{width:40,height:30}}).entries,[{documentId:'ch',persistentId:'q-1',minWidthPercent:40,minHeightPercent:30}]);
+  for(const values of [{width:60,height:101},{width:60,depth:10},{},null]){
+    assert.throws(()=>setPaperAreaValues(doc,{documentId:'ch',persistentId:'q-1',values}));
+  }
+  assert.deepEqual(doc.entries,[{documentId:'ch',persistentId:'q-1',minWidthPercent:50,minHeightPercent:25}]);
 });
