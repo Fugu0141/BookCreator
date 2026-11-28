@@ -594,3 +594,10 @@ body{font-family:BCFont_NotoSansJP,system-ui,sans-serif}.font-control,.typograph
 .lab-spacing-illustration{display:flex;align-items:center;justify-content:center;height:9px;margin-top:3px}
 .lab-spacing-illustration span{height:5px;width:20px;background:#6f8ca6;border-radius:1px}
 .lab-spacing-illustration i{height:5px;border-left:1px solid #315b86;border-right:1px solid #315b86;background:repeating-linear-gradient(135deg,#b8cfe2 0 2px,transparent 2px 4px)}
+
+.lab-literal-editor{margin-top:6px;padding:8px;background:#eaf2f9;border:1px solid #b6cfe3;border-radius:5px}
+.lab-literal-editor label{display:block;margin:0 0 4px;font-weight:600}
+.lab-literal-row{display:flex;gap:5px;align-items:center;flex-wrap:wrap}
+.lab-literal-row input{flex:1;min-width:100px;width:auto;margin:0}
+.lab-literal-row button{flex:0 0 auto}
+.lab-literal-editor small{margin-top:4px;color:#42586b}
