@@ -36,6 +36,7 @@ export function createPaperAreaController(initial,currentPlan){
     for(const k of ['minWidthPercent','minHeightPercent'])if(stored&&Object.hasOwn(stored,k))sizeConstraints[k]=stored[k];
     placement.sizeConstraints=sizeConstraints;
     if(stored?.spaceAfter)placement.spaceAfter=stored.spaceAfter;
+    if(stored?.spaceBefore)placement.spaceBefore=stored.spaceBefore;
     return {target,persistentId,placement,snapshot};
   };
   return {
@@ -81,7 +82,7 @@ export function createPaperAreaController(initial,currentPlan){
         if(seen.has(id)||keys.some(key=>Object.hasOwn(placement.sizeConstraints??{},key)))return {status:'conflict',intents:[],diagnostics:[{documentId:base.documentId,blockKey:base.blockKey,code:'AREA_INTENT_OWNERSHIP'}]};
         seen.add(id);
         const own=byKey.get(id);
-        if(own?.placement.spaceAfter!==undefined&&placement.spaceAfter!==undefined)return {status:'conflict',intents:[],diagnostics:[{documentId:base.documentId,blockKey:base.blockKey,code:'AREA_INTENT_OWNERSHIP'}]};
+        if(['spaceBefore','spaceAfter'].some(k=>own?.placement[k]!==undefined&&placement[k]!==undefined))return {status:'conflict',intents:[],diagnostics:[{documentId:base.documentId,blockKey:base.blockKey,code:'AREA_INTENT_OWNERSHIP'}]};
         intents.push(own?{...base,placement:{...placement,...own.placement,...(placement.sizeConstraints||own.placement.sizeConstraints?{sizeConstraints:{...placement.sizeConstraints,...own.placement.sizeConstraints}}:{})}}:base);
       }
       for(const own of area.intents)if(!seen.has(k(own)))intents.push(own);

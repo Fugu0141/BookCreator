@@ -100,3 +100,11 @@ test('trailing space is independent of occupied dimensions and binds as an IL fi
   assert.deepEqual(decodePaperAreaDocument(encodePaperAreaDocument(only)),only);
   for(const gap of [-1,1.5,1000001])assert.throws(()=>setPaperAreaValues(doc,{...edit,values:{gap}}));
 });
+
+test('leading and trailing whitespace are independent and do not replace dimensions',()=>{
+  const edit={documentId:'ch',persistentId:'q-1'};
+  const next=setPaperAreaValues(doc,{...edit,values:{before:4000,gap:6000}});
+  assert.deepEqual(bindPaperAreaDocument(next,[fragment('10')]).intents,[{documentId:'ch',blockKey:'10',placement:{sizeConstraints:{minWidthPercent:50,minHeightPercent:25},spaceBefore:4000,spaceAfter:6000}}]);
+  assert.deepEqual(setPaperAreaValues(next,{...edit,values:{before:0}}).entries,[{...edit,minWidthPercent:50,minHeightPercent:25,spaceAfter:6000}]);
+  for(const before of [-1,1.5,1000001])assert.throws(()=>setPaperAreaValues(doc,{...edit,values:{before}}));
+});

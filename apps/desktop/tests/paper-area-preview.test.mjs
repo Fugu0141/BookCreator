@@ -64,3 +64,14 @@ test('trailing whitespace must be reserved beyond both measured content and mini
   assert.throws(()=>verifySavedAreaPreview(p,result(800)));
   assert.throws(()=>verifySavedAreaPreview(p,result(899)));
 });
+
+test('leading whitespace is verified against preceding occupied footprint or page top',()=>{
+  const stored={revision:'saved',document:{schemaVersion:1,entries:[{documentId:'a',persistentId:'q',spaceBefore:200}]}};
+  const p=prepareSavedAreaPreview(options,stored,{whole:false,documentId:'a'});
+  const prev={origin:origin('a','10','prev'),placement:{page:0,rect:{x:0,y:100,width:500,height:200},occupiedRect:{x:0,y:100,width:500,height:300}}};
+  const result=(page,y)=>({intelligentLayout:{status:'placed',revision:'r1',fingerprint:'f1',fragments:[prev,{origin:origin('a','40','q'),placement:{page,rect:{x:0,y,width:1000,height:100}}}]}});
+  assert.doesNotThrow(()=>verifySavedAreaPreview(p,result(0,600)));
+  assert.throws(()=>verifySavedAreaPreview(p,result(0,599)),/前方余白/);
+  assert.doesNotThrow(()=>verifySavedAreaPreview(p,result(1,200)));
+  assert.throws(()=>verifySavedAreaPreview(p,result(1,199)),/前方余白/);
+});

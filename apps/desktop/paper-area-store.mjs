@@ -1,8 +1,8 @@
 // Persist only explicit area intent, never a measured blockKey (currently a
 // source offset), revision, geometry, or the result of automatic layout.
 const sizeFields=['minWidthPercent','minHeightPercent'];
-const fields=[...sizeFields,'spaceAfter'];
-const axisFields={width:'minWidthPercent',height:'minHeightPercent',gap:'spaceAfter'};
+const fields=[...sizeFields,'spaceAfter','spaceBefore'];
+const axisFields={width:'minWidthPercent',height:'minHeightPercent',gap:'spaceAfter',before:'spaceBefore'};
 export const MAX_PAPER_TRAILING_SPACE=1000000; // micrometres (1 m), also bounded by IL page height
 const record=v=>v!==null&&typeof v==='object'&&!Array.isArray(v)&&[Object.prototype,null].includes(Object.getPrototypeOf(v));
 const id=v=>typeof v==='string'&&v.length>0&&v.length<=256&&!/[\u0000-\u001f\u007f]/.test(v);
@@ -17,7 +17,7 @@ export function validatePaperAreaDocument(value){
     if(seen.has(k))invalid();seen.add(k);
     const clean={documentId:entry.documentId,persistentId:entry.persistentId};
     for(const field of fields)if(Object.hasOwn(entry,field)){
-      if(!(field==='spaceAfter'?Number.isSafeInteger(entry[field])&&entry[field]>0&&entry[field]<=MAX_PAPER_TRAILING_SPACE:percent(entry[field])))invalid();clean[field]=entry[field];
+      if(!(!sizeFields.includes(field)?Number.isSafeInteger(entry[field])&&entry[field]>0&&entry[field]<=MAX_PAPER_TRAILING_SPACE:percent(entry[field])))invalid();clean[field]=entry[field];
     }
     if(Object.keys(clean).length===2)invalid();
     return Object.freeze(clean);
@@ -35,7 +35,7 @@ export function decodePaperAreaDocument(text){
 export function setPaperAreaValue(document,{documentId,persistentId,axis,value}){
   const current=validatePaperAreaDocument(document);
   const field=Object.hasOwn(axisFields,axis)?axisFields[axis]:null;
-  if(!id(documentId)||!id(persistentId)||!field||!Number.isSafeInteger(value)||value<0||value>(axis==='gap'?MAX_PAPER_TRAILING_SPACE:100))invalid();
+  if(!id(documentId)||!id(persistentId)||!field||!Number.isSafeInteger(value)||value<0||value>(!sizeFields.includes(field)?MAX_PAPER_TRAILING_SPACE:100))invalid();
   const entries=current.entries.slice(),at=entries.findIndex(e=>e.documentId===documentId&&e.persistentId===persistentId);
   const entry=at<0?{documentId,persistentId}:{...entries[at]};
   if((entry[field]??0)===value)return current;
@@ -78,7 +78,7 @@ export function bindPaperAreaDocument(document,fragments){
     if(counts.get(k)!==1||used.has(k)){diagnostics.push({...identity,code:'AREA_AMBIGUOUS'});continue;}
     used.add(k);
     const sizeConstraints=Object.fromEntries(sizeFields.filter(f=>Object.hasOwn(entry,f)).map(f=>[f,entry[f]]));
-    intents.push({documentId,blockKey,placement:{...(Object.keys(sizeConstraints).length?{sizeConstraints}:{}),...(entry.spaceAfter?{spaceAfter:entry.spaceAfter}:{})}});
+    intents.push({documentId,blockKey,placement:{...(Object.keys(sizeConstraints).length?{sizeConstraints}:{}),...(entry.spaceAfter?{spaceAfter:entry.spaceAfter}:{}),...(entry.spaceBefore?{spaceBefore:entry.spaceBefore}:{})}});
   }
   return diagnostics.length?{status:'conflict',intents:[],diagnostics}:{status:'ready',intents,diagnostics:[]};
 }
