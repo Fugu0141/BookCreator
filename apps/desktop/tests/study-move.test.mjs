@@ -81,3 +81,17 @@ test('book-paper reorder uses exact source range and retains protected boundarie
   assert.equal(resolveBookPaperMove(source,{start:range.start+1,end:range.end},deps),null);
   assert.equal(resolveBookPaperMove(source,project(source)[0].range,deps),null);
 });
+
+
+test('whole-book adjacent swaps cannot break persisted group continuity',()=>{
+  const source='A\n\nB\n\nC\n\nD\n\nE',rows=project(source);
+  const guarded={...deps,protectedRanges:[rows[1].range,rows[2].range]};
+  const selection=resolveBookPaperMove(source,rows[0].range,guarded);
+  assert.equal(selection.down,false);
+  assert.equal(resolveBookPaperMove(source,rows[1].range,guarded),null);
+  assert.equal(resolveBookPaperMove(source,rows[3].range,guarded).up,false);
+  assert.equal(resolveBookPaperMove(source,rows[3].range,guarded).down,true);
+  assert.throws(()=>planBookPaperMove(source,{expectedSource:source,range:rows[0].range,action:'down'},guarded),/移動できません/);
+  assert.equal(planBookPaperMove(source,{expectedSource:source,range:rows[3].range,action:'down'},guarded),'A\n\nB\n\nC\n\nE\n\nD');
+  assert.equal(resolveBookPaperMove(source,rows[3].range,{...deps,protectedRanges:null}),null);
+});

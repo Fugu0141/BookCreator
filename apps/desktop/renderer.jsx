@@ -38,7 +38,7 @@ import {BookPaperToolbar} from './book-paper-toolbar.jsx';
 import {PaperAreaLab} from './paper-area-lab.jsx';
 import {PaperInlineArea} from './paper-inline-area.jsx';
 import {setPaperAreaValues,createSavedPaperAreaHistory,encodePaperAreaDocument} from './paper-area-store.mjs';
-import {prepareSavedAreaPreview,verifySavedAreaPreview,resolvePaperAreaSelection,captureBookAreaLease,prepareBookAreaCommit,prepareBookAreaRestore,acknowledgeBookAreaCommit,prepareBookFixedRelease,resolveBookFixedSelection,prepareBookFixedCommit,resolveBookMoveBounds,prepareBookPreferredCommit,prepareBookGroupCommit,prepareBookGroupRelease,resolveBookGroupMembers} from './paper-area-preview.mjs';
+import {prepareSavedAreaPreview,verifySavedAreaPreview,resolvePaperAreaSelection,captureBookAreaLease,prepareBookAreaCommit,prepareBookAreaRestore,acknowledgeBookAreaCommit,prepareBookFixedRelease,resolveBookFixedSelection,prepareBookFixedCommit,resolveBookMoveBounds,prepareBookPreferredCommit,prepareBookGroupCommit,prepareBookGroupRelease,resolveBookGroupMembers,bookGroupProtectedRanges} from './paper-area-preview.mjs';
 import {planStudyInsertion} from './study-insertion.mjs';
 const parseStructuredInline=value=>parsePreviewInline(value,0,parsePreviewMath);
 const deps={scan:scanDocument,validate:validateScannedBlocks,index:indexBlockIds,validateDisplayMath:parseDisplayMath,validateInlineMath:parsePreviewMath,parseReference:parseReferenceToken};
@@ -893,7 +893,8 @@ function App(){
       }
       const persisted=context.bookSources?.find(d=>d.documentId===documentId);
       const moveRange=paperBlockRangeForNode(node);
-      const move=persisted&&moveRange?resolveBookPaperMove(persisted.source,moveRange,{scan:scanDocument,parseInline:parseStructuredInline}):null;
+      const protectedRanges=bookGroupProtectedRanges(context,documentId);
+      const move=persisted&&moveRange&&protectedRanges?resolveBookPaperMove(persisted.source,moveRange,{scan:scanDocument,parseInline:parseStructuredInline,protectedRanges}):null;
       setPaperBlock({job,node:block,label:documentId+' · '+(block.textContent??'').trim().slice(0,60),up:!fixedTarget?.fixed&&!entry?.bookGroup&&!!move?.up,down:!fixedTarget?.fixed&&!entry?.bookGroup&&!!move?.down,whole:true,documentId,moveRange});
       return true;
     }
@@ -945,9 +946,13 @@ function App(){
     if(!persisted)return;
     const current=()=>paperAreaContext.current===host&&host.current()&&!manuscriptStore.getMetadata().dirty;
     void io(async()=>{
-      const next=planBookPaperMove(persisted.source,{expectedSource:persisted.source,range:selected.moveRange,action},{scan:scanDocument,parseInline:parseStructuredInline,applyPatches});
+      const protectedRanges=bookGroupProtectedRanges(host,selected.documentId);
+      if(!protectedRanges)throw Error('グループの原稿範囲を確認できません。');
+      const next=planBookPaperMove(persisted.source,{expectedSource:persisted.source,range:selected.moveRange,action},{scan:scanDocument,parseInline:parseStructuredInline,applyPatches,protectedRanges});
       const fresh=await unwrap(api.readBook());
       if(!current()||fresh.length!==host.bookSources.length||fresh.some((d,i)=>d.documentId!==host.bookSources[i].documentId||d.revision!==host.bookSources[i].revision||d.source!==host.bookSources[i].source))throw Error('全冊紙面の計測後に原稿が変更されました。');
+      const area=await unwrap(api.readPaperArea(book.settingRecovery.token,selected.documentId));
+      if(!current()||area.revision!==host.areaSnapshot.revision)throw Error('保存済み配置が変更されました。再組版してください。');
       const open=manuscriptStore.getPreviewInput();
       if(open.file?.id===persisted.documentId){
         if(open.file.revision!==persisted.revision||open.text!==persisted.source||!open.file.editable)throw Error('原稿が変更されました。');

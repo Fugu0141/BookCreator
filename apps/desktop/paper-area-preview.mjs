@@ -341,3 +341,23 @@ export async function measureBookPositionGeometry(context,action,values,session,
   });
   return {changed,pageCount:draft.pageCount,layout:draft.layout,generation:outcome.generation};
 }
+
+
+// A source swap must not move a single grouped member or insert an
+// unrelated block between members. Bind protection to prepared source
+// ranges, never to physical page order or mutable display labels.
+export function bookGroupProtectedRanges(context,documentId){
+  const entries=context?.areaPrepared?.document?.entries;
+  if(!Array.isArray(entries)||typeof documentId!=='string')return null;
+  const groups=entries.filter(e=>e.documentId===documentId&&e.bookGroup);
+  if(!groups.length)return [];
+  const blocks=context.options?.sections?.flatMap(s=>s.blocks.filter(b=>!('kind' in b)))??[];
+  const ranges=[];
+  for(const entry of groups){
+    const matches=blocks.filter(b=>b.origin?.documentId===documentId&&b.origin.persistentId===entry.persistentId);
+    const range=matches.length===1?matches[0].origin.range:null;
+    if(!range||!Number.isSafeInteger(range.start)||!Number.isSafeInteger(range.end)||range.start<0||range.end<=range.start)return null;
+    ranges.push({start:range.start,end:range.end});
+  }
+  return ranges;
+}
