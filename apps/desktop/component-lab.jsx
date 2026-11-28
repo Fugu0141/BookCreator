@@ -187,14 +187,15 @@ export function ComponentLab({design,typography,width,height,onApply:saveDesign,
         const next={...current,children:editChildren(current.children,where.parent?.id??null,a=>{
           const children=[...a];const [item]=children.splice(where.index,1);children.splice(index,0,item);return children;
         })};
-        // commit also enforces locks of other siblings and records one undo step.
-        if(commit(next))void measure(next,id);
+        // Let the shared automatic measurement effect observe the committed draft.
+        // Avoid starting a measurement while React still renders the previous input key.
+        commit(next);
       },onFlowResize:(id,patch)=>{
         if(!measurement.current.isCurrent(job))return;
         const current=historyRef.current.present,where=locate(current.children,id);
         if(!where||isComponentLocked(current.children,id,locksRef.current)||!['row','column'].includes(where.parent?.direction??current.direction))return;
         const next={...current,children:editChildren(current.children,where.parent?.id??null,a=>a.map(c=>c.id===id?{...c,...patch}:c))};
-        if(commit(next))void measure(next,id);
+        commit(next);
       },onCommit:(id,geometry)=>{
         if(!measurement.current.isCurrent(job))return;
         const current=historyRef.current.present,where=locate(current.children,id);
