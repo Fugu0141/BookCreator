@@ -29,7 +29,7 @@ import {planStudyEdit} from './structured-study.mjs';
 import {inspectStudyLinks,planStudyLinks} from './structured-study-links.mjs';
 import {planStudyInstanceOperation} from './study-instance-operation.mjs';
 import {planStructuredEquation,structuredReferenceOffset} from './structured-equation.mjs';
-import {planBlockOperation,canBlockOperation} from './structured-operations.mjs';
+import {planBlockOperation,canBlockOperation,paperMoveBounds,planPaperRangeMove} from './structured-operations.mjs';
 import {projectStructuredEditor} from './structured-projection.mjs';
 import {resolvePaperBlock,resolvePaperDrop} from './paper-block-selection.mjs';
 import {paperBindingAtPoint} from './paper-navigation.mjs';
@@ -853,7 +853,7 @@ function App(){
       const selected=model.diagnostics.length?null:resolvePaperBlock(model.rows,range);
       if(!selected){setStatus('この紙面断片は安全に編集対象を特定できません。');return true;}
       const {row,index}=selected;
-      setPaperBlock({command,job,index,rows:model.rows,node:node?.closest('[data-block]')??null,label:row.raw.trim().slice(0,80),up:canBlockOperation(source,model.rows,index,'up'),down:canBlockOperation(source,model.rows,index,'down')});
+      setPaperBlock({command,job,index,rows:model.rows,bounds:paperMoveBounds(source,model.rows,index),node:node?.closest('[data-block]')??null,label:row.raw.trim().slice(0,80),up:canBlockOperation(source,model.rows,index,'up'),down:canBlockOperation(source,model.rows,index,'down')});
     }catch(e){setStatus(String(e.message??e));}
     return true;
   }};
@@ -864,16 +864,18 @@ function App(){
     const r=v.getBoundingClientRect(),sx=r.width/v.offsetWidth,sy=r.height/v.offsetHeight;
     const left=r.left+v.clientLeft*sx,top=r.top+v.clientTop*sy;
     if(x<left||x>=left+v.clientWidth*sx||y<top||y>=top+v.clientHeight*sy)return null;
-    const binding=paperBindingAtPoint(root,x,y),action=resolvePaperDrop(paperBlock,binding);
+    const binding=paperBindingAtPoint(root,x,y),target=resolvePaperDrop(paperBlock,binding);
     const node=binding?.node?.closest('[data-block]');
-    return action&&node&&node.getRootNode()===root?{action,node}:null;
+    return target!==null&&node&&node.getRootNode()===root?{target,node}:null;
   }
   function movePaperBlock(action){
-    if(mode!=='writing'||!paperEditMode||navigationBlocked()||layoutState.phase!=='ready'||!paperBlock||!['up','down'].includes(action)||!paperBlock[action]||!layoutScheduler.isCurrent(paperBlock.job))return;
+    if(mode!=='writing'||!paperEditMode||navigationBlocked()||layoutState.phase!=='ready'||!paperBlock||!layoutScheduler.isCurrent(paperBlock.job))return;
+    const {command,index,bounds}=paperBlock;
+    const target=action==='up'?index-1:action==='down'?index+1:action;
+    if(!bounds||!Number.isSafeInteger(target)||target===index||target<bounds.min||target>bounds.max)return;
     try{
-      const {command,index}=paperBlock;
       assertStructuredCommandCurrent(structuredCommandDeps(),command);
-      const next=planBlockOperation(command.text,{source:command.text,index,action},{scan:scanDocument,parseInline:parseStructuredInline,applyPatches,validateMath:parseDisplayMath,theme});
+      const next=planPaperRangeMove(command.text,{source:command.text,index,target},{scan:scanDocument,parseInline:parseStructuredInline,applyPatches});
       if(commitStructured(next,command)){setPaperBlock(null);setStatus('紙面から原稿ブロックの順序を変更しました（未保存）。');}
     }catch(e){setPaperBlock(null);setStatus(String(e.message??e));}
   }
