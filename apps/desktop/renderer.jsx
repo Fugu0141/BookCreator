@@ -36,6 +36,7 @@ import {createPreviewCheckpoint} from './preview-checkpoint.mjs';
 import {yieldCurrentPreview} from './preview-task-boundary.mjs';
 import {visiblePaperPageIndices} from './viewport-page-priority.mjs';
 import {describeLayoutInput,collectLayoutDocuments,prepareLayoutOptions,validateLayoutOptions} from './layout-input.mjs';
+import {capturePreviewManuscript} from './preview-manuscript-input.mjs';
 import {describeMeasuredPaper} from './measured-paper.mjs';
 import {createLayoutViewStore} from './layout-view-store.mjs';
 import {LayoutPageToolbar} from './layout-page-toolbar.jsx';
@@ -263,7 +264,7 @@ function App(){
   if(!lifecycleRef.current)lifecycleRef.current=createWorkspacePreviewLifecycle();
   const lifecycle=lifecycleRef.current;
   const {generation,editPreviewTracker,layoutScheduler,cancelledPreviewLog,paperDisplay,liveDelay,pendingDiagnostic,pendingSource}=lifecycle;
-  const paperTarget=scope=>JSON.stringify([book?.settingRecovery?.token,file?.id??null,scope]);
+  const paperTarget=(scope,targetFile=file)=>JSON.stringify([book?.settingRecovery?.token,targetFile?.id??null,scope]);
   const settingsPaper=livePreview&&!!book&&(mode==='settings'||mode==='design'&&designTab==='styles');
   const paperView=usePaperViewport(preview,mode==='layout'||settingsPaper,activePage,layoutState.phase==='ready');
   const [hasSelection,setHasSelection]=useState(false);
@@ -397,10 +398,10 @@ function App(){
       return saved;
     }finally{controller?.resume(text);}
   }
-  const retainLayoutHost=(clear=false,scope=layoutState.scope)=>{
+  const retainLayoutHost=(clear=false,scope=layoutState.scope,targetFile=file)=>{
     // retain() owns clearing a mismatched host. Explicit clear is separate.
     if(clear)paperDisplay.clear(preview.current);
-    return !clear&&paperDisplay.retain(preview.current,paperTarget(scope));
+    return !clear&&paperDisplay.retain(preview.current,paperTarget(scope,targetFile));
   };
   const invalidate=(clear=false)=>{lifecycle.invalidate();const retained=retainLayoutHost(clear);dispatchLayout({type:'invalidate',clear,retained});};
   const confirmDiscard=()=>!dirty||window.confirm('未保存の変更を破棄しますか？');
@@ -605,16 +606,19 @@ function App(){
       pendingEditSelection.current={node:textarea.current,fileId:file.id,job:generation.current,value:next,start:p,end:p+lines[line].length};
     }catch(e){setStatus(String(e.message??e));}
   }
-  async function render(whole=false,automatic=false){
-    if(!book||(!whole&&!file)||busy||working.current)return;
+  async function render(whole=false,automatic=false,requestedManuscript){
+    if(!book||busy||working.current)return;
+    const source=capturePreviewManuscript(manuscriptStore,whole,requestedManuscript);
+    if(!source)return;
     liveDelay.cancel();
     const scope=whole?'book':'manuscript';
     if(!automatic){editPreviewTracker.reset();if(mode==='writing'||mode==='layout')setPreviewScopeOverride({mode,scope});if(mode==='writing'&&compactWriting)setCompactPane('paper');else setShowPaper(true);}
-    const retained=retainLayoutHost(false,scope);dispatchLayout({type:'begin',scope,retained});if(!automatic)setStatus('実測組版中…');
+    const retained=retainLayoutHost(false,scope,source.file);dispatchLayout({type:'begin',scope,retained});if(!automatic)setStatus('実測組版中…');
     const requestedAt=performance.now();
-    return layoutScheduler.submit(job=>renderRequest(job,whole,scope,automatic,requestedAt));
+    return layoutScheduler.submit(job=>renderRequest(job,whole,scope,automatic,requestedAt,source));
   }
-  async function renderRequest(job,whole,scope,automatic,requestedAt){
+  async function renderRequest(job,whole,scope,automatic,requestedAt,source){
+    const {file,text:raw}=source;
     const startedAt=performance.now();let outcome='cancelled';
     const measurementCache=cacheEnabled&&!paragraphCacheEnabled?textCache.current:undefined;
     const paragraphCache=paragraphCacheEnabled?paragraphCacheRef.current:undefined;
@@ -622,8 +626,8 @@ function App(){
     const mathOptions=mathCacheEnabled?mathCaches.current:{};
     const retainedMode=retainedPreview&&scope==='manuscript'&&!pageCache&&!reusePaperPages;
     const scanSession=retainedMode?manuscriptSession.current:undefined;
-    const raw=text;let diagnostics=[],documents=[],provisional=null,checkpoint=null,preparationMs=null,preparationYieldMs=null,phase='read';
-    const diagnosticTarget=paperTarget(scope);
+    let diagnostics=[],documents=[],provisional=null,checkpoint=null,preparationMs=null,preparationYieldMs=null,phase='read';
+    const diagnosticTarget=paperTarget(scope,file);
     try{
       const input=describeLayoutInput({whole,file,raw,page,savedSettings,typography,theme,fonts,order,job,bundledFingerprint:__BUNDLED_FONT_FINGERPRINT__},{paperGeometry,hasDynamicLabels,hasStudyNumbering});
       const current=()=>layoutScheduler.isCurrent(job);
@@ -650,7 +654,7 @@ function App(){
       }
       const geometry=input.geometry;
       const previewOptions={...options,paper:geometry.paper,measurementCache,paragraphCache,pageCache,...mathOptions,collectTimings:true,resolveImage:id=>resolveImage(id,current)};
-      const target=paperTarget(scope),display=paperDisplay;
+      const target=diagnosticTarget,display=paperDisplay;
       const sparse=(sparsePaperPages||retainedMode)&&!pageCache&&!reusePaperPages;
       const lease=sparse?display.getSparseBase(preview.current,target):null;
       let result,retainedError=false,priorityPages=[],firstVisitedPage=null,provisionalCount=0;
@@ -1043,7 +1047,7 @@ function App(){
     setCompactPane(pane);
     setCompactFocusRequest({pane,id:file?.id});
   }
-  return <div className="workspace-shell" data-workspace-mode={mode} onKeyDown={workspaceKey}><LivePreviewBridge store={manuscriptStore} delay={liveDelay} generation={generation} enabled={livePreview} mode={mode} paperVisible={paperVisible} book={book} page={page} order={order} typography={typography} theme={theme} fonts={fonts} blocked={routeBlocked} measuring={measuring} phase={layoutState.phase} scope={layoutState.scope} override={previewScopeOverride} retained={retainedPreview} pageCacheEnabled={pageCacheEnabled} reusePaperPages={reusePaperPages} warmRetained={scope=>!!paperDisplay.getSparseBase(preview.current,paperTarget(scope))} isBlocked={()=>working.current||routeBlockRef.current||composing.current} onRender={(whole,snapshot)=>{if(snapshot.file===file&&snapshot.text===text)void render(whole,true);}}/><ManuscriptRecoveryBridge store={manuscriptStore} controllerRef={recoveryRef} candidate={recoveryCandidate} isComposing={isComposing} structuredComposing={structuredComposing}/><header className="workspace-header"><div><strong>BookCreator</strong><span> / {book?.title??'開発プレビュー'}</span></div><div className="workspace-actions"><span id="workspace-save-state" className="save-indicator" data-dirty={unsaved.length>0} title={saveLabel}>{saveLabel}</span>{book&&mode!=='home'&&['typography','book-settings'].map(kind=>{const label=kind==='typography'?'フォント設定':'書籍設定',state=settingsRecoveryStates[kind];return settingsCandidates[kind]?<button key={kind} id={'settings-recovery-review-'+kind} type="button" disabled={routeBlocked} onClick={()=>setSettingsReview(kind)}>{label}の復旧候補</button>:state&&(state.phase==='error'||(kind==='typography'?themeDirty:settingsDirty))?<span key={kind} id={'settings-recovery-state-'+kind} className="muted" data-phase={state.phase} title={state.message||'通常保存とは別の記録'}>{label}：{state.phase==='error'?'復旧記録エラー':state.phase==='recorded'?'復旧用記録済み':'復旧用記録待ち'}</span>:null;})}{file&&recoveryCandidate&&<button id="recovery-review" type="button" onClick={()=>setRecoveryOpen(true)}>復旧候補を確認（原稿は読取専用）</button>}{file&&!recoveryCandidate&&(dirty||recoveryState.phase==='error')&&<span id="recovery-state" className="muted" data-phase={recoveryState.phase} title={recoveryState.message||'通常保存とは別の復旧用記録'}>{recoveryState.phase==='error'?'復旧記録エラー':recoveryState.phase==='recorded'?'復旧用記録済み':'復旧用記録待ち'}</span>}<button id="save" hidden={!book||mode==='home'} disabled={routeBlocked||!dirty||!file?.editable} title="選択原稿のみ保存（Ctrl / Cmd + S）。テーマと書籍設定は各画面で保存してください。" aria-keyshortcuts="Control+S Meta+S" onClick={save}>原稿を保存</button><button id="book-settings" hidden={!book||mode==='home'} disabled={routeBlocked} onClick={()=>navigate(mode==='settings'?'writing':'settings')} aria-pressed={mode==='settings'}>書籍設定</button><button id="shortcut-help-toggle" type="button" disabled={routeBlocked} aria-expanded={shortcutHelp} aria-controls="shortcut-help" onClick={()=>setShortcutHelp(v=>!v)}>キー操作</button></div></header>
+  return <div className="workspace-shell" data-workspace-mode={mode} onKeyDown={workspaceKey}><LivePreviewBridge store={manuscriptStore} delay={liveDelay} generation={generation} enabled={livePreview} mode={mode} paperVisible={paperVisible} book={book} page={page} order={order} typography={typography} theme={theme} fonts={fonts} blocked={routeBlocked} measuring={measuring} phase={layoutState.phase} scope={layoutState.scope} override={previewScopeOverride} retained={retainedPreview} pageCacheEnabled={pageCacheEnabled} reusePaperPages={reusePaperPages} warmRetained={(scope,targetFile)=>!!paperDisplay.getSparseBase(preview.current,paperTarget(scope,targetFile))} isBlocked={()=>working.current||routeBlockRef.current||composing.current} onRender={(whole,snapshot)=>void render(whole,true,snapshot)}/><ManuscriptRecoveryBridge store={manuscriptStore} controllerRef={recoveryRef} candidate={recoveryCandidate} isComposing={isComposing} structuredComposing={structuredComposing}/><header className="workspace-header"><div><strong>BookCreator</strong><span> / {book?.title??'開発プレビュー'}</span></div><div className="workspace-actions"><span id="workspace-save-state" className="save-indicator" data-dirty={unsaved.length>0} title={saveLabel}>{saveLabel}</span>{book&&mode!=='home'&&['typography','book-settings'].map(kind=>{const label=kind==='typography'?'フォント設定':'書籍設定',state=settingsRecoveryStates[kind];return settingsCandidates[kind]?<button key={kind} id={'settings-recovery-review-'+kind} type="button" disabled={routeBlocked} onClick={()=>setSettingsReview(kind)}>{label}の復旧候補</button>:state&&(state.phase==='error'||(kind==='typography'?themeDirty:settingsDirty))?<span key={kind} id={'settings-recovery-state-'+kind} className="muted" data-phase={state.phase} title={state.message||'通常保存とは別の記録'}>{label}：{state.phase==='error'?'復旧記録エラー':state.phase==='recorded'?'復旧用記録済み':'復旧用記録待ち'}</span>:null;})}{file&&recoveryCandidate&&<button id="recovery-review" type="button" onClick={()=>setRecoveryOpen(true)}>復旧候補を確認（原稿は読取専用）</button>}{file&&!recoveryCandidate&&(dirty||recoveryState.phase==='error')&&<span id="recovery-state" className="muted" data-phase={recoveryState.phase} title={recoveryState.message||'通常保存とは別の復旧用記録'}>{recoveryState.phase==='error'?'復旧記録エラー':recoveryState.phase==='recorded'?'復旧用記録済み':'復旧用記録待ち'}</span>}<button id="save" hidden={!book||mode==='home'} disabled={routeBlocked||!dirty||!file?.editable} title="選択原稿のみ保存（Ctrl / Cmd + S）。テーマと書籍設定は各画面で保存してください。" aria-keyshortcuts="Control+S Meta+S" onClick={save}>原稿を保存</button><button id="book-settings" hidden={!book||mode==='home'} disabled={routeBlocked} onClick={()=>navigate(mode==='settings'?'writing':'settings')} aria-pressed={mode==='settings'}>書籍設定</button><button id="shortcut-help-toggle" type="button" disabled={routeBlocked} aria-expanded={shortcutHelp} aria-controls="shortcut-help" onClick={()=>setShortcutHelp(v=>!v)}>キー操作</button></div></header>
   <nav className="workspace-nav" aria-label="制作工程" hidden={mode==='home'}>{[['home','ホーム'],['writing','執筆'],['design','デザイン'],['layout','レイアウト'],['publication','出版']].map(([id,label])=><button key={id} id={'mode-'+id} type="button" aria-current={mode===id?'page':undefined} disabled={routeBlocked||(id!=='home'&&!book)} onClick={()=>navigate(id)}>{label}</button>)}</nav>
   <section id="shortcut-help" className="workspace-shortcuts" hidden={!shortcutHelp} aria-label="キーボードショートカット"><div><strong>キーボード操作</strong><button type="button" className="secondary-action" onClick={()=>setShortcutHelp(false)}>閉じる</button></div><dl><dt>Ctrl / Cmd + S</dt><dd>選択原稿を保存（テーマ・書籍設定は各画面で保存）</dd><dt>Ctrl / Cmd + 1 / 2 / 3 / 4</dt><dd>執筆 / デザイン / レイアウト / 出版</dd><dt>Ctrl / Cmd + B / I / U</dt><dd>執筆の選択文字を太字 / 斜体 / 下線</dd><dt>Esc</dt><dd>キー操作案内・執筆ツールを閉じる</dd></dl></section>
   <section className="workspace-home project-hub" hidden={mode!=='home'}><nav className="hub-sidebar" aria-label="書籍管理"><strong>BookCreator</strong><button id="hub-projects" aria-current={homeTab==='projects'?'page':undefined} disabled={busy} onClick={()=>{setHomeTab('projects');setCreating(false);}}>プロジェクト</button><button id="hub-recovery" aria-current={homeTab==='recovery'?'page':undefined} disabled={busy} onClick={openRecoveryHub}>制作データの復旧{recoveryHub?.items.length>0?' ('+recoveryHub.items.length+')':''}</button><button id="new-project" aria-current={homeTab==='new'?'page':undefined} disabled={busy} onClick={()=>{setHomeTab('new');setCreating(true);}}>新規書籍</button><button id="open" disabled={busy} onClick={open}>既存の書籍を開く</button>{book&&<button id="hub-return-writing" disabled={routeBlocked} onClick={()=>navigate('writing')}>編集中の書籍に戻る</button>}<small>開発プレビュー</small></nav>
