@@ -34,7 +34,17 @@ export function resizeSize(start,delta,limits,snap=100){
   return result;
 }
 // The same actual measured preview DOM is used for hit testing, not a second renderer.
-export function installCanvasDrag(root,{lookup,onSelect,onActive,onCommit,smartSnap=()=>true,isLocked=()=>false,ratioLocked=()=>false}){
+export function flowDropIndex(index,centers,coordinate){
+  if(!Number.isInteger(index)||index<0||index>=centers.length||!Number.isFinite(coordinate)||
+    !centers.every((v,i)=>Number.isFinite(v)&&(i===0||v>centers[i-1])))return index;
+  // The dragged node's original centre is ignored. Move only after
+  // crossing another sibling's centre; preserve the original order otherwise.
+  let target=index;
+  while(target>0&&coordinate<centers[target-1])target--;
+  while(target<centers.length-1&&coordinate>centers[target+1])target++;
+  return target;
+}
+export function installCanvasDrag(root,{lookup,onSelect,onActive,onCommit,onReorder=()=>{},flowDirection=entry=>entry.parent?.direction,smartSnap=()=>true,isLocked=()=>false,ratioLocked=()=>false}){
   const cleanups=[];let active=null,disposed=false;
   const restore=()=>{if(active){active.el.style.left=active.left;active.el.style.top=active.top;active.el.removeAttribute('data-lab-dragging');if(active.ghost){active.ghost.style.display='none';}active.guides?.show({});}};
   function end(commit,event){
@@ -134,38 +144,87 @@ export function installCanvasDrag(root,{lookup,onSelect,onActive,onCommit,smartS
       for(const [name,fn] of [['focus',focus],['keydown',key],['pointerdown',down],['pointermove',move],['pointerup',up],['pointercancel',cancel],['lostpointercapture',cancel]]){el.addEventListener(name,fn);cleanups.push(()=>el.removeEventListener(name,fn));}
     }
   }
-  // Flow-layout nodes are selectable on the real measured paper as well.
-  // Selection does not convert them to absolute positioning or alter geometry.
+  // Flow nodes retain automatic sizing. Move only within the same sibling
+  // list, using the real measured centres and a transient visual indicator.
+  let flowActive=null;
+  function finishFlow(commit,event){
+    const a=flowActive;if(!a||event&&a.pointerId!==event.pointerId)return;
+    flowActive=null;
+    a.el.style.transform=a.transform;a.el.style.zIndex=a.zIndex;
+    a.mark?.remove();
+    try{if(a.el.hasPointerCapture(a.pointerId))a.el.releasePointerCapture(a.pointerId);}catch{}
+    onActive(false);
+    if(commit&&a.target!==a.index&&!isLocked(a.id))onReorder(a.id,a.target);
+  }
   for(const el of root.querySelectorAll('[data-component-node]')){
-    const id=el.dataset.componentNode;
-    if(!id||!lookup(id)||el.hasAttribute('data-lab-draggable'))continue;
+    const id=el.dataset.componentNode,entry=lookup(id);
+    if(!id||!entry||el.hasAttribute('data-lab-draggable'))continue;
     el.dataset.labSelectable='true';
     el.tabIndex=0;
     el.removeAttribute('aria-hidden');
-    el.setAttribute('aria-label',id+'：選択');
-    el.style.cursor='pointer';
+    const direction=flowDirection(entry),horizontal=direction==='row';
+    const movable=['row','column'].includes(direction)&&entry.siblings.length>1;
+    if(movable)el.dataset.labFlowDraggable='true';
+    el.setAttribute('aria-label',id+(movable?'：ドラッグまたは矢印キーで並べ替え':'：選択'));
+    el.style.cursor=movable?'grab':'pointer';
+    el.style.touchAction='none';
     const select=()=>{if(!disposed)onSelect(id);};
     const down=e=>{
-      if(disposed||e.button!==0||!e.isPrimary)return;
+      if(disposed||active||flowActive||e.button!==0||!e.isPrimary)return;
       e.preventDefault();e.stopPropagation();
       el.focus({preventScroll:true});select();
+      if(!movable||isLocked(id))return;
+      const siblings=entry.siblings.map(n=>Array.from(el.parentElement.children).find(c=>c.dataset.componentNode===n.id));
+      if(siblings.some(n=>!n))return; // omitted optional content: do not infer its position
+      const rects=siblings.map(n=>n.getBoundingClientRect());
+      const centers=rects.map(r=>horizontal?r.left+r.width/2:r.top+r.height/2);
+      if(!centers.every((v,i)=>Number.isFinite(v)&&(i===0||v>centers[i-1])))return;
+      const parent=el.parentElement,r=parent.getBoundingClientRect();
+      const sx=r.width/parent.offsetWidth,sy=r.height/parent.offsetHeight;
+      if(!Number.isFinite(sx)||!Number.isFinite(sy)||sx<=0||sy<=0)return;
+      try{el.setPointerCapture(e.pointerId);}catch{return;}
+      const mark=el.ownerDocument.createElement('span');
+      mark.style.cssText='all:initial;position:absolute;display:none;pointer-events:none;background:#2679c7;z-index:2147483646;';
+      parent.append(mark);
+      flowActive={el,id,index:entry.index,target:entry.index,pointerId:e.pointerId,coordinate:horizontal?e.clientX:e.clientY,centers,siblings,horizontal,sx,sy,transform:el.style.transform,zIndex:el.style.zIndex,mark};
+      onActive(true);
     };
+    const move=e=>{
+      const a=flowActive;if(!a||a.el!==el||a.pointerId!==e.pointerId)return;
+      e.preventDefault();e.stopPropagation();
+      const delta=(horizontal?e.clientX:e.clientY)-a.coordinate;
+      if(Math.abs(delta)<2&&a.target===a.index)return;
+      a.target=flowDropIndex(a.index,a.centers,a.centers[a.index]+delta);
+      el.style.transform=(a.transform?a.transform+' ':'')+(horizontal?'translateX(':'translateY(')+(delta/(horizontal?a.sx:a.sy))+'px)';
+      el.style.zIndex='2147483645';
+      if(a.target===a.index){a.mark.style.display='none';return;}
+      const other=a.siblings[a.target],after=a.target>a.index;
+      Object.assign(a.mark.style,horizontal?{display:'block',left:(other.offsetLeft+(after?other.offsetWidth:0)-1)+'px',top:other.offsetTop+'px',width:'2px',height:other.offsetHeight+'px'}:{display:'block',left:other.offsetLeft+'px',top:(other.offsetTop+(after?other.offsetHeight:0)-1)+'px',width:other.offsetWidth+'px',height:'2px'});
+    };
+    const up=e=>{if(flowActive?.el===el&&flowActive.pointerId===e.pointerId){move(e);finishFlow(true,e);}};
+    const cancel=e=>{if(flowActive?.el===el)finishFlow(false,e);};
     const key=e=>{
-      if(disposed||!['Enter',' '].includes(e.key)||e.ctrlKey||e.metaKey||e.altKey)return;
-      e.preventDefault();e.stopPropagation();select();
+      if(disposed||e.ctrlKey||e.metaKey||e.altKey)return;
+      if(e.key==='Escape'&&flowActive?.el===el){e.preventDefault();e.stopPropagation();finishFlow(false);return;}
+      if(['Enter',' '].includes(e.key)){e.preventDefault();e.stopPropagation();select();return;}
+      const delta=e.key===(horizontal?'ArrowLeft':'ArrowUp')?-1:e.key===(horizontal?'ArrowRight':'ArrowDown')?1:0;
+      if(!movable||!delta||flowActive||isLocked(id))return;
+      e.preventDefault();e.stopPropagation();
+      const next=entry.index+delta;
+      if(next>=0&&next<entry.siblings.length)onReorder(id,next);
     };
-    for(const [name,fn] of [['pointerdown',down],['focus',select],['keydown',key]]){
+    for(const [name,fn] of [['pointerdown',down],['focus',select],['keydown',key],['pointermove',move],['pointerup',up],['pointercancel',cancel],['lostpointercapture',cancel]]){
       el.addEventListener(name,fn);cleanups.push(()=>el.removeEventListener(name,fn));
     }
   }
-  return ()=>{disposed=true;end(false);for(const cleanup of cleanups)cleanup();};
+  return ()=>{disposed=true;end(false);finishFlow(false);for(const cleanup of cleanups)cleanup();};
 }
 export function highlightCanvasSelection(root,id,isLocked=()=>false){
   const ids=Array.isArray(id)?id:[id];
   for(const el of root.querySelectorAll('[data-lab-draggable],[data-lab-selectable]')){
     const selected=ids.includes(el.dataset.componentNode);
     const locked=isLocked(el.dataset.componentNode);
-    el.dataset.labLocked=String(locked);el.style.cursor=locked?'not-allowed':el.hasAttribute('data-lab-draggable')?'grab':'pointer';
+    el.dataset.labLocked=String(locked);el.style.cursor=locked?'not-allowed':(el.hasAttribute('data-lab-draggable')||el.hasAttribute('data-lab-flow-draggable'))?'grab':'pointer';
     el.style.outline=selected?(locked?'2px dashed #64748b':'2px solid #2679c7'):'';
     el.style.outlineOffset=selected?'-1px':'';
     for(const child of el.children)if(child.dataset.labResizeHandle)child.style.display=selected&&!locked&&ids.length===1?'block':'none';
