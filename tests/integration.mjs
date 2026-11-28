@@ -1299,3 +1299,42 @@ test('book inline parse session matches full preparation after changed source po
   assert.ok(inlineSession.stats().hits>0);
   assert.ok(inlineSession.stats().bypasses>0);
 });
+
+test('registered figure preparation preserves aspect, caption and original directive range',()=>{
+  const id='a'.repeat(64),src='../assets/images/'+id+'.png';
+  const source='::figure{#fig-1 src="'+src+'" alt="図の説明" caption="図の見本" width="50%"}\r\n';
+  const doc={documentId:'chapter',revision:'1',source,startOn:'page'};
+  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds};
+  const size={width:100000,height:150000};
+  const resources={assets:[{id,width:800,height:400}],documentPaths:{chapter:'manuscript/chapter.md'}};
+  const single=prepareBrowserPreview(doc,'1','figure',size,deps,undefined,undefined,resources);
+  const whole=prepareBookBrowserPreview([doc],'1','figure',size,deps,undefined,undefined,undefined,undefined,undefined,undefined,resources);
+  for(const result of [single,whole]){
+    assert.deepEqual(result.diagnostics,[]);
+    const block=result.options.blocks?.[0]??result.options.sections[0].blocks[0];
+    assert.equal(block.request.width,50000);
+    assert.equal(block.request.text,'図の見本');
+    assert.equal(block.splitPolicy,'strict');
+    assert.equal(block.sourceTextStart,undefined);
+    assert.deepEqual(block.origin.range,{start:0,end:source.length});
+    assert.deepEqual(block.component.children[0],{id:'figure-image',type:'image',width:'fill',height:25000,assetId:id,fit:'contain',alt:'図の説明'});
+  }
+});
+test('figure preparation rejects missing assets, mismatched paths, oversized figures and missing captions',()=>{
+  const id='b'.repeat(64),src='../assets/images/'+id+'.png';
+  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds};
+  const size={width:100000,height:150000},asset={id,width:800,height:400};
+  const resources={assets:[asset],documentPaths:{chapter:'manuscript/chapter.md'}};
+  const source='::figure{src="'+src+'" caption="図の見本"}\n';
+  const run=(s,r)=>prepareBookBrowserPreview([{documentId:'chapter',revision:'1',source:s,startOn:'page'}],'1','figure',size,deps,undefined,undefined,undefined,undefined,undefined,undefined,r);
+  for(const [s,r] of [
+    [source,undefined],[source,{...resources,assets:[]}],[source,{...resources,documentPaths:{chapter:'manuscript/sub/chapter.md'}}],
+    [source,{...resources,assets:[{...asset,width:1,height:100}]}],
+    [source.replace(' caption="図の見本"',''),resources],
+    [source.replace(src,'https://example.test/a.png'),resources]
+  ]){
+    const result=run(s,r);
+    assert.equal(result.options,undefined);
+    assert.ok(result.diagnostics.length);
+  }
+});
