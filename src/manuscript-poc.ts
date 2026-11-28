@@ -1,3 +1,4 @@
+import type {InlineParseSession} from './inline-parse-session.js';
 import type {ManuscriptScanSession} from './manuscript-scan-session.js';
 import {parsePreviewInline,type ComponentEquation} from './inline-preview.js';
 import {validNamedSlot,type NamedSlotSource} from './preview-component.js';
@@ -19,6 +20,7 @@ export interface PreparationDependencies<S extends Scan> {
   scan:(source:string)=>S;
   /** Optional book-owned session for deterministic scan/validate services. */
   scanSession?:ManuscriptScanSession<S>;
+  inlineSession?:InlineParseSession;
   /** Host supplies the Engine's bounded formula parser; no duplicate TeX grammar here. */
   validateDisplayMath?:(formula:string)=>unknown;
   /** Explicit opt-in for ordinary paragraphs and semantic study text slots. */
@@ -36,7 +38,7 @@ type PreparedInput=Omit<Input,'sections'>&{sections:{id:string;startOn:'page'|'c
 const plain=(s:string)=>/^[\p{L}\p{M}\p{N} .,!?、。・「」『』（）！？　]+$/u.test(s)&&!/^\s|^\d+\.\s/.test(s);
 const stripEnd=(s:string)=>s.replace(/(?:\r\n|\r|\n)$/,'');
 // Keep raw UTF-16 offsets and reject unsupported line content, not just its normalized copy.
-const plainBody=(s:string)=>{try{parsePreviewInline(s);return true;}catch{return false;}};
+
 export function prepareManuscript<S extends Scan>(documents:readonly Manuscript[],revision:string,fingerprint:string,content:Input['content'],deps:PreparationDependencies<S>):{input?:PreparedInput;items:SemanticItem[];diagnostics:Issue[];publicationReady:false} {
   const diagnostics:Issue[]=[],items:SemanticItem[]=[],references:{target:string;documentId:string;range:Range}[]=[];
   const failed=()=>({items:[],diagnostics,publicationReady:false as const});
@@ -46,7 +48,8 @@ export function prepareManuscript<S extends Scan>(documents:readonly Manuscript[
     seen.add(doc.documentId);
   }
   if(!revision||!fingerprint||!Number.isSafeInteger(content.width)||content.width<=0||!Number.isSafeInteger(content.height)||content.height<=0)throw new Error('Invalid fixture input');
-  const session=deps.scanSession;
+  const session=deps.scanSession,parseInline=deps.inlineSession?.parse??parsePreviewInline;
+  const plainBody=(s:string)=>{try{parseInline(s);return true;}catch{return false;}};
   const parsed=documents.map(doc=>{
     const result=session?.read(doc.documentId,doc.source,deps.scan,deps.validate);
     if(result)for(const d of result.diagnostics)diagnostics.push({...d,documentId:doc.documentId});
@@ -146,7 +149,7 @@ export function prepareManuscript<S extends Scan>(documents:readonly Manuscript[
           n=j;end=scan.blocks[n].range.end;
         }
         const body=stripEnd(doc.source.slice(start,end));
-        try{parsePreviewInline(body,start,deps.validateInlineMath,collectReference);}catch(e){unsupported({start,end},'Unsupported paragraph: '+String(e instanceof Error?e.message:e));continue;}
+        try{parseInline(body,start,deps.validateInlineMath,collectReference);}catch(e){unsupported({start,end},'Unsupported paragraph: '+String(e instanceof Error?e.message:e));continue;}
         emit({kind:'paragraph',origin:origin({start,end}),text:body},content.width);
       }else if(b.kind==='directive'&&b.closed&&b.header.kind==='container'){
         const h=b.header,attrs=Object.fromEntries(h.attributes.map(a=>[a.key,a.value])),kind=studyKind(h.name,attrs),componentId=customStudyId(h.name,attrs);
@@ -178,7 +181,7 @@ export function prepareManuscript<S extends Scan>(documents:readonly Manuscript[
             componentEquations.push({range:{start:c.range.start,end:c.range.start+stripEnd(doc.source.slice(c.range.start,c.range.end)).length},formulaStart:math.range.start+match[1].length,formula:match[2],id:c.header.id,numbered:attrs.numbered==='true'});
           }
           try{
-            const parsed=parsePreviewInline(text,first.range.start,deps.validateInlineMath,collectReference,true,deps.validateDisplayMath,componentEquations);
+            const parsed=parseInline(text,first.range.start,deps.validateInlineMath,collectReference,true,deps.validateDisplayMath,componentEquations);
             const math=visible.filter(c=>c.kind==='math'||isWrapped(c)),atoms=parsed.inlineMath.filter(a=>a.display);
             if(math.length!==atoms.length||atoms.some((a,i)=>{
               const seg=parsed.sourceMap.segments.find(s=>s.start===a.start)!;
