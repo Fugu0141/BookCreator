@@ -772,3 +772,8 @@ body{font-family:BCFont_NotoSansJP,system-ui,sans-serif}.font-control,.typograph
 .book-group-chips{display:flex;flex:1 1 100%;flex-wrap:wrap;gap:4px;max-height:100px;overflow:auto;min-width:0;}
 .book-group-controls .book-group-chip{display:inline-block;max-width:200px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;border:1px solid #a9c5e4;background:#edf4fc;color:#204f83;border-radius:4px;padding:3px 5px;font-size:11px;}
 .book-group-controls .book-group-chip.is-anchor{font-weight:600;}
+
+
+/* Geometry-only drag feedback: no new page DOM and no source hit targets. */
+.book-geometry-draft-frame{position:fixed;box-sizing:border-box;z-index:19;pointer-events:none;border:1px dashed #6b83a3;background:#7895bc22;}
+.book-geometry-draft-frame.is-selected{border:2px solid #3478b7;background:#3478b71a;}
