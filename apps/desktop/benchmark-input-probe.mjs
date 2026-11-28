@@ -3,7 +3,7 @@
 // These are task dispatch/DOM availability measurements, not physical input or paint.
 export function installInputProbe({values,intervalMs}){
   const viewport=document.querySelector('#preview'),state=document.querySelector('#workspace-layout-state'),input=document.querySelector('#source');
-  viewport.scrollTop=0;input.focus();
+  viewport.scrollTop=0;viewport.scrollLeft=0;input.focus();
   const origin=performance.now(),timers=[];
   const probe={started:null,provisionalMs:null,finalMs:null,dispatchOffsetsMs:[],timerLagMs:[],dispatchWorkMs:[],intermediatePublications:0,totalMs:null};
   let index=-1,seenCurrent=false;

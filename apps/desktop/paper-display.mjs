@@ -81,8 +81,8 @@ export function createPaperDisplay(){
     const next=result.changedElement;
     // Keep commitMs inclusive; scroll restoration is a measured subset.
     // A scroll setter may synchronously flush pending style/layout.
-    const report=(described,scrollRestoreMs)=>{
-      if(timing){const commitMs=performance.now()-described;Object.assign(timing,{assemblyMs:assembled-started,describeMs:described-assembled,commitMs,scrollRestoreMs,otherCommitMs:Math.max(0,commitMs-scrollRestoreMs)});}
+    const report=(described,scrollRestoreMs,scrollRestoreSkipped=false)=>{
+      if(timing){const commitMs=performance.now()-described;Object.assign(timing,{assemblyMs:assembled-started,describeMs:described-assembled,commitMs,scrollRestoreMs,otherCommitMs:Math.max(0,commitMs-scrollRestoreMs),scrollRestoreSkipped});}
     };
     try{
       if(!assembly.reused){
@@ -110,9 +110,17 @@ export function createPaperDisplay(){
       host.dataset.sparsePaper='true';host.dataset.generatedPages=String(assembly.pages.length-assembly.reused);
       host.dataset.paperFreshness='current';host.inert=false;
       sparseBase=Object.freeze({host,snapshot:result.pageDelta.snapshot});
-      const beforeScroll=timing?performance.now():0;
-      viewport.scrollTop=top;viewport.scrollLeft=left;
-      report(described,timing?performance.now()-beforeScroll:0);
+      // The retained scroll container stays attached. At the LTR origin,
+      // scroll anchoring is suppressed at zero; avoid forcing layout just to
+      // assign zero again. Other positions and page count changes retain
+      // the explicit restoration contract. Never read scroll offsets here.
+      const skipScrollRestore=top===0&&left===0&&old.length===assembly.pages.length;
+      if(skipScrollRestore)report(described,0,true);
+      else{
+        const beforeScroll=timing?performance.now():0;
+        viewport.scrollTop=top;viewport.scrollLeft=left;
+        report(described,timing?performance.now()-beforeScroll:0);
+      }
       return {retained:true,pages};
     }catch{
       // Incomplete candidate cannot serve as a full fallback. Discard an
