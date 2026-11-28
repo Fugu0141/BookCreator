@@ -67,3 +67,28 @@ export function preferredPositionEditStart(position,bounds,body,stored){
   const toleranceValid=Number.isSafeInteger(t?.x)&&Number.isSafeInteger(t?.y)&&t.x>=0&&t.y>=0&&t.x<=body.width&&t.y<=body.height;
   return {position:positionValid?p:position,tolerance:t,requiresRebase:!positionValid||!toleranceValid};
 }
+
+
+// The position panel must not cover the actual drag handle when there is
+// insufficient room above or below the selected block. Restrict its real
+// maxHeight to the chosen free strip rather than the whole viewport.
+export function placeBookPositionPanel(selection,handle,bounds,size,margin=8){
+  const base=placePaperPropertyPanel(selection,bounds,size,margin);
+  if(!handle)return base;
+  const left=bounds.left+margin,right=bounds.right-margin,top=bounds.top+margin,bottom=bounds.bottom-margin;
+  const width=Math.min(size.width,Math.max(0,right-left));
+  const h={left:handle.left-margin,top:handle.top-margin,right:handle.left+handle.width+margin,bottom:handle.top+handle.height+margin};
+  const clamp=(n,min,max)=>Math.max(min,Math.min(n,max));
+  const x=clamp(selection.left,left,right-width);
+  const strips=[
+    {left:x,top:Math.max(top,selection.top+selection.height+margin,h.bottom),width,height:bottom-Math.max(top,selection.top+selection.height+margin,h.bottom)},
+    {left:x,top:Math.max(top,Math.min(selection.top-margin,h.top)-size.height),width,height:Math.min(selection.top-margin,h.top)-top},
+    {left:Math.max(left,h.right),top,width:Math.min(width,right-Math.max(left,h.right)),height:bottom-top},
+    {left:Math.max(left,h.left-width),top,width:Math.min(width,h.left-left),height:bottom-top},
+    {left:x,top:Math.max(top,h.bottom),width,height:bottom-Math.max(top,h.bottom)},
+    {left:x,top,width,height:Math.min(bottom,h.top)-top}
+  ].filter(v=>v.width>0&&v.height>0);
+  const best=strips.find(v=>v.width>=width&&v.height>=size.height)??strips.reduce((a,v)=>!a||v.width*Math.min(v.height,size.height)>a.width*Math.min(a.height,size.height)?v:a,null);
+  if(!best)return base;
+  return {left:best.left,top:best.top,width:best.width,maxHeight:Math.min(best.height,Math.max(0,bottom-best.top),size.height)};
+}
