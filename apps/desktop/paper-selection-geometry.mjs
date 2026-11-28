@@ -92,3 +92,19 @@ export function placeBookPositionPanel(selection,handle,bounds,size,margin=8){
   if(!best)return base;
   return {left:best.left,top:best.top,width:best.width,maxHeight:Math.min(best.height,Math.max(0,bottom-best.top),size.height)};
 }
+
+
+// Parse decimal millimetres into exact integer micrometres. A partial,
+// negative, oversized or over-precise input is not silently rounded/clamped.
+export function parsePaperMillimetres(value,max){
+  if(typeof value!=='string'||!/^\d+(?:\.\d{1,3})?$/.test(value)||!Number.isSafeInteger(max)||max<0)return null;
+  const [whole,fraction='']=value.split('.');
+  const result=Number(whole)*1000+Number(fraction.padEnd(3,'0'));
+  return Number.isSafeInteger(result)&&result>=0&&result<=max?result:null;
+}
+
+export function paperPositionFromCoordinates(position,bounds,values){
+  if(!position||!bounds||!values||!Number.isSafeInteger(position.page)||position.page<0)return null;
+  const x=parsePaperMillimetres(values.x,bounds.maxX),y=parsePaperMillimetres(values.y,bounds.maxY);
+  return x===null||y===null?null:{page:position.page,x,y};
+}
