@@ -313,6 +313,7 @@ test('position live session adopts only verified complete current results and re
   const plan={revision:'r1',fingerprint:'f1',pageCount:5,fragments:[fragment,{origin:origin('b','70','q')}]};
   const selected=resolveBookFixedSelection(plan,'a','40');
   const context={scope:'book',bookLease:{documents:[{documentId:'a'},{documentId:'b'}]},areaPrepared:prepareSavedAreaPreview(options,snapshot,{whole:true}),areaSnapshot:snapshot,options:{...options,paragraphCache:{},pageCache:{}},plan,...selected};
+  const base={},seeded={...context,geometryBase:base,job:7};
   const session=createBookPositionPreviewSession(),privateCache={},first={page:2,x:200,y:300},second={page:3,x:300,y:400};
   const result=(position,handle)=>({element:{},snapshot:handle,plan:{completeness:'full',diagnostics:[]},intelligentLayout:{status:'placed',revision:'r1',fingerprint:'f1',fragments:[{...fragment,placement:{...fragment.placement,page:position.page,fixed:true,rect:{...fragment.placement.rect,x:position.x,y:position.y}}},{origin:origin('b','70','q'),placement:{rect:{width:500,height:100}}}]}});
   const one={},two={};
@@ -325,6 +326,13 @@ test('position live session adopts only verified complete current results and re
   session.clear();
   await session.measure(context,'move',first,async(o,previous)=>{assert.equal(previous,undefined);return result(first,one);},()=>true);
   assert.equal(context.areaSnapshot.document.entries[0].bookFixed,undefined);
+  const seededSession=createBookPositionPreviewSession(seeded);
+  await assert.rejects(()=>seededSession.measure({...seeded,job:8},'move',first,async()=>{throw Error('unexpected');},()=>true),/another published job/);
+  await assert.rejects(()=>seededSession.measure(seeded,'move',first,async(o,previous)=>{assert.equal(previous,base);return result(second,two);},()=>true),/固定位置/);
+  await seededSession.measure(seeded,'move',first,async(o,previous)=>{assert.equal(previous,base);assert.equal(o.paragraphCache,privateCache);return result(first,one);},()=>true,{paragraphCache:privateCache});
+  await seededSession.measure(seeded,'move',second,async(o,previous)=>{assert.equal(previous,one);return result(second,two);},()=>true);
+  seededSession.clear();
+  await seededSession.measure(seeded,'move',first,async(o,previous)=>{assert.equal(previous,undefined);return result(first,one);},()=>true);
 });
 
 
