@@ -611,3 +611,16 @@ body{font-family:BCFont_NotoSansJP,system-ui,sans-serif}.font-control,.typograph
 .lab-selection-toolbar .lab-quick-color{display:flex;align-items:center;gap:3px;margin:0;font-size:12px}
 .lab-quick-color input[type=color]{width:27px;height:27px;padding:2px;margin:0}
 .lab-toolbar-separator{height:20px;width:1px;background:#c8d5e1}
+
+/* Component Lab only: the editing canvas expands when precision controls are closed. */
+.lab-gui-first .lab-grid[data-precision-open=false]{grid-template-columns:minmax(190px,22%) minmax(0,1fr)}
+.lab-gui-first #lab-precision-panel[hidden]{display:none!important}
+.lab-gui-first .lab-precision-title{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.lab-gui-first .lab-precision-title h2{margin:0}
+.lab-precision-hint{font-size:12px;color:#526579;margin:6px 0 12px}
+.lab-gui-first .lab-canvas-toolbar{max-height:40%}
+@media(max-width:900px){.lab-gui-first .lab-grid[data-precision-open=false]{grid-template-columns:minmax(150px,22%) minmax(0,1fr)}}
+@media(max-width:650px){
+  .lab-gui-first .lab-grid[data-precision-open=false]{grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(340px,65vh)}
+  .lab-gui-first .lab-grid[data-precision-open=true]{grid-template-rows:auto minmax(340px,55vh) auto}
+}
