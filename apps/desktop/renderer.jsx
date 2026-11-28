@@ -45,6 +45,7 @@ import {manuscriptDirty,activeStructuredHistory,planStructuredCommit,planStructu
 import {createManuscriptStore} from './manuscript-store.mjs';
 import {persistManuscript as persistManuscriptTransaction} from './manuscript-persistence.mjs';
 import {SourceEditor} from './source-editor.jsx';
+import {captureSourceCommand,applySourceCommand} from './source-command.mjs';
 import {LivePreviewBridge} from './live-preview-bridge.jsx';
 const api=window.bookcreator;
 const studyNames={note:'補足',tip:'ポイント',warning:'注意',important:'重要',example:'例題',exercise:'練習問題',explanation:'解説'};
@@ -408,7 +409,7 @@ function App(){
   const [studyChoice,setStudyChoice]=useState('example'),[studyInstanceId,setStudyInstanceId]=useState(''),[answerTo,setAnswerTo]=useState('');
   const canLink=studyChoice==='explanation'||isCustomComponentId(studyChoice);
   function markConfirmedEdit(started){if(livePreview&&mode==='writing'&&paperVisible&&document.visibilityState==='visible')editPreviewTracker.mark(started);}
-  function edit(value,history=null){const started=performance.now();dispatchManuscript({type:'edit',value,history});invalidate();if(value!==text){if(composing.current)imeChanged.current=true;else markConfirmedEdit(started);}setStatus('未保存の変更があります。');}
+  function edit(value,history=null){const started=performance.now(),previous=manuscriptStore.getSnapshot().text;dispatchManuscript({type:'edit',value,history});invalidate();if(value!==previous){if(composing.current)imeChanged.current=true;else markConfirmedEdit(started);}setStatus('未保存の変更があります。');}
   const composing=useRef(false),[isComposing,setIsComposing]=useState(false);
 
   const [mathDraft,setMathDraft]=useState(null),mathPreview=useRef(null),mathComposing=useRef(false);
@@ -472,12 +473,12 @@ function App(){
     }catch(e){setStatus('数式編集不可：'+String(e.message??e));}
   }
   const referenceStale=!!referenceDraft&&(referenceDraft.fileId!==file?.id||referenceDraft.revision!==file?.revision||referenceDraft.job!==generation.current||referenceDraft.source!==text);
-  async function referenceDocuments(raw){
+  async function referenceDocuments(raw,targetFile=file){
     const snapshot=await unwrap(api.readBook()),byId=new Map(snapshot.map(d=>[d.documentId,d]));
     return order.map(s=>{
       const d=byId.get(s.id);if(!d)throw Error('原稿構成が変わりました。');
-      if(file.id===s.id&&file.revision!==d.revision)throw Error('原稿が外部変更されました。再読込してください。');
-      return {...d,startOn:s.startOn,...(file.id===s.id?{source:raw}:{})};
+      if(targetFile.id===s.id&&targetFile.revision!==d.revision)throw Error('原稿が外部変更されました。再読込してください。');
+      return {...d,startOn:s.startOn,...(targetFile.id===s.id?{source:raw}:{})};
     });
   }
   function toggleEquationNumbering(){
@@ -547,37 +548,38 @@ function App(){
     });
   }
   const [inlineColor,setInlineColor]=useState('#c2410c'),[inlineFamily,setInlineFamily]=useState('monospace'),[inlineWeight,setInlineWeight]=useState(400),[inlineSize,setInlineSize]=useState('4.2');
+  function sourceCommandDeps(){return {store:manuscriptStore,textarea,generation,composing};}
+  function queueSourceCommandSelection(command,planned,next){
+    pendingEditSelection.current={node:command.node,fileId:command.file.id,job:generation.current,value:next,start:planned.selection.start,end:planned.selection.end};
+  }
   function formatSelection(format){
-    const node=textarea.current;
-    if(busy||working.current||!file?.editable||!node||composing.current||mathDraft||referenceDraft)return;
-    const start=node.selectionStart,end=node.selectionEnd,job=generation.current;
-    if(start===end){setStatus('書式を変更する文字を選択してください。');return;}
-    const apply=context=>{
-      if(generation.current!==job||node.value!==text||node.selectionStart!==start||node.selectionEnd!==end||composing.current)throw Error('原稿の編集状態が変わりました。再選択してください。');
-      const planned=planInlineFormat(text,start,end,format,scanDocument,context);
-      const next=applyPatches(text,[planned.patch]);
-      edit(next);setStatus((planned.action==='remove'?'書式を解除':planned.action==='replace'?'書式を変更':'書式を適用')+'しました（未保存）。');
-      const currentGeneration=generation.current;
-      requestAnimationFrame(()=>{if(textarea.current===node&&generation.current===currentGeneration&&node.value===next){node.focus();node.setSelectionRange(planned.selection.start,planned.selection.end);}});
-    };
+    if(busy||working.current||mathDraft||referenceDraft)return;
+    const commandDeps=sourceCommandDeps();
+    const report=e=>setStatus('書式変更不可：'+String(e.message??e));
     try{
-      if(node.value!==text)throw Error('原稿の編集状態が変わりました。再選択してください。');
-      // Keep the legacy local formatting path for plain source; richer markup
-      // requires a validated book snapshot and semantic source ranges.
-      if(text.includes(':ref{')||text.includes('$'))void io(async()=>{try{apply({documents:await referenceDocuments(text),documentId:file.id,deps});}catch(e){setStatus('書式変更不可：'+String(e.message??e));}});
+      const command=captureSourceCommand(commandDeps);
+      if(!command)return;
+      const {text:raw,start,end,file:targetFile}=command;
+      if(start===end){setStatus('書式を変更する文字を選択してください。');return;}
+      const apply=context=>{
+        const {planned,next}=applySourceCommand(commandDeps,command,c=>planInlineFormat(c.text,c.start,c.end,format,scanDocument,context),applyPatches,edit);
+        queueSourceCommandSelection(command,planned,next);
+        setStatus((planned.action==='remove'?'書式を解除':planned.action==='replace'?'書式を変更':'書式を適用')+'しました（未保存）。');
+      };
+      // Keep the local path; semantic ranges require a validated book snapshot.
+      if(raw.includes(':ref{')||raw.includes('$'))void io(async()=>{try{apply({documents:await referenceDocuments(raw,targetFile),documentId:targetFile.id,deps});}catch(e){report(e);}});
       else apply();
-    }catch(e){setStatus('書式変更不可：'+String(e.message??e));}
+    }catch(e){report(e);}
   }
   function formatList(kind){
-    const node=textarea.current;
-    if(busy||!file?.editable||!node||composing.current)return;
+    if(busy||working.current)return;
+    const commandDeps=sourceCommandDeps();
     try{
-      if(node.value!==text)throw Error('原稿の編集状態が変わりました。再選択してください。');
-      const plan=kind==='indent'||kind==='outdent'?planListIndent(text,node.selectionStart,node.selectionEnd,kind,scanDocument):/[\r\n]/.test(node.value.slice(node.selectionStart,node.selectionEnd).replace(/(?:\r\n|\n)$/,''))?planListBatch(text,node.selectionStart,node.selectionEnd,kind,scanDocument):planListFormat(text,node.selectionStart,node.selectionEnd,kind,scanDocument);
-      const next=applyPatches(text,[plan.patch]);
-      edit(next);setStatus('リスト書式を変更しました（未保存）。');
-      const job=generation.current;
-      requestAnimationFrame(()=>{if(textarea.current===node&&generation.current===job&&node.value===next){node.focus();node.setSelectionRange(plan.selection.start,plan.selection.end);}});
+      const command=captureSourceCommand(commandDeps);
+      if(!command)return;
+      const {planned,next}=applySourceCommand(commandDeps,command,({text:raw,start,end})=>kind==='indent'||kind==='outdent'?planListIndent(raw,start,end,kind,scanDocument):/[\r\n]/.test(raw.slice(start,end).replace(/(?:\r\n|\n)$/,''))?planListBatch(raw,start,end,kind,scanDocument):planListFormat(raw,start,end,kind,scanDocument),applyPatches,edit);
+      queueSourceCommandSelection(command,planned,next);
+      setStatus('リスト書式を変更しました（未保存）。');
     }catch(e){setStatus('リスト変更不可：'+String(e.message??e));}
   }
   function applyInlineFont(){
