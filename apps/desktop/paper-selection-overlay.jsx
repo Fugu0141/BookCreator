@@ -31,6 +31,17 @@ export function PaperSelectionOverlay({viewport,node,enabled,getDrop,onMove}){
     if(!g||e.pointerId!==g.id||!latest.current.enabled||Math.hypot(e.clientX-g.x,e.clientY-g.y)<6)return null;
     return latest.current.getDrop(e.clientX,e.clientY);
   };
+  function finish(e){
+    const g=gesture.current;
+    if(!g||g.id!==e.pointerId)return;
+    // End the capture before the final DOM hit test; Chromium can retarget
+    // the release to the capture handle even when the pointer is on paper.
+    const x=e.clientX,y=e.clientY,moved=Math.hypot(x-g.x,y-g.y)>=6;
+    cancel();
+    if(!moved||!latest.current.enabled)return;
+    const hit=latest.current.getDrop(x,y);
+    if(hit)latest.current.onMove(hit.target);
+  }
   useLayoutEffect(()=>{
     const el=frame.current,v=viewport.current;
     if(!el||!v||!node)return;
@@ -40,8 +51,9 @@ export function PaperSelectionOverlay({viewport,node,enabled,getDrop,onMove}){
     observer.observe(v);observer.observe(node);
     window.addEventListener('scroll',update,true);window.addEventListener('resize',update);
     window.addEventListener('blur',cancel);window.addEventListener('keydown',escape,true);
+    window.addEventListener('pointerup',finish,true);
     update();
-    return ()=>{cancel();observer.disconnect();window.removeEventListener('scroll',update,true);window.removeEventListener('resize',update);window.removeEventListener('blur',cancel);window.removeEventListener('keydown',escape,true);el.hidden=true;};
+    return ()=>{cancel();observer.disconnect();window.removeEventListener('scroll',update,true);window.removeEventListener('resize',update);window.removeEventListener('blur',cancel);window.removeEventListener('keydown',escape,true);window.removeEventListener('pointerup',finish,true);el.hidden=true;};
   },[viewport,node]);
   useLayoutEffect(()=>{if(!enabled)cancel();},[enabled]);
   return <>
@@ -49,7 +61,7 @@ export function PaperSelectionOverlay({viewport,node,enabled,getDrop,onMove}){
       {enabled&&<button ref={handle} id="paper-block-drag" className="paper-block-drag" type="button" aria-label="ブロックをドラッグして移動（上下矢印キーでも操作）" title="移動先のブロックへドラッグ"
         onPointerDown={e=>{if(e.button!==0||!e.isPrimary||gesture.current)return;e.preventDefault();e.currentTarget.focus({preventScroll:true});try{e.currentTarget.setPointerCapture(e.pointerId);}catch{return;}gesture.current={id:e.pointerId,x:e.clientX,y:e.clientY};}}
         onPointerMove={e=>{if(gesture.current?.id!==e.pointerId)return;show(guide.current,targetAt(e)?.node);}}
-        onPointerUp={e=>{if(gesture.current?.id!==e.pointerId)return;const target=targetAt(e);cancel();if(target)latest.current.onMove(target.target);}}
+        onPointerUp={finish}
         onPointerCancel={e=>{if(gesture.current?.id===e.pointerId)cancel();}}
         onLostPointerCapture={e=>{if(gesture.current?.id===e.pointerId)cancel();}}
         onKeyDown={e=>{if(e.key==='ArrowUp'||e.key==='ArrowDown'){e.preventDefault();latest.current.onMove(e.key==='ArrowUp'?'up':'down');}}}>↕</button>}
