@@ -155,3 +155,14 @@ test('book history restores two different chapters in reverse order without over
   assert.throws(()=>prepareBookAreaRestore(context(),{...ticket,next:snapshot.document}),/復元対象/);
   assert.throws(()=>prepareBookAreaRestore(context(),{...ticket,revision:'old'}));
 });
+
+test('absolute page lock cannot be applied with manuscript-local page numbers and must match exact measured coordinates',()=>{
+  const stored={revision:'saved',document:{schemaVersion:1,entries:[{documentId:'a',persistentId:'q',bookFixed:{page:2,x:100,y:300}}]}};
+  assert.throws(()=>prepareSavedAreaPreview(options,stored,{whole:false,documentId:'a'}),{code:'AREA_BOOK_SCOPE'});
+  assert.equal(prepareSavedAreaPreview(options,stored,{whole:false,documentId:'b'}).intents.length,0);
+  const p=prepareSavedAreaPreview(options,stored,{whole:true});
+  const result=placement=>({intelligentLayout:{status:'placed',revision:'r1',fingerprint:'f1',fragments:[{origin:origin('a','40','q'),placement}]}});
+  const exact={page:2,fixed:true,rect:{x:100,y:300,width:500,height:100}};
+  assert.doesNotThrow(()=>verifySavedAreaPreview(p,result(exact)));
+  for(const bad of [{...exact,page:1},{...exact,fixed:false},{...exact,rect:{...exact.rect,x:101}},{...exact,rect:{...exact.rect,y:301}}])assert.throws(()=>verifySavedAreaPreview(p,result(bad)),/固定位置/);
+});
