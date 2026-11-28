@@ -1,6 +1,6 @@
 import React,{useLayoutEffect,useRef,useState} from 'react';
 import {beginPaperAreaDrag,previewPaperAreaDrag,finishPaperAreaDrag,beginPaperGapDrag,previewPaperGapDrag,finishPaperGapDrag} from './paper-area-intent.mjs';
-import {clipPaperRect} from './paper-selection-geometry.mjs';
+import {clipPaperRect,placePaperPropertyPanel} from './paper-selection-geometry.mjs';
 import {createPlainTextPagePreview,createParagraphMeasurementCache,createMathCompilationCache,createDisplayMathGeometryCache} from '../../../BookCreator_LayoutEngine/dist/index.js';
 import {measurementLane} from './measurement-lane.mjs';
 import {measureInlineAreaProposal} from './paper-area-preview.mjs';
@@ -12,7 +12,8 @@ export function PaperInlineArea({viewport,node,context,onCommit}){
   const [geometry,setGeometry]=useState(null),[proposal,setProposal]=useState({}),[ghost,setGhost]=useState(null);
   const active=useRef(null),liveMount=useRef(null);
   const isGap=axis=>axis==='before'||axis==='gap';
-  const [live,setLive]=useState(null);
+  const [live,setLive]=useState(null),[details,setDetails]=useState(false),[panelSize,setPanelSize]=useState({width:260,height:40});
+  const panelRef=useRef(null);
   // Private to this mounted block / revision. No DOM page cache or
   // normal-paper cache is borrowed, even when the user cancels.
   const draftCaches=useRef(null);
@@ -130,8 +131,16 @@ export function PaperInlineArea({viewport,node,context,onCommit}){
     mount.replaceChildren(shown.element);
     return ()=>{if(shown.element.parentNode===mount)shown.element.remove();};
   },[shown]);
+  const panelVisible=!!geometry;
+  useLayoutEffect(()=>{
+    const panel=panelRef.current;if(!panel)return;
+    const update=()=>{const r=panel.getBoundingClientRect();setPanelSize(old=>Math.abs(old.width-r.width)<.5&&Math.abs(old.height-r.height)<.5?old:{width:r.width,height:r.height});};
+    const observer=new ResizeObserver(update);observer.observe(panel);update();
+    return ()=>observer.disconnect();
+  },[panelVisible]);
   if(!geometry)return null;
   const {full,clipped,bounds,host}=geometry;
+  const panelPosition=placePaperPropertyPanel(clipped,bounds,{width:260,height:panelSize.height});
   const extent=(axis,body,content,actual)=>Object.hasOwn(preview,axis)?Math.max(content,preview[axis]*body/100):actual;
   const width=extent('width',geometry.bodyWidth,geometry.contentWidth,full.width);
   const height=extent('height',geometry.bodyHeight,geometry.contentHeight,full.height);
@@ -155,11 +164,16 @@ export function PaperInlineArea({viewport,node,context,onCommit}){
       {['width','height'].map(axis=>(axis==='width'?geometry.rightVisible:geometry.bottomVisible)&&<button key={axis} id={'paper-inline-area-'+axis} type="button" className={'paper-area-handle '+axis} aria-label={axis==='width'?'横の最小占有率を調整':'縦の最小占有率を調整'} disabled={context.disabled} onPointerDown={e=>begin(e,axis)} onPointerMove={move} onPointerUp={finish} onPointerCancel={e=>{if(active.current?.id===e.pointerId)cancel();}} onLostPointerCapture={e=>{if(active.current?.id===e.pointerId)cancel();}} onKeyDown={e=>keyAdjust(e,axis)}/>)}
     </div>
     {[['before',beforeHandleVisible,before,beforeStart,-9,'前'],['gap',gapHandleVisible,gap,gapEnd,9,'後']].map(([axis,visible,value,edge,offset,label])=>visible&&<button key={axis} id={axis==='before'?'paper-inline-gap-before-handle':'paper-inline-gap-handle'} type="button" className="paper-inline-gap-handle" style={{left:clipped.left+Math.min(18,clipped.width/4),top:Math.max(bounds.top+8,Math.min(edge+(value===0?offset:0),bounds.bottom-8))}} aria-label={label+'の余白を調整（'+value/1000+' mm）'} title={axis==='before'?'上にドラッグして前の余白を増やす':'下にドラッグして後ろの余白を増やす'} disabled={context.disabled} onPointerDown={e=>begin(e,axis)} onPointerMove={move} onPointerUp={finish} onPointerCancel={e=>{if(active.current?.id===e.pointerId)cancel();}} onLostPointerCapture={e=>{if(active.current?.id===e.pointerId)cancel();}} onKeyDown={e=>keyAdjust(e,axis)}>{label}↕</button>)}
-    <div className="paper-inline-area-toolbar" style={{left:Math.max(bounds.left,Math.min(clipped.left,bounds.right-260)),top:Math.max(bounds.top,Math.min(clipped.bottom+10,bounds.bottom-150))}}>
-      <small aria-live="polite">横 {label('width')} · 縦 {label('height')}{pending||ghost?'（未確定）':''}</small>
+    <div ref={panelRef} className="paper-inline-area-toolbar" style={panelPosition} role="group" aria-label="選択ブロックの配置プロパティ">
+      <div className="paper-inline-summary"><small aria-live="polite">横 {label('width')} · 縦 {label('height')}<br/>余白 前 {before/1000} / 後 {gap/1000} mm{pending||ghost?'（未確定）':''}</small>
+        {!ghost&&<button id="paper-inline-details" type="button" className="secondary-action" aria-expanded={details} aria-controls="paper-inline-properties" onClick={()=>setDetails(v=>!v)}>{details?'閉じる':'調整'}</button>}
+      </div>
       {canPreview&&<small className="paper-inline-live-status" role="status">{shown?'実測配置案（未保存）':live?.key===liveKey&&live.error?'配置できません：'+live.error:live?.key===liveKey?'配置変更なし':'配置を計算中…'}</small>}
-      {!ghost&&<><button type="button" disabled={context.disabled||!(proposal.width??storedValue('width'))} onClick={()=>propose('width',0)}>横を自動</button><button type="button" disabled={context.disabled||!(proposal.height??storedValue('height'))} onClick={()=>propose('height',0)}>縦を自動</button></>}
-      {!ghost&&<div style={{display:'grid',gap:3,flexBasis:'100%',minWidth:0}}>{[['before','前',before],['gap','後',gap]].map(([axis,label,value])=><label key={axis} style={{display:'grid',gridTemplateColumns:'72px minmax(0,1fr)',alignItems:'center',gap:4}}><small>{label} {value/1000} mm</small><input id={axis==='before'?'paper-inline-gap-before':'paper-inline-gap'} aria-label={'部品の'+label+'の余白（mm）'} type="range" min={0} max={Math.floor(Math.min(context.height,MAX_PAPER_TRAILING_SPACE)/1000)} step={1} value={value/1000} disabled={context.disabled} onChange={e=>{if(context.current())propose(axis,Number(e.target.value)*1000);}} style={{minWidth:0,width:'100%'}}/></label>)}</div>}
+      <div id="paper-inline-properties" className="paper-inline-properties" hidden={!details||!!ghost}>
+              <button type="button" disabled={context.disabled||!(proposal.width??storedValue('width'))} onClick={()=>propose('width',0)}>横を自動</button><button type="button" disabled={context.disabled||!(proposal.height??storedValue('height'))} onClick={()=>propose('height',0)}>縦を自動</button> 
+      <div style={{display:'grid',gap:3,flexBasis:'100%',minWidth:0}}>{[['before','前',before],['gap','後',gap]].map(([axis,label,value])=><label key={axis} style={{display:'grid',gridTemplateColumns:'72px minmax(0,1fr)',alignItems:'center',gap:4}}><small>{label} {value/1000} mm</small><input id={axis==='before'?'paper-inline-gap-before':'paper-inline-gap'} aria-label={'部品の'+label+'の余白（mm）'} type="range" min={0} max={Math.floor(Math.min(context.height,MAX_PAPER_TRAILING_SPACE)/1000)} step={1} value={value/1000} disabled={context.disabled} onChange={e=>{if(context.current())propose(axis,Number(e.target.value)*1000);}} style={{minWidth:0,width:'100%'}}/></label>)}</div>
+
+      </div>
       {pending&&!ghost&&<><button id="paper-inline-area-commit" type="button" disabled={context.disabled} onClick={()=>{if(!context.current())return;void onCommit({...proposal});}}>適用して保存</button><button type="button" disabled={context.disabled} onClick={()=>setProposal({})}>取消</button></>}
     </div>
   </>;
