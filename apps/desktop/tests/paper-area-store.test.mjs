@@ -88,3 +88,15 @@ test('saved history moves only on successful acknowledgement, with revision and 
   assert.equal(h.availability(scope,{revision:'r3',document:changed}).canRedo,false);
   h.clear();assert.equal(h.plan(scope,{revision:'r3',document:changed},'undo'),null);
 });
+
+test('trailing space is independent of occupied dimensions and binds as an IL field',()=>{
+  const edit={documentId:'ch',persistentId:'q-1'};
+  const next=setPaperAreaValues(doc,{...edit,values:{gap:6000}});
+  assert.deepEqual(next.entries,[{...edit,minWidthPercent:50,minHeightPercent:25,spaceAfter:6000}]);
+  assert.deepEqual(bindPaperAreaDocument(next,[fragment('10')]).intents,[{documentId:'ch',blockKey:'10',placement:{sizeConstraints:{minWidthPercent:50,minHeightPercent:25},spaceAfter:6000}}]);
+  assert.deepEqual(setPaperAreaValues(next,{...edit,values:{gap:0}}),doc);
+  const only=setPaperAreaValues(empty,{...edit,values:{gap:6000}});
+  assert.deepEqual(bindPaperAreaDocument(only,[fragment('10')]).intents,[{documentId:'ch',blockKey:'10',placement:{spaceAfter:6000}}]);
+  assert.deepEqual(decodePaperAreaDocument(encodePaperAreaDocument(only)),only);
+  for(const gap of [-1,1.5,1000001])assert.throws(()=>setPaperAreaValues(doc,{...edit,values:{gap}}));
+});
