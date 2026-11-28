@@ -1481,6 +1481,7 @@ async function packageSmoke(){
   await exec("document.querySelector('#layout-to-publication').click()");
   await until("document.querySelector('.workspace-shell').dataset.workspaceMode==='publication'&&document.querySelector('#publication-layout').dataset.state==='ready'&&document.querySelector('#publication-save').dataset.state==='required'&&document.querySelector('#publication-diagnostics').dataset.state==='preview'&&document.querySelector('#publication-output').dataset.state==='unavailable'");
   if(!await exec("!document.querySelector('#publication-output button')&&document.querySelector('#publication-layout').textContent.includes('未保存の変更')"))throw Error('Preview mistaken for publishable snapshot');
+  if(!await exec("document.querySelector('#publication-export-trial-pdf').disabled"))throw Error('Unsaved whole-book plan allowed trial PDF');
   await exec("document.querySelector('#mode-writing').click()");
   const invalidSource='# 見出し\n\n$\n\\notacommand{x}\n$\n';
   await setNavigationSource(invalidSource);
@@ -1504,6 +1505,7 @@ async function packageSmoke(){
   await exec("document.querySelector('#mode-publication').click()");
   await until("document.querySelector('#publication-save').dataset.state==='ready'&&document.querySelector('#publication-layout').dataset.state==='required'&&document.querySelector('#publication-diagnostics').dataset.state==='required'&&document.querySelector('#publication-output').dataset.state==='unavailable'");
   if(!await exec("!document.querySelector('#publication-diagnostics li')&&!document.querySelector('#publication-output button')"))throw Error('Stale diagnostics or output action exposed');
+  if(!await exec("document.querySelector('#publication-export-trial-pdf').disabled"))throw Error('Manuscript-only plan allowed trial PDF');
   await exec("document.querySelector('#mode-writing').click()");
   await exec("(()=>{const e=document.querySelector('#source');e.dispatchEvent(new CompositionEvent('compositionstart',{bubbles:true,data:'あ'}));})()");
   await until("document.querySelector('#mode-design').disabled");
