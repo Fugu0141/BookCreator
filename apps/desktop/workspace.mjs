@@ -122,7 +122,7 @@ function starterChapters(template){
   if(template===undefined||template==='blank')return ['# はじめに\n\nここから原稿を書き始めます。\n'];
   if(template==='textbook')return [
     '# この本の使い方\n\nこの参考書は、解説・例題・練習問題の順に学びます。本文や部品を自由に編集してください。\n',
-    '# 第1章 一次方程式\n\n## 基本の考え方\n\n一次方程式は、未知数の値を求めるための等式です。\n\n$\n2x+3=7\n$\n\n:::component{name="example" #example-01}\n両辺から3を引き、2で割ると $x=2$ になります。\n:::\n\n:::component{name="exercise" #exercise-01}\n$3x+1=10$ を解きなさい。\n:::\n\n:::component{name="explanation" #answer-01 answer-to="exercise-01"}\n両辺から1を引くと $3x=9$ なので、$x=3$ です。\n:::\n',
+    '# 第1章 一次方程式\n\n## 基本の考え方\n\n一次方程式は、未知数の値を求めるための等式です。\n\n$$\n2x+3=7\n$$\n\n:::component{name="example" #example-01}\n両辺から3を引き、2で割ると $x=2$ になります。\n:::\n\n:::component{name="exercise" #exercise-01}\n$3x+1=10$ を解きなさい。\n:::\n\n:::component{name="explanation" #answer-01 answer-to="exercise-01"}\n両辺から1を引くと $3x=9$ なので、$x=3$ です。\n:::\n',
     '# 第2章 練習問題\n\n学んだ内容を使って問題を解きましょう。\n\n:::component{name="exercise" #exercise-02}\n$5x-2=18$ を解きなさい。\n:::\n\n:::component{name="explanation" #answer-02 answer-to="exercise-02"}\n両辺に2を足すと $5x=20$ なので、$x=4$ です。\n:::\n'
   ];
   fail('INPUT','Unknown new project template');
