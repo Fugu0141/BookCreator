@@ -647,6 +647,11 @@ function workspaceSmokeExec(){
         await raw("document.querySelector('#component-quick-select summary').click()");
         if(!await raw("document.querySelector('#component-quick-select').open"))throw Error('Cannot open direct component selector');
       }
+      const side=await raw("(()=>{for(const selector of "+JSON.stringify(selectors)+"){const el=document.querySelector(selector);if(el?.closest('#lab-library-fields'))return 'library';if(el?.closest('#lab-layer-fields'))return 'layers';}return null;})()");
+      if(side&&await raw("document.querySelector('#lab-"+(side==='library'?'library':'layer')+"-fields')?.hidden===true")){
+        await raw("document.querySelector('#lab-"+side+"-toggle').click()");
+        if(await raw("document.querySelector('#lab-"+(side==='library'?'library':'layer')+"-fields')?.hidden===true"))throw Error('Cannot open editor side panel '+side);
+      }
       if(selectors.some(s=>/^#lab-add(?:-image|-slot|-dynamic|-label)?$/.test(s))&&!await raw("document.querySelector('#lab-add-menu')?.getAttribute('aria-expanded')==='true'")){
         await raw("document.querySelector('#lab-add-menu').click()");
         if(!await raw("!document.querySelector('#lab-add-options').hidden"))throw Error('Cannot open element insertion menu');
@@ -1620,6 +1625,7 @@ async function writingJourneySmoke(){
   await click('#catalog-custom-new');
   await until('custom editor',"!!document.querySelector('#lab-library-name')&&!document.querySelector('#lab-library-bind')");
   await until('initial custom live preview',"document.querySelector('#lab-preview').dataset.previewPhase==='ready'&&!!document.querySelector('#lab-preview > div')?.shadowRoot?.querySelector('[data-content-slot]')&&document.querySelector('#lab-preview').dataset.previewConfirmed==='true'");
+  if(await raw("document.querySelector('#lab-library-fields')?.hidden===true"))await click('#lab-library-toggle');
   await input('#lab-library-name',customName);
   if(await raw("document.querySelector('#lab-precision-panel')?.hidden===true"))await click('#lab-precision-toggle');
   await click('[data-property-choice=layout]');
@@ -1629,17 +1635,22 @@ async function writingJourneySmoke(){
   await until('edited live preview',"document.querySelector('#lab-preview').dataset.previewPhase==='ready'&&document.querySelector('#lab-preview').dataset.previewConfirmed==='true'&&!document.querySelector('#lab-library-add').disabled&&[...document.querySelector('#lab-preview > div')?.shadowRoot?.querySelectorAll('[data-fixed-label]')??[]].some(e=>e.textContent==="+JSON.stringify(customName+'：サンプル')+")");
   console.log('PASS UX-10h-1 initial and edited custom component preview without pressing measure');
   // UX-10c: one required named slot and one independently optional slot.
+  if(await raw("document.querySelector('#lab-layer-fields')?.hidden===true"))await click('#lab-layers-toggle');
   await click('#lab-add-menu');
+  if(await raw("document.querySelector('#lab-layer-fields')?.hidden===true"))await click('#lab-layers-toggle');
   await click('#lab-add-slot');
   if(await raw("document.querySelector('#lab-precision-panel')?.hidden===true"))await click('#lab-precision-toggle');
   await click('[data-property-choice=details]');
   await input('#lab-slot-name','strategy');
+  if(await raw("document.querySelector('#lab-layer-fields')?.hidden===true"))await click('#lab-layers-toggle');
   await click('#lab-add-menu');
+  if(await raw("document.querySelector('#lab-layer-fields')?.hidden===true"))await click('#lab-layers-toggle');
   await click('#lab-add-slot');
   if(await raw("document.querySelector('#lab-precision-panel')?.hidden===true"))await click('#lab-precision-toggle');
   await click('[data-property-choice=details]');
   await input('#lab-slot-name','extension');
   await click('#lab-slot-optional');
+  if(await raw("document.querySelector('#lab-layer-fields')?.hidden===true"))await click('#lab-layers-toggle');
   await click('#lab-group');
   if(await raw("document.querySelector('#lab-precision-panel')?.hidden===true"))await click('#lab-precision-toggle');
   await click('[data-property-choice=details]');
@@ -1654,6 +1665,7 @@ async function writingJourneySmoke(){
   await until('custom measured',"!document.querySelector('#lab-library-add').disabled&&[...document.querySelector('#lab-preview > div')?.shadowRoot?.querySelectorAll('[data-fixed-label]')??[]].some(e=>e.textContent==="+JSON.stringify(customName+'：サンプル')+")");
   if(await readFile(themePath,'utf8')!==themeBefore||await readFile(manuscript,'utf8')!==expected)throw Error('Writing journey: unregistered component changed disk');
   await until('custom draft recorded',"document.querySelector('#component-recovery-state')?.dataset.phase==='recorded'");
+  if(await raw("document.querySelector('#lab-library-fields')?.hidden===true"))await click('#lab-library-toggle');
   await click('#lab-library-add');
   await until('custom registered',"[...document.querySelector('#lab-library-select')?.options??[]].some(e=>e.textContent==="+JSON.stringify(customName)+")&&!document.querySelector('#lab-cancel').disabled");
   const customId=await raw("[...document.querySelector('#lab-library-select').options].find(e=>e.textContent==="+JSON.stringify(customName)+").value");
@@ -2395,6 +2407,14 @@ async function smoke(){
   await until("!!document.querySelector('#lab-measure')");
   await until("document.querySelector('#lab-precision-panel').hidden&&!document.querySelector('#lab-padding').getClientRects().length&&document.querySelector('#lab-precision-toggle').getAttribute('aria-expanded')==='false'");
   const wideCanvas=await exec("document.querySelector('.lab-canvas').getBoundingClientRect().width");
+  await until("!document.querySelector('#lab-layer-fields').hidden&&document.querySelector('#lab-library-fields').hidden");
+  await exec("document.querySelector('#lab-library-toggle').click()");
+  await until("document.querySelector('#lab-layer-fields').hidden&&!document.querySelector('#lab-library-fields').hidden&&!!document.querySelector('#lab-library-name').getClientRects().length");
+  await exec("document.querySelector('#lab-left-close').click()");
+  await until("document.querySelector('#lab-left-panel').hidden&&document.querySelector('.lab-canvas').getBoundingClientRect().width>"+wideCanvas);
+  await exec("document.querySelector('#lab-layers-toggle').click()");
+  await until("!document.querySelector('#lab-left-panel').hidden&&!document.querySelector('#lab-layer-fields').hidden&&Math.abs(document.querySelector('.lab-canvas').getBoundingClientRect().width-"+wideCanvas+")<1");
+
   await exec("document.querySelector('#lab-quick-precision').click()");
   await until("!document.querySelector('#lab-precision-panel').hidden&&document.querySelector('#lab-precision-toggle').getAttribute('aria-expanded')==='true'");
   if(!await exec("(()=>{const q=s=>document.querySelector(s),a=q('.lab-layers').getBoundingClientRect(),b=q('.lab-canvas').getBoundingClientRect(),c=q('.lab-inspector').getBoundingClientRect();return a.width>0&&b.width>0&&c.width>0&&a.right<=b.left&&b.right<=c.left&&q('.lab-layers').contains(q('[data-lab-node]'))&&q('.lab-inspector').contains(q('#lab-padding'))&&q('.lab-canvas').contains(q('#lab-preview'));})()"))throw Error('Component editor pane order or controls incorrect');
