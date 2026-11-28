@@ -1,4 +1,5 @@
 import React,{useEffect,useRef,useState} from 'react';
+import {editorCommitMetrics,summarizeEditorInput} from './editor-commit-metrics.mjs';
 import {performanceMetrics,summarizePerformance} from './performance-metrics.mjs';
 import {previewPhaseMetrics,summarizePreviewPhases,phaseKeys} from './preview-phase-metrics.mjs';
 import {editPreviewMetrics,summarizeEditPreviewMetrics} from './edit-preview-metrics.mjs';
@@ -9,6 +10,7 @@ const categoryNames={manuscript:'選択原稿',book:'全冊',component:'部品',
 const ms=v=>v===null?'—':v.toFixed(1);
 const mib=v=>(v/1024).toFixed(1)+' MiB';
 export function PerformancePanel({retainedPreview,onRetainedPreview,sparsePaperPages,onSparsePaperPages,reusePaperPages,onReusePaperPages,readMemory,readCache,cacheEnabled,onCacheEnabled,readMathCaches,mathCacheEnabled,onMathCacheEnabled,readParagraphCache,paragraphCacheEnabled,onParagraphCacheEnabled,readPageCache,pageCacheEnabled,onPageCacheEnabled,cacheBlocked,onClose}){
+  const [editor,setEditor]=useState(()=>editorCommitMetrics.snapshot());
   const [rows,setRows]=useState(()=>performanceMetrics.snapshot());
   const [phaseRows,setPhaseRows]=useState(()=>previewPhaseMetrics.snapshot());
   const [editRows,setEditRows]=useState(()=>editPreviewMetrics.snapshot());
@@ -20,7 +22,7 @@ export function PerformancePanel({retainedPreview,onRetainedPreview,sparsePaperP
   const request=useRef(0);
   async function refresh(){
     const job=++request.current;
-    setRows(performanceMetrics.snapshot());setPhaseRows(previewPhaseMetrics.snapshot());setEditRows(editPreviewMetrics.snapshot());setCache(readCache());setMathCaches(readMathCaches());setParagraph(readParagraphCache());setPageCache(readPageCache());setPhase('pending');
+    setEditor(editorCommitMetrics.snapshot());setRows(performanceMetrics.snapshot());setPhaseRows(previewPhaseMetrics.snapshot());setEditRows(editPreviewMetrics.snapshot());setCache(readCache());setMathCaches(readMathCaches());setParagraph(readParagraphCache());setPageCache(readPageCache());setPhase('pending');
     try{
       const value=await readMemory();
       if(job!==request.current)return;
@@ -31,11 +33,17 @@ export function PerformancePanel({retainedPreview,onRetainedPreview,sparsePaperP
     }
   }
   useEffect(()=>{void refresh();return ()=>{request.current++;};},[]);
+  const editorInput=summarizeEditorInput(editor.inputMs);
   const summary=summarizePerformance(rows);
   const phaseSummary=summarizePreviewPhases(phaseRows);
   const editSummary=summarizeEditPreviewMetrics(editRows);
   return <section id="performance-panel" className="performance-panel" aria-label="性能計測">
-    <header><strong>性能計測（端末内のみ）</strong><div><button id="performance-refresh" type="button" onClick={()=>void refresh()}>更新</button><button id="performance-clear" type="button" onClick={()=>{performanceMetrics.clear();previewPhaseMetrics.clear();editPreviewMetrics.clear();setRows([]);setPhaseRows([]);setEditRows([]);}}>記録を消去</button><button id="performance-close" type="button" onClick={onClose}>閉じる</button></div></header>
+    <header><strong>性能計測（端末内のみ）</strong><div><button id="performance-refresh" type="button" onClick={()=>void refresh()}>更新</button><button id="performance-clear" type="button" onClick={()=>{performanceMetrics.clear();previewPhaseMetrics.clear();editPreviewMetrics.clear();editorCommitMetrics.clear();setEditor(editorCommitMetrics.snapshot());setRows([]);setPhaseRows([]);setEditRows([]);}}>記録を消去</button><button id="performance-close" type="button" onClick={onClose}>閉じる</button></div></header>
+    <div id="performance-editor-summary" data-workspace={editor.counts.workspace} data-source={editor.counts.source} data-structured={editor.counts.structured} data-input-count={editorInput.count} data-input-median={editorInput.median??''} data-input-p95={editorInput.p95??''}>
+      <p>Reactコミット：App {editor.counts.workspace} 回 ／ ソース {editor.counts.source} 回 ／ 構造編集 {editor.counts.structured} 回</p>
+      <p>ソース入力からReact反映：{editorInput.count} 件 ／ 中央値 {ms(editorInput.median)} ms ／ p95 {ms(editorInput.p95)} ms</p>
+      <small>記録消去以降の各コンポーネントのコミット数（初回表示・組版・設定変更・非表示のソース欄も含む）。入力は直近200件のソース変更イベントから対応するlayout effectまで（IME中の変更を含む）。実際の画素表示や構造編集の入力遅延は含みません。</small>
+    </div>
     <label><input id="performance-retained-preview" type="checkbox" checked={retainedPreview} disabled={cacheBlocked} onChange={e=>onRetainedPreview(e.target.checked)}/>保持型リアルタイム組版（選択原稿・既定ON）</label>
     <small>保持型で再利用可能な選択原稿の紙面がある場合、執筆中の入力合流を100msから16msへ短縮します。初回・全冊などは100msのままです。OFFにすると従来の組版方式へ戻ります。</small>
     <label><input id="performance-sparse-paper-pages" type="checkbox" checked={sparsePaperPages} disabled={cacheBlocked} onChange={e=>onSparsePaperPages(e.target.checked)}/>未変更ページのDOM生成を省略（試験機能）</label>
