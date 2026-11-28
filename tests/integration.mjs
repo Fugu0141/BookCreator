@@ -3,7 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
-import {createManuscriptScanSession,editDocument,compileMeasuredManuscript,canReviewLayout,prepareBrowserPreview,prepareBookBrowserPreview,defaultHeadingDesign,defaultParagraphDesign,previewSourceRange,planInlineFormat,planListFormat,planListIndent,planListBatch,inspectDisplayMath,planDisplayMath,inspectInlineMath,planInlineMath,inspectComponentDisplayMath,planComponentDisplayMath,previewSampleInline,equationReferenceTargets,planEquationReference,planEquationNumbering,planNumberedComponentDisplayMath,previewStudySamples} from '../dist/index.js';
+import {createInlineParseSession,createManuscriptScanSession,editDocument,compileMeasuredManuscript,canReviewLayout,prepareBrowserPreview,prepareBookBrowserPreview,defaultHeadingDesign,defaultParagraphDesign,previewSourceRange,planInlineFormat,planListFormat,planListIndent,planListBatch,inspectDisplayMath,planDisplayMath,inspectInlineMath,planInlineMath,inspectComponentDisplayMath,planComponentDisplayMath,previewSampleInline,equationReferenceTargets,planEquationReference,planEquationNumbering,planNumberedComponentDisplayMath,previewStudySamples} from '../dist/index.js';
 const load = (variable, fallback) => import(pathToFileURL(resolve(process.env[variable] ?? fallback)).href);
 const bcm = await load('BCM_DIST', '../BookCreator_Markdown/dist/index.js');
 const engine = await load('ENGINE_DIST', '../BookCreator_LayoutEngine/dist/index.js');
@@ -1282,4 +1282,20 @@ test('retained manuscript preparation connects real BCM checkpoints and preserve
   assert.deepEqual(run(next,'4',retained),run(next,'4',deps));
   session.clear();run(next,'5',retained);
   assert.equal(calls.at(-2).previous,undefined);assert.equal(calls.at(-1).previous,undefined);
+});
+
+test('book inline parse session matches full preparation after changed source positions and equation numbering',()=>{
+  const deps={scan:bcm.scanDocument,validate:bcm.validateScannedBlocks,index:bcm.indexBlockIds,validateDisplayMath:engine.parseDisplayMath,validateInlineMath:engine.parsePreviewMath,parseReference:bcm.parseReferenceToken};
+  const inlineSession=createInlineParseSession(),cached={...deps,inlineSession};
+  const size={width:100000,height:160000};
+  const make=(prefix,revision)=>[{documentId:'inline-cache',revision,source:[prefix,'','# 見出し','','本文 **強調** と $x^2$。','',':::layout{#eq numbered="true"}','$$','x','$$',':::','','本文 :ref{target="eq" format="number"}。',''].join('\n'),startOn:'page'}];
+  for(const [i,prefix] of ['最初。','新しい章。','## 新しい見出し'].entries()){
+    const docs=make(prefix,String(i+1));
+    const exact=prepareBookBrowserPreview(docs,String(i+1),'cache-parity-'+i,size,deps);
+    const warm=prepareBookBrowserPreview(docs,String(i+1),'cache-parity-'+i,size,cached);
+    assert.ok(exact.options,JSON.stringify(exact.diagnostics));
+    assert.deepEqual(warm,exact);
+  }
+  assert.ok(inlineSession.stats().hits>0);
+  assert.ok(inlineSession.stats().bypasses>0);
 });
