@@ -47,3 +47,5 @@ export {previewStudySamples} from './study-sample.js';
 export * from './trial-print.js';
 
 export {createManuscriptScanSession,type ManuscriptScanSession,type IncrementalManuscriptScanner} from './manuscript-scan-session.js';
+
+export {createInlineParseSession,type InlineParseSession} from './inline-parse-session.js';

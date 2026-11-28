@@ -1,0 +1,43 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {createInlineParseSession,parsePreviewInline} from '../dist/index.js';
+test('unchanged styled and math text reuse syntax at relocated UTF-16 offsets',()=>{
+  const session=createInlineParseSession();
+  let calls=0;const validate=()=>{calls++;};
+  const source='日本語 **強調** と $x^2$。\r\n次の行。';
+  const first=session.parse(source,10,validate);
+  const next=session.parse(source,99,validate);
+  assert.equal(calls,1);
+  assert.deepEqual(first,parsePreviewInline(source,10,()=>{}));
+  assert.deepEqual(next,parsePreviewInline(source,99,()=>{}));
+  first.sourceMap.segments[0].outerStart=999;next.inlineMath[0].formula='changed';
+  assert.deepEqual(session.parse(source,50,validate),parsePreviewInline(source,50,()=>{}));
+  assert.equal(session.stats().hits,2);
+  assert.throws(()=>session.parse(source,99,()=>{throw Error('invalid math');}),/invalid math/);
+  assert.throws(()=>session.parse(source,Number.MAX_SAFE_INTEGER,validate),/Unsupported inline source/);
+});
+test('plain text shares validation and render; reference and numbered wrapper contexts bypass',()=>{
+  const session=createInlineParseSession(),source='本文。';
+  session.parse(source,0);
+  session.parse(source,45,()=>{},undefined,true);
+  assert.equal(session.stats().hits,1);
+  const ref=':ref{target="eq"}';
+  assert.equal(session.parse(ref,0,undefined,()=> '1.1').text,'1.1');
+  assert.equal(session.parse(ref,7,undefined,()=> '1.2').text,'1.2');
+  const wrapped=':::layout\n$$\nx\n$$\n:::';
+  const eq={range:{start:0,end:wrapped.length},formulaStart:wrapped.indexOf('x'),formula:'x',numbered:true,equationNumber:'1.1'};
+  const validate=()=>{};
+  assert.equal(session.parse(wrapped,0,validate,undefined,true,validate,[eq]).inlineMath[0].equationNumber,'1.1');
+  assert.equal(session.parse(wrapped,0,validate,undefined,true,validate,[{...eq,equationNumber:'1.2'}]).inlineMath[0].equationNumber,'1.2');
+  assert.equal(session.stats().bypasses,4);
+  assert.throws(()=>session.parse('**bad',0));
+  assert.equal(session.stats().entries,1);
+});
+test('cache is bounded, clears on book change, and never exposes stored values',()=>{
+  const session=createInlineParseSession();
+  for(let i=0;i<300;i++)session.parse('本文 '+i);
+  assert.ok(session.stats().entries<=256);
+  assert.ok(session.stats().cost<=250000);
+  session.clear();
+  assert.deepEqual(session.stats(),{entries:0,cost:0,hits:0,misses:0,bypasses:0});
+});

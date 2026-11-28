@@ -51,6 +51,8 @@ export async function benchmarkRetainedEdits({raw,click,until,ready,paperSignatu
         if(retained&&(!sample.work||sample.work.measurement.reusedBlocks<1||sample.work.pagination.reusedBlocks<1))throw Error('Retained benchmark did not reuse measured/placed blocks');
         if(retained){
           const identity=sample.identity;
+          const inline=sample.work.inline;
+          if(!inline||!Number.isSafeInteger(inline.hits)||inline.hits<1||!Number.isSafeInteger(inline.misses)||!Number.isSafeInteger(inline.bypasses))throw Error('Missing inline parse reuse diagnostics');
           const images=sample.work.images;
           if(!images||images.resources!==0||images.decodedImages!==0||images.skippedDecodes!==0)throw Error('Unexpected image work for resource-free retained fixture: '+JSON.stringify(images));
           if(identity.reusedFromInitial!==sample.pages-1||sample.componentPages.filter(p=>p.retained).length!==sample.componentPages.length-1)throw Error('Mixed fixture did not retain unchanged component pages: '+JSON.stringify({case:item.id,pair,identity,componentPages:sample.componentPages}));

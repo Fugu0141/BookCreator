@@ -8,7 +8,7 @@ import {CatalogSpecimen} from './catalog-specimen.jsx';
 import React,{useState,useRef,useEffect,useLayoutEffect,useMemo,useCallback,useSyncExternalStore} from 'react';
 import {projectBookSettings,projectTypographySettings,projectFontChoices} from './workspace-settings-projection.mjs';
 import {createRoot} from 'react-dom/client';
-import {createManuscriptScanSession,parsePreviewInline,prepareBrowserPreview,prepareBookBrowserPreview,previewSourceRange,planInlineFormat,planListFormat,planListIndent,planListBatch,inspectDisplayMath,planDisplayMath,inspectInlineMath,planInlineMath,inspectComponentDisplayMath,planComponentDisplayMath,equationReferenceTargets,planEquationReference,planEquationNumbering,planNumberedComponentDisplayMath,hasDynamicLabels,hasStudyNumbering,studyTemplate,studyKinds,defaultStudyDesign,customStudyTemplate,isCustomComponentId,linkedStudyTemplate,slottedStudyTemplate,namedSlotDefinitions} from '../../dist/index.js';
+import {createInlineParseSession,createManuscriptScanSession,parsePreviewInline,prepareBrowserPreview,prepareBookBrowserPreview,previewSourceRange,planInlineFormat,planListFormat,planListIndent,planListBatch,inspectDisplayMath,planDisplayMath,inspectInlineMath,planInlineMath,inspectComponentDisplayMath,planComponentDisplayMath,equationReferenceTargets,planEquationReference,planEquationNumbering,planNumberedComponentDisplayMath,hasDynamicLabels,hasStudyNumbering,studyTemplate,studyKinds,defaultStudyDesign,customStudyTemplate,isCustomComponentId,linkedStudyTemplate,slottedStudyTemplate,namedSlotDefinitions} from '../../dist/index.js';
 import {scanDocument,scanDocumentIncremental,validateScannedBlocks,indexBlockIds,applyPatches,parseReferenceToken} from '../../../BookCreator_Markdown/dist/index.js';
 import {createPlainTextPagePreview,createIncrementalTextPagePreview,createRetainedTextPagePreview,createTextMeasurementCache,createParagraphMeasurementCache,createPageRenderCache,createMathCompilationCache,createDisplayMathGeometryCache,createInlineMathGeometryCache,parsePreviewMath,parseDisplayMath,createPreviewMath} from '../../../BookCreator_LayoutEngine/dist/index.js';
 import {ParagraphLab} from './paragraph-lab.jsx';
@@ -129,10 +129,11 @@ function App(){
   const [sparsePaperPages,setSparsePaperPages]=useState(false);
   const [retainedPreview,setRetainedPreview]=useState(true);
   const [directSinglePage,setDirectSinglePage]=useState(false);
-  const manuscriptSession=useRef(null);
+  const manuscriptSession=useRef(null),inlineSessionRef=useRef(null);
+  if(!inlineSessionRef.current)inlineSessionRef.current=createInlineParseSession();
   const makeScanSession=()=>createManuscriptScanSession({scan:scanDocument,scanIncremental:scanDocumentIncremental});
   if(!manuscriptSession.current)manuscriptSession.current=makeScanSession();
-  function resetScanSession(){manuscriptSession.current.clear();manuscriptSession.current=makeScanSession();}
+  function resetScanSession(){inlineSessionRef.current.clear();manuscriptSession.current.clear();manuscriptSession.current=makeScanSession();}
   function changeRetainedPreview(enabled){
     paperDisplay.forgetSparseBase();resetScanSession();
     if(enabled){resetPageCache();setPageCacheEnabled(false);setReusePaperPages(false);setSparsePaperPages(false);}
@@ -663,9 +664,9 @@ function App(){
       if(!layoutScheduler.isCurrent(job))return;
       phase='prepare';const preparationStarted=performance.now();
       documents=collectLayoutDocuments(input,snapshot);
-      const scanBefore=scanSession?.stats();
-      const prepared=prepareLayoutOptions(input,documents,prepareBookBrowserPreview,scanSession?{...deps,scanSession}:deps);
-      const scanAfter=scanSession?.stats();
+      const scanBefore=scanSession?.stats(),inlineSession=retainedMode?inlineSessionRef.current:undefined,inlineBefore=inlineSession?.stats();
+      const prepared=prepareLayoutOptions(input,documents,prepareBookBrowserPreview,scanSession?{...deps,scanSession,inlineSession}:deps);
+      const scanAfter=scanSession?.stats(),inlineAfter=inlineSession?.stats();
       diagnostics=prepared.diagnostics;
       if(!prepared.options)throw Error(diagnostics.map(d=>d.code+' '+d.message).join('\n'));
       const options=prepared.options;
@@ -737,7 +738,7 @@ function App(){
       if(host){
         delete host.dataset.retainedWork;
         if(retainedMode&&!sparseFallback&&result.paginationWork&&result.measurementWork){
-          host.dataset.retainedWork=JSON.stringify({pagination:result.paginationWork,measurement:result.measurementWork,images:result.imageWork,scan:{hits:scanAfter.hits-scanBefore.hits,misses:scanAfter.misses-scanBefore.misses},priorityPages,firstVisitedPage,provisionalCount,directSinglePage,checkpoint:checkpoint?.snapshot(),cancelledJobs:cancelledPreviewLog.take(diagnosticTarget),hostTiming:{preparationMs,preparationYieldMs,publicationMs:performance.now()-presentationStarted,publicationStages}});
+          host.dataset.retainedWork=JSON.stringify({pagination:result.paginationWork,measurement:result.measurementWork,images:result.imageWork,inline:{hits:inlineAfter.hits-inlineBefore.hits,misses:inlineAfter.misses-inlineBefore.misses,bypasses:inlineAfter.bypasses-inlineBefore.bypasses},scan:{hits:scanAfter.hits-scanBefore.hits,misses:scanAfter.misses-scanBefore.misses},priorityPages,firstVisitedPage,provisionalCount,directSinglePage,checkpoint:checkpoint?.snapshot(),cancelledJobs:cancelledPreviewLog.take(diagnosticTarget),hostTiming:{preparationMs,preparationYieldMs,publicationMs:performance.now()-presentationStarted,publicationStages}});
         }
       }
       const {pages,retained}=publication;

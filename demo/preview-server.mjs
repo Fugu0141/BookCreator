@@ -5,7 +5,7 @@ const entries=new Map();
 const add=(prefix,root,files)=>{for(const f of files)entries.set(prefix+f,new URL(root+f,import.meta.url));};
 add('/demo/','../demo/',['preview.html','preview.mjs','math-pdf.html','math-pdf.mjs']);
 add('/fixtures/','../tests/fixtures/',['math-textbook.mjs']);
-add('/app/dist/','../dist/',['index.js','manuscript-poc.js','browser-preview.js','preview-typography.js','preview-component.js','study-blocks.js','inline-preview.js','inline-edit.js','list-edit.js','math-edit.js','equation-reference-edit.js','equation-numbering-edit.js','study-sample.js','trial-print.js','manuscript-scan-session.js']);
+add('/app/dist/','../dist/',['index.js','manuscript-poc.js','browser-preview.js','preview-typography.js','preview-component.js','study-blocks.js','inline-preview.js','inline-edit.js','list-edit.js','math-edit.js','equation-reference-edit.js','equation-numbering-edit.js','study-sample.js','trial-print.js','manuscript-scan-session.js','inline-parse-session.js']);
 add('/bcm/dist/','../../BookCreator_Markdown/dist/',['index.js','document.js','block-ids.js','validation.js']);
 add('/engine/dist/','../../BookCreator_LayoutEngine/dist/',['index.js','tree.js','pagination.js','inspector.js','browser-measurement.js','browser-lines.js','browser-page-measure.js','browser-page-render.js','preview-component-render-key.js','preview-page-priority.js','preview-page-delivery.js','text-measurement-cache.js','preview-font.js','image-crop.js','math-preview.js']);
 export function startPreviewServer(port=4173){
