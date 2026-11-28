@@ -382,6 +382,7 @@ async function liveWritingSmoke(){
   if(await raw("!!document.querySelector('.hub-project-row,#component-catalog .catalog-card')"))throw Error('Hidden workspace lists mounted during writing');
   await click('#performance-toggle');
   if(!await raw("document.querySelector('#performance-retained-preview').checked"))throw Error('Retained preview must start enabled');
+  await click('#performance-worker-preparation');
   await click('#performance-close');
   await raw("(()=>{const e=document.querySelector('#source');e.focus();e.setSelectionRange(0,0);e.dispatchEvent(new CompositionEvent('compositionstart',{bubbles:true,data:'あ'}));})()");
   const first=saved+'\nライブ組版途中。\n',latest=saved+'\nライブ組版最終確認。\n';
@@ -393,9 +394,10 @@ async function liveWritingSmoke(){
   await until('latest paper',ready+"&&document.querySelector('#preview > div').shadowRoot.textContent.includes('ライブ組版最終確認。')&&!document.querySelector('#preview > div').shadowRoot.textContent.includes('ライブ組版途中。')&&document.activeElement.id==='source'");
   if(await readFile(path,'utf8')!==saved)throw Error('Live writing changed saved manuscript');
   if(!await raw("!!document.querySelector('#preview > div').dataset.retainedWork"))throw Error('Default edit must use retained layout');
+  if(!await raw("JSON.parse(document.querySelector('#preview > div').dataset.retainedWork).hostTiming.preparationMode==='worker'"))throw Error('Live edit did not use preparation worker');
   await raw("window.__bcDefaultRetainedPages=[...document.querySelector('#preview > div').shadowRoot.querySelectorAll('[data-page]')].map(p=>p.cloneNode(true))");
   // Subsequent legacy comparison scenarios explicitly select the full baseline.
-  await click('#performance-toggle');await click('#performance-retained-preview');await click('#performance-close');
+  await click('#performance-toggle');await click('#performance-worker-preparation');await click('#performance-retained-preview');await click('#performance-close');
   await click('#preview-button');
   await until('default retained full oracle',scopeReady('manuscript')+"&&!document.querySelector('#preview > div').dataset.retainedWork");
   if(!await raw("(()=>{const p=[...document.querySelector('#preview > div').shadowRoot.querySelectorAll('[data-page]')],old=window.__bcDefaultRetainedPages;return p.length===old.length&&p.every((n,i)=>n.isEqualNode(old[i]));})()"))throw Error('Default retained edit differs from complete paper');

@@ -35,6 +35,8 @@ import {recoverySession} from './recovery-session.mjs';
 import {settingsDraftSession} from './settings-draft-session.mjs';
 import {createPreviewCheckpoint} from './preview-checkpoint.mjs';
 import {yieldCurrentPreview} from './preview-task-boundary.mjs';
+import {createPreparationClient} from './preview-preparation-client.mjs';
+import {preparationPayload} from './preview-preparation-service.mjs';
 import {visiblePaperPageIndices} from './viewport-page-priority.mjs';
 import {describeLayoutInput,collectLayoutDocuments,prepareLayoutOptions,validateLayoutOptions} from './layout-input.mjs';
 import {capturePreviewManuscript} from './preview-manuscript-input.mjs';
@@ -129,11 +131,15 @@ function App(){
   const [sparsePaperPages,setSparsePaperPages]=useState(false);
   const [retainedPreview,setRetainedPreview]=useState(true);
   const [directSinglePage,setDirectSinglePage]=useState(false);
+  const [workerPreparation,setWorkerPreparation]=useState(false);
+  const preparationClient=useRef(null);
+  if(!preparationClient.current)preparationClient.current=createPreparationClient();
+  useEffect(()=>()=>preparationClient.current.reset(),[]);
   const manuscriptSession=useRef(null),inlineSessionRef=useRef(null);
   if(!inlineSessionRef.current)inlineSessionRef.current=createInlineParseSession();
   const makeScanSession=()=>createManuscriptScanSession({scan:scanDocument,scanIncremental:scanDocumentIncremental});
   if(!manuscriptSession.current)manuscriptSession.current=makeScanSession();
-  function resetScanSession(){inlineSessionRef.current.clear();manuscriptSession.current.clear();manuscriptSession.current=makeScanSession();}
+  function resetScanSession(){preparationClient.current.reset();inlineSessionRef.current.clear();manuscriptSession.current.clear();manuscriptSession.current=makeScanSession();}
   function changeRetainedPreview(enabled){
     paperDisplay.forgetSparseBase();resetScanSession();
     if(enabled){resetPageCache();setPageCacheEnabled(false);setReusePaperPages(false);setSparsePaperPages(false);}
@@ -655,6 +661,7 @@ function App(){
     const mathOptions=mathCacheEnabled?mathCaches.current:{};
     const retainedMode=retainedPreview&&scope==='manuscript'&&!pageCache&&!reusePaperPages;
     const scanSession=retainedMode?manuscriptSession.current:undefined;
+    let preparationMode='main',workerComputeMs=null,preparationWork=null;
     let diagnostics=[],documents=[],provisional=null,checkpoint=null,preparationMs=null,preparationYieldMs=null,phase='read';
     const diagnosticTarget=paperTarget(scope,file);
     try{
@@ -664,9 +671,29 @@ function App(){
       if(!layoutScheduler.isCurrent(job))return;
       phase='prepare';const preparationStarted=performance.now();
       documents=collectLayoutDocuments(input,snapshot);
-      const scanBefore=scanSession?.stats(),inlineSession=retainedMode?inlineSessionRef.current:undefined,inlineBefore=inlineSession?.stats();
-      const prepared=prepareLayoutOptions(input,documents,prepareBookBrowserPreview,scanSession?{...deps,scanSession,inlineSession}:deps);
-      const scanAfter=scanSession?.stats(),inlineAfter=inlineSession?.stats();
+      let prepared;
+      if(retainedMode&&workerPreparation){
+        phase='prepare-worker';
+        let response;
+        try{response=await preparationClient.current.prepare(preparationPayload(input,documents),true);}
+        catch{preparationMode='fallback';}
+        if(!current()||(!response&&preparationMode!=='fallback'))return;
+        if(response){
+          if(response.type==='error')throw Object.assign(Error(response.error.message),{code:response.error.code});
+          prepared=response.prepared;preparationWork=response.work;workerComputeMs=response.preparationMs;preparationMode='worker';
+          if(!preparationWork||!Number.isFinite(workerComputeMs)||workerComputeMs<0)throw Error('Invalid preparation worker diagnostics');
+          if(prepared.options&&(prepared.options.revision!==input.rev||prepared.options.fingerprint!==input.fingerprint))throw Error('Stale preparation worker result');
+        }
+      }
+      if(!prepared){
+        phase='prepare';
+        const scanBefore=scanSession?.stats(),inlineSession=retainedMode?inlineSessionRef.current:undefined,inlineBefore=inlineSession?.stats();
+        prepared=prepareLayoutOptions(input,documents,prepareBookBrowserPreview,scanSession?{...deps,scanSession,inlineSession}:deps);
+        if(scanSession){
+          const scanAfter=scanSession.stats(),inlineAfter=inlineSession.stats();
+          preparationWork={scan:{hits:scanAfter.hits-scanBefore.hits,misses:scanAfter.misses-scanBefore.misses},inline:{hits:inlineAfter.hits-inlineBefore.hits,misses:inlineAfter.misses-inlineBefore.misses,bypasses:inlineAfter.bypasses-inlineBefore.bypasses}};
+        }
+      }
       diagnostics=prepared.diagnostics;
       if(!prepared.options)throw Error(diagnostics.map(d=>d.code+' '+d.message).join('\n'));
       const options=prepared.options;
@@ -738,7 +765,7 @@ function App(){
       if(host){
         delete host.dataset.retainedWork;
         if(retainedMode&&!sparseFallback&&result.paginationWork&&result.measurementWork){
-          host.dataset.retainedWork=JSON.stringify({pagination:result.paginationWork,measurement:result.measurementWork,images:result.imageWork,inline:{hits:inlineAfter.hits-inlineBefore.hits,misses:inlineAfter.misses-inlineBefore.misses,bypasses:inlineAfter.bypasses-inlineBefore.bypasses},scan:{hits:scanAfter.hits-scanBefore.hits,misses:scanAfter.misses-scanBefore.misses},priorityPages,firstVisitedPage,provisionalCount,directSinglePage,checkpoint:checkpoint?.snapshot(),cancelledJobs:cancelledPreviewLog.take(diagnosticTarget),hostTiming:{preparationMs,preparationYieldMs,publicationMs:performance.now()-presentationStarted,publicationStages}});
+          host.dataset.retainedWork=JSON.stringify({pagination:result.paginationWork,measurement:result.measurementWork,images:result.imageWork,...preparationWork,priorityPages,firstVisitedPage,provisionalCount,directSinglePage,checkpoint:checkpoint?.snapshot(),cancelledJobs:cancelledPreviewLog.take(diagnosticTarget),hostTiming:{preparationMode,workerComputeMs,preparationMs,preparationYieldMs,publicationMs:performance.now()-presentationStarted,publicationStages}});
         }
       }
       const {pages,retained}=publication;
@@ -1155,7 +1182,7 @@ function App(){
     <PublicationPanel visible={mode==='publication'} saveLabel={saveLabel} dirty={dirty} themeDirty={themeDirty} settingsDirty={settingsDirty} layout={layoutState} diagnostics={layoutDiagnostics} canOpenDiagnostic={canOpenDiagnostic} onOpenDiagnostic={openDiagnostic} blocked={routeBlocked} canRender={!!book&&!!validPaper(page)} onNavigate={navigate} onRender={()=>{navigate('layout');void render(true);}}/>
   </main>
   <section id="workspace-diagnostics" className="workspace-diagnostics" hidden={!showDiagnostics||layoutState.phase!=='failed'} aria-label="組版診断"><div className="diagnostic-heading"><strong>組版診断 · {layoutDiagnostics.length}件</strong><button type="button" className="secondary-action" onClick={()=>dispatchLayout({type:'close-diagnostics'})}>閉じる</button></div>{showDiagnostics&&layoutState.phase==='failed'&&<DiagnosticList id="workspace-diagnostic-list" diagnostics={layoutDiagnostics} blocked={routeBlocked} canOpen={canOpenDiagnostic} onOpen={openDiagnostic}/>}</section>
-   {showPerformance&&mode!=='home'&&!labOpen&&!paragraphOpen&&!studyOpen&&<PerformancePanel directSinglePage={directSinglePage} onDirectSinglePage={setDirectSinglePage} retainedPreview={retainedPreview} onRetainedPreview={changeRetainedPreview} sparsePaperPages={sparsePaperPages} onSparsePaperPages={changeSparsePaperPages} reusePaperPages={reusePaperPages} onReusePaperPages={changeReusePaperPages} readMemory={()=>unwrap(api.performanceMemory())} readCache={()=>textCache.current.stats()} cacheEnabled={cacheEnabled} onCacheEnabled={changeCacheEnabled} readMathCaches={readMathCaches} mathCacheEnabled={mathCacheEnabled} onMathCacheEnabled={changeMathCacheEnabled} readParagraphCache={()=>paragraphCacheRef.current.stats()} paragraphCacheEnabled={paragraphCacheEnabled} onParagraphCacheEnabled={changeParagraphCacheEnabled} readPageCache={()=>pageCacheRef.current.stats()} pageCacheEnabled={pageCacheEnabled} onPageCacheEnabled={changePageCacheEnabled} cacheBlocked={measuring||routeBlocked} onClose={()=>setShowPerformance(false)}/>}
+   {showPerformance&&mode!=='home'&&!labOpen&&!paragraphOpen&&!studyOpen&&<PerformancePanel workerPreparation={workerPreparation} onWorkerPreparation={enabled=>{resetScanSession();setWorkerPreparation(enabled);}} directSinglePage={directSinglePage} onDirectSinglePage={setDirectSinglePage} retainedPreview={retainedPreview} onRetainedPreview={changeRetainedPreview} sparsePaperPages={sparsePaperPages} onSparsePaperPages={changeSparsePaperPages} reusePaperPages={reusePaperPages} onReusePaperPages={changeReusePaperPages} readMemory={()=>unwrap(api.performanceMemory())} readCache={()=>textCache.current.stats()} cacheEnabled={cacheEnabled} onCacheEnabled={changeCacheEnabled} readMathCaches={readMathCaches} mathCacheEnabled={mathCacheEnabled} onMathCacheEnabled={changeMathCacheEnabled} readParagraphCache={()=>paragraphCacheRef.current.stats()} paragraphCacheEnabled={paragraphCacheEnabled} onParagraphCacheEnabled={changeParagraphCacheEnabled} readPageCache={()=>pageCacheRef.current.stats()} pageCacheEnabled={pageCacheEnabled} onPageCacheEnabled={changePageCacheEnabled} cacheBlocked={measuring||routeBlocked} onClose={()=>setShowPerformance(false)}/>}
    <div className="workspace-statusbar"><span id="workspace-layout-state" data-phase={layoutState.phase} data-scope={layoutState.scope??'none'}>{layoutLabel}</span><button id="toggle-diagnostics" type="button" hidden={layoutState.phase!=='failed'} className="secondary-action" aria-expanded={showDiagnostics} aria-controls="workspace-diagnostics" disabled={routeBlocked} onClick={()=>dispatchLayout({type:'toggle-diagnostics'})}>診断 {layoutDiagnostics.length}件</button><footer id="status" role="status">{status}</footer><button id="performance-toggle" type="button" className="secondary-action" hidden={mode==='home'} disabled={routeBlocked} aria-expanded={showPerformance} onClick={()=>setShowPerformance(v=>!v)}>性能計測</button></div>{paragraphOpen&&page&&<ParagraphLab recovery={labRecovery('paragraph','default')} themeRevision={theme.revision} initialEntry={initialLibraryEntry} design={theme.paragraphDesign} library={theme.library} binding={theme.paragraphBinding} libraryEditable={theme.libraryEditable} libraryMessage={theme.libraryMessage??libraryNotice} onLibraryAction={changeLibrary} bodyFont={typography.body} mathFontFamily={typography.mathFontFamily} fontOptions={componentFonts} width={paperGeometry(page).content.width} height={paperGeometry(page).content.height} busy={busy} onCancel={()=>setParagraphOpen(false)} onApply={applyParagraph}/>}{studyOpen&&page&&<ComponentLab recovery={labRecovery('study',studyTarget)} themeRevision={theme.revision} initialEntry={initialLibraryEntry} key={'study-'+studyTarget} usage="study" customOnly={studyTarget==='custom'} level={studyTarget} studyName={studyTarget==='custom'?'独自部品ライブラリ':studyNames[studyTarget]} design={studyTarget==='custom'?defaultStudyDesign('note'):theme.studyDesigns?.[studyTarget]??defaultStudyDesign(studyTarget)} hasOverride={!!theme.studyDesigns?.[studyTarget]} fontOptions={componentFonts} library={theme.library} bindings={theme.studyBindings??{}} libraryEditable={theme.libraryEditable} libraryMessage={theme.libraryMessage??libraryNotice} onLibraryAction={changeLibrary} imageOptions={images} resolveImage={resolveImage} typography={typography} width={paperGeometry(page).content.width} height={paperGeometry(page).content.height} busy={busy} onCancel={()=>setStudyOpen(false)} onApply={applyStudy}/>}{labOpen&&page&&<ComponentLab recovery={labRecovery('heading',labLevel)} themeRevision={theme.revision} initialEntry={initialLibraryEntry} key={labLevel} level={labLevel} design={(labLevel==="default"?theme.headingDesign:theme.headingLevels?.[labLevel]??theme.headingDesign)} hasOverride={labLevel==="default"?!!theme.headingDesign:!!theme.headingLevels?.[labLevel]} fontOptions={componentFonts} library={theme.library} bindings={theme.bindings??{}} headingLevels={theme.headingLevels??{}} libraryEditable={theme.libraryEditable} libraryMessage={theme.libraryMessage??libraryNotice} onLibraryAction={changeLibrary} imageOptions={images} resolveImage={resolveImage} typography={typography} width={paperGeometry(page).content.width} height={paperGeometry(page).content.height} busy={busy} onCancel={()=>setLabOpen(false)} onApply={applyHeadingDesign}/>}<dialog id="close-dialog" ref={closeDialog} aria-labelledby="close-title" aria-describedby="close-description" onCancel={e=>{e.preventDefault();void finishClose('cancel');}}>
     <h2 id="close-title">BookCreatorを終了</h2>
     <p id="close-description">{closeRequest?.blocked?'現在の操作を完了または取り消してから、もう一度終了してください。':unsaved.length?'未保存の変更があります。保存対象を確認してください。':'保存済みです。終了しますか？'}</p>
