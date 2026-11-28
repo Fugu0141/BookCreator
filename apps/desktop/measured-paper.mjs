@@ -43,14 +43,22 @@ export function describeMeasuredPaper(result,options,{previewSourceRange,paperTh
     for(const el of fragments){
       const slice=result.slices[cursor++];if(!slice){sameDocuments=false;continue;}
       if(sameDocuments&&cached.documentSequence[cursor-pageStart-1]!==slice.origin.documentId)sameDocuments=false;
-      const bind=(node,range)=>{
+      const bind=(node,range,mapLine)=>{
         if(!range){if(reuse){node.removeAttribute('tabindex');node.style.removeProperty('cursor');}return;}
         if(node.tabIndex!==0)node.tabIndex=0;
         if(node.style.cursor!=='pointer')node.style.cursor='pointer';
-        bindings.set(node,{documentId:slice.origin.documentId,range});
+        bindings.set(node,{documentId:slice.origin.documentId,range,blockRange:block?.origin?.range,...(mapLine?{mapLine}:{})});
       };
       const block=sourceBlocks.get(slice.origin.documentId)?.get(slice.origin.blockKey);
-      bind(el,previewSourceRange(block,slice));
+      // The semantic layout may group several source paragraphs into one
+      // measured run. Resolve clicked line offsets lazily without walking
+      // every line at publication time or changing ordinary navigation.
+      const mapLine=(textStart,textEnd)=>{
+        if(!Number.isSafeInteger(textStart)||!Number.isSafeInteger(textEnd)||textStart<slice.textStart||textEnd>slice.textEnd||textStart>=textEnd)return null;
+        const sourceSlice=slice.sourceSlice?{start:slice.sourceSlice.start+textStart-slice.textStart,end:slice.sourceSlice.start+textEnd-slice.textStart}:undefined;
+        return previewSourceRange(block,{textStart,textEnd,sourceSlice});
+      };
+      bind(el,previewSourceRange(block,slice),mapLine);
       const topology=navigationNodes(el,reuse);
       for(const {node,textStart,textEnd,name} of topology.math){
         const local=name===undefined?slice:slice.namedSlots?.find(s=>s.name===name);

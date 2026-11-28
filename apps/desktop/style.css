@@ -687,3 +687,11 @@ body{font-family:BCFont_NotoSansJP,system-ui,sans-serif}.font-control,.typograph
 .lab-gui-first .lab-area-presets button[aria-pressed=true]{background:#e0eefb;border-color:#b8d5ef;color:#235b91}
 .lab-component-area-settings small{color:#526579;font-size:11px}
 @media(max-width:650px){.lab-area-mini{width:64px;flex-basis:64px}}
+
+/* Writing paper controls are outside the measured and printable DOM. */
+.paper-block-toolbar{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:0 0 8px;}
+.paper-block-toolbar small{flex:1 1 160px;min-width:0;overflow-wrap:anywhere;}
+.paper-block-toolbar button[aria-pressed=true]{outline:2px solid #3478b7;outline-offset:1px;}
+
+.paper-selection-frame{position:fixed;z-index:20;pointer-events:none;box-sizing:border-box;border:2px solid #3478b7;background:#3478b70a;}
+.paper-selection-frame[hidden]{display:none;}

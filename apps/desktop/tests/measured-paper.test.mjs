@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {describeMeasuredPaper} from '../measured-paper.mjs';
+import {paperBlockRangeForNode} from '../paper-navigation.mjs';
 
 test('measured paper builds page metadata and delegates source navigation',()=>{
   const listeners={},page={querySelectorAll:()=>[block]};
@@ -19,7 +20,7 @@ test('measured paper builds page metadata and delegates source navigation',()=>{
   assert.equal(block.tabIndex,0);
   listeners.click({composedPath:()=>[block,root],stopPropagation(){}});
   listeners.keydown({key:'Enter',composedPath:()=>[block,root],preventDefault(){},stopPropagation(){}});
-  assert.deepEqual(navigated,[['a',{start:4,end:7}],['a',{start:4,end:7}]]);
+  assert.deepEqual(navigated,[['a',{start:4,end:7},block],['a',{start:4,end:7},block]]);
 });
 
 test('sparse publication consumes validated fragments and updates current source ranges without rescanning pages',()=>{
@@ -36,7 +37,7 @@ test('sparse publication consumes validated fragments and updates current source
   assert.deepEqual(calls,pages);
   listeners.click({composedPath:()=>[a,root],stopPropagation(){}});
   listeners.click({composedPath:()=>[b,root],stopPropagation(){}});
-  assert.deepEqual(nav,[['doc-a',{start:40,end:45}],['doc-b',{start:60,end:65}]]);
+  assert.deepEqual(nav,[['doc-a',{start:40,end:45},a],['doc-b',{start:60,end:65},b]]);
 });
 
 test('reused paper thumbnail geometry is shared, but current navigation is rebuilt',()=>{
@@ -56,7 +57,7 @@ test('reused paper thumbnail geometry is shared, but current navigation is rebui
   assert.equal(next.thumbnail,first.thumbnail);assert.equal(calls.length,1);
   assert.equal(next,first);assert.ok(Object.isFrozen(next));assert.ok(Object.isFrozen(next.documents));
   listeners.click({composedPath:()=>[block,root],stopPropagation(){}});
-  assert.deepEqual(nav,[['doc',{start:5,end:6}]]);
+  assert.deepEqual(nav,[['doc',{start:5,end:6},block]]);
   assert.notEqual(publish(false,9).thumbnail,first.thumbnail);
   assert.equal(calls.length,2);
   const otherAdapter={...adapter,paperThumbnail:()=>null};
@@ -79,7 +80,7 @@ test('reused fragments skip topology searches while rebinding math and named slo
   publish(false);assert.equal(searches,2);
   offset=100;publish(true);assert.equal(searches,2);
   for(const node of [block,math,slot])listeners.click({composedPath:()=>[node,root],stopPropagation(){}});
-  assert.deepEqual(nav,[['a',{start:100,end:105}],['a',{start:102,end:103}],['a',{start:101,end:104}]]);
+  assert.deepEqual(nav,[['a',{start:100,end:105},block],['a',{start:102,end:103},math],['a',{start:101,end:104},slot]]);
   publish(false);assert.equal(searches,4);
 });
 
@@ -119,4 +120,41 @@ test('reused page metadata is shared only with matching document order and page 
   assert.notEqual(shifted,changed);assert.equal(shifted.number,2);
   assert.equal(publish([b,a,b],true,true),shifted);
   assert.notEqual(publish([b,a,b],false,true),shifted);
+});
+
+test('block origin is separate from the inline navigation range and follows reused nodes',()=>{
+  const root={host:{inert:false},addEventListener(){}};
+  const node={style:{},querySelectorAll:()=>[],getRootNode:()=>root};
+  const page={};
+  function publish(start,reuse){
+    const origin={documentId:'a',blockKey:'k',range:{start,end:start+12}};
+    describeMeasuredPaper({slices:[{origin}]},{sections:[{blocks:[{origin}]}]},{
+      previewSourceRange:()=>({start:start+2,end:start+4}),paperThumbnail:()=>null,onNavigate(){}
+    },{root,pages:[{node:page,reuse,fragments:[node]}]});
+  }
+  publish(10,false);assert.deepEqual(paperBlockRangeForNode(node),{start:10,end:22});
+  publish(50,true);assert.deepEqual(paperBlockRangeForNode(node),{start:50,end:62});
+  root.host.inert=true;assert.equal(paperBlockRangeForNode(node),null);
+});
+
+test('clicked line in a merged paragraph run resolves current source without changing navigation range',()=>{
+  const listeners={},root={host:{inert:false},addEventListener:(name,fn)=>{listeners[name]=fn;}};
+  const block={style:{},querySelectorAll:()=>[],getRootNode:()=>root};
+  const line={dataset:{start:'7',end:'11'}};
+  const page={},nav=[];
+  function publish(start,reuse){
+    const origin={documentId:'a',blockKey:'k',range:{start,end:start+13}};
+    describeMeasuredPaper({slices:[{origin,textStart:0,textEnd:12,sourceSlice:{start,end:start+12}}]},{sections:[{blocks:[{origin}]}]},{
+      previewSourceRange:(_,s)=>s.sourceSlice,paperThumbnail:()=>null,onNavigate:(...args)=>nav.push(args)
+    },{root,pages:[{node:page,reuse,fragments:[block]}]});
+  }
+  publish(10,false);
+  listeners.click({composedPath:()=>[line,block,root],stopPropagation(){}});
+  assert.deepEqual(nav.pop(),['a',{start:10,end:22},block,{start:17,end:21},line]);
+  publish(50,true);
+  listeners.click({composedPath:()=>[line,block,root],stopPropagation(){}});
+  assert.deepEqual(nav.pop(),['a',{start:50,end:62},block,{start:57,end:61},line]);
+  line.dataset.end='99';
+  listeners.click({composedPath:()=>[line,block,root],stopPropagation(){}});
+  assert.deepEqual(nav.pop(),['a',{start:50,end:62},block]);
 });
