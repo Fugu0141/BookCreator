@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {prepareSavedAreaPreview,verifySavedAreaPreview,measureInlineAreaProposal,resolvePaperAreaSelection,captureBookAreaLease,prepareBookAreaCommit,prepareBookAreaRestore,acknowledgeBookAreaCommit,prepareBookFixedRelease,resolveBookFixedSelection,prepareBookFixedCommit} from '../paper-area-preview.mjs';
+import {prepareSavedAreaPreview,verifySavedAreaPreview,measureInlineAreaProposal,resolvePaperAreaSelection,captureBookAreaLease,prepareBookAreaCommit,prepareBookAreaRestore,acknowledgeBookAreaCommit,prepareBookFixedRelease,resolveBookFixedSelection,prepareBookFixedCommit,resolveBookMoveBounds} from '../paper-area-preview.mjs';
 const origin=(documentId,blockKey,persistentId)=>({documentId,blockKey,persistentId});
 const options={revision:'r1',fingerprint:'f1',width:1000,height:2000,sections:[{id:'a',blocks:[{origin:origin('a','40','q')}]},{id:'b',blocks:[{origin:origin('b','70','q')}]}]};
 const snapshot={revision:'saved',document:{schemaVersion:1,entries:[{documentId:'a',persistentId:'q',minHeightPercent:30},{documentId:'b',persistentId:'q',minWidthPercent:50}]}};
@@ -220,4 +220,19 @@ test('explicit current-position lock and unlock preserve other intents and valid
   assert.deepEqual(prepareBookFixedCommit(locked,'unlock').value.entries,snapshot.document.entries.slice(0,1));
   assert.throws(()=>prepareBookFixedCommit(locked,'lock'));
   assert.throws(()=>prepareBookFixedCommit({...locked,plan:{...lockedPlan,fragments:[{...lockedPlan.fragments[0],placement:{...lockedPlan.fragments[0].placement,page:3}},plan.fragments[1]]}},'unlock'));
+});
+
+
+test('same-page movement preserves explicit dimensions and rejects invalid or stale positions',()=>{
+  const fragment={origin:origin('a','40','q'),placement:{page:2,fixed:false,rect:{x:100,y:300,width:400,height:600},occupiedRect:{x:100,y:300,width:500,height:700}}};
+  const plan={revision:'r1',fingerprint:'f1',fragments:[fragment,{origin:origin('b','70','q')}]};
+  const selected=resolveBookFixedSelection(plan,'a','40');
+  const context={scope:'book',bookLease:{documents:[{documentId:'a'},{documentId:'b'}]},areaPrepared:prepareSavedAreaPreview(options,snapshot,{whole:true}),areaSnapshot:snapshot,options,plan,...selected};
+  assert.deepEqual(resolveBookMoveBounds(context,selected),{maxX:500,maxY:1300,width:500,height:700});
+  const position={page:2,x:500,y:1300},commit=prepareBookFixedCommit(context,'move',position);
+  assert.deepEqual(commit.value.entries,[{documentId:'a',persistentId:'q',minHeightPercent:30,bookFixed:position}]);
+  assert.equal(commit.prepared.intents.length,2);
+  assert.equal(prepareBookFixedCommit(context,'move',selected.position),null);
+  for(const bad of [{...position,page:3},{...position,x:501},{...position,y:1301},{...position,x:-1},{...position,x:2.5},{...position,extra:true}])assert.throws(()=>prepareBookFixedCommit(context,'move',bad));
+  assert.throws(()=>prepareBookFixedCommit({...context,selection:{...selected.selection,revision:'stale'}},'move',position));
 });
