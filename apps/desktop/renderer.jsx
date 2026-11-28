@@ -770,9 +770,9 @@ function App(){
       }catch(e){if(!current())return;if(!retainedMode)throw e;retainedError=true;display.forgetSparseBase();}
       if((!result&&!retainedError)||!current())return;
       phase='publish';let presentationStarted=performance.now();
-      const adapters={previewSourceRange,paperThumbnail,onNavigate:(documentId,range,node)=>{
+      const adapters={previewSourceRange,paperThumbnail,onNavigate:(documentId,range,node,lineRange,lineNode)=>{
         if(!layoutScheduler.isCurrent(job))return;
-        if(paperEditRef.current?.select(documentId,range,raw,job,node))return;
+        if(paperEditRef.current?.select(documentId,range,raw,job,node,lineRange,lineNode))return;
         if(documentId!==file?.id){setStatus('この断片は '+documentId+' の原稿です。左の原稿一覧から開いてください。');return;}
         const reveal=()=>{if(!layoutScheduler.isCurrent(job)||!textarea.current)return;textarea.current.focus();textarea.current.setSelectionRange(range.start,range.end);};
         if(!textarea.current?.getClientRects().length){if(routeBlockRef.current||composing.current){setStatus('編集中の操作を完了してから原稿に戻ってください。');return;}setMode('writing');setEditorView('source');setShowSettings(false);setShowPaper(true);setCompactPane('editor');requestAnimationFrame(reveal);}else reveal();
@@ -840,7 +840,7 @@ function App(){
   const routeBlocked=busy||settingsReview||recoveryOpen||isComposing||structuredComposing||hasStructuredDraft||!!studyLinkDraft||!!mathDraft||!!referenceDraft||labOpen||paragraphOpen||studyOpen;
   const routeBlockRef=useRef(false);routeBlockRef.current=routeBlocked;
   useEffect(()=>{setPaperBlock(null);if(mode!=='writing')setPaperEditMode(false);},[mode,file?.id,layoutState.phase]);
-  paperEditRef.current={select(documentId,range,source,job,node){
+  paperEditRef.current={select(documentId,range,source,job,node,lineRange,lineNode){
     if(mode!=='writing'||!paperEditMode)return false;
     setPaperBlock(null);
     if(layoutState.phase!=='ready'||navigationBlocked()||!layoutScheduler.isCurrent(job)||documentId!==file?.id){
@@ -850,10 +850,12 @@ function App(){
       const command=captureStructuredCommand(structuredCommandDeps(),source,null);
       if(!command||command.file.id!==documentId)return true;
       const model=projectStructuredEditor(source,scanDocument,parseStructuredInline);
-      const selected=model.diagnostics.length?null:resolvePaperBlock(model.rows,paperBlockRangeForNode(node));
+      const whole=model.diagnostics.length?null:resolvePaperBlock(model.rows,paperBlockRangeForNode(node));
+      const selected=whole??(model.diagnostics.length?null:resolvePaperBlock(model.rows,lineRange??range));
+      const selectionNode=whole?node?.closest('[data-block]'):(lineNode??node);
       if(!selected){setStatus('この紙面断片は安全に編集対象を特定できません。');return true;}
       const {row,index}=selected;
-      setPaperBlock({command,job,index,node:node?.closest('[data-block]')??null,label:row.raw.trim().slice(0,80),up:canBlockOperation(source,model.rows,index,'up'),down:canBlockOperation(source,model.rows,index,'down')});
+      setPaperBlock({command,job,index,node:selectionNode??null,label:row.raw.trim().slice(0,80),up:canBlockOperation(source,model.rows,index,'up'),down:canBlockOperation(source,model.rows,index,'down')});
     }catch(e){setStatus(String(e.message??e));}
     return true;
   }};
