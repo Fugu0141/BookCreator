@@ -1,13 +1,6 @@
 import React,{useRef,useState,useEffect} from 'react';
 
-const STEP=500;
-export function spacingLimit(value,available){
-  // Preserve existing larger settings; do not silently clamp a saved design.
-  return Math.min(100000,Math.max(value,Math.min(20000,Math.floor(Math.max(0,available)/STEP)*STEP)));
-}
-export function stepSpacing(value,delta,max){
-  return Math.max(0,Math.min(max,value+delta*STEP));
-}
+import {spacingLimit,stepSpacing} from './lab-spacing.mjs';
 function SpacingSlider({id,label,value,max,disabled,onCommit}){
   const pointer=useRef(null),[draft,setDraft]=useState(null);
   useEffect(()=>{pointer.current=null;setDraft(null);},[value,max,disabled]);
@@ -30,7 +23,7 @@ function SpacingSlider({id,label,value,max,disabled,onCommit}){
         aria-valuetext={(shown/1000).toFixed(1)+' mm'} onChange={change}
         onPointerDown={e=>{if(e.button!==0||disabled)return;pointer.current={id:e.pointerId,value};try{e.currentTarget.setPointerCapture(e.pointerId);}catch{}}}
         onPointerUp={()=>finish(true)} onLostPointerCapture={()=>finish(true)} onPointerCancel={()=>finish(false)}
-        onBlur={()=>finish(true)} onKeyDown={e=>{if(e.key==='Escape'&&pointer.current){e.stopPropagation();finish(false);}}}/>
+        onBlur={()=>finish(true)} onKeyDown={e=>{if(e.key==='Escape'&&pointer.current){e.preventDefault();e.stopPropagation();finish(false);return;}if(['ArrowLeft','ArrowDown','ArrowRight','ArrowUp'].includes(e.key)&&!pointer.current){e.preventDefault();e.stopPropagation();onCommit(stepSpacing(value,['ArrowLeft','ArrowDown'].includes(e.key)?-1:1,max));}}}/>
       <button type="button" aria-label={label+'を広く'} disabled={disabled||shown>=max} onClick={()=>onCommit(stepSpacing(value,1,max))}>＋</button>
       <output htmlFor={id}>{(shown/1000).toFixed(1)} mm</output>
     </div>
