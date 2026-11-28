@@ -1,5 +1,21 @@
 // One in-flight preparation on the latest-only layout scheduler. Transport
 // failures reject; semantic failures remain response values and never retry.
+// Validate the transport envelope before passing values to renderer code.
+// The engine still owns semantic validation of layout options and diagnostics.
+const record=value=>value!==null&&typeof value==='object'&&!Array.isArray(value);
+const count=value=>Number.isSafeInteger(value)&&value>=0;
+function validResponse(response,job){
+  if(!record(response)||response.id!==job.id)return false;
+  if(response.type==='error')return record(response.error)&&typeof response.error.message==='string'&&(response.error.code===undefined||typeof response.error.code==='string');
+  if(response.type!=='prepared'||!record(response.prepared)||!Array.isArray(response.prepared.diagnostics)||!Number.isFinite(response.preparationMs)||response.preparationMs<0)return false;
+  const {options}=response.prepared;
+  if(options!==undefined&&options!==null&&(!record(options)||!Array.isArray(options.sections)||options.revision!==job.rev||options.fingerprint!==job.fingerprint))return false;
+  if(!job.retained)return response.work===null;
+  const {work}=response;
+  return record(work)&&record(work.scan)&&record(work.inline)&&
+    ['hits','misses'].every(k=>count(work.scan[k]))&&
+    ['hits','misses','bypasses'].every(k=>count(work.inline[k]));
+}
 export function createPreparationClient({spawn=()=>new Worker('/preview-preparation-worker.js'),timeoutMs=10000,schedule=setTimeout,unschedule=clearTimeout}={}){
   let worker=null,pending=null,sequence=0;
   function dispose(error){
@@ -15,7 +31,7 @@ export function createPreparationClient({spawn=()=>new Worker('/preview-preparat
       if(worker!==instance)return;
       const job=pending,response=event.data;
       if(!job)return;
-      if(!response||response.id!==job.id||!['prepared','error'].includes(response.type)){
+      if(!validResponse(response,job)){
         dispose(Error('Invalid preparation worker response'));return;
       }
       pending=null;unschedule(job.timer);job.resolve(response);
@@ -31,7 +47,7 @@ export function createPreparationClient({spawn=()=>new Worker('/preview-preparat
         let instance;
         try{instance=ensure();}catch(e){reject(e);return;}
         const id=++sequence;
-        const job={id,resolve,reject,timer:null};pending=job;
+        const job={id,resolve,reject,timer:null,retained,rev:payload.input?.rev,fingerprint:payload.input?.fingerprint};pending=job;
         try{
           job.timer=schedule(()=>{if(pending===job)dispose(Error('Preparation worker timed out'));},timeoutMs);
           instance.postMessage({...payload,type:'prepare',id,retained});
