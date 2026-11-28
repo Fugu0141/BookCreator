@@ -1,4 +1,4 @@
-import {validatePaperAreaDocument,bindPaperAreaDocument,setPaperAreaValues,setBookPaperFixed,setBookPaperPreferred,encodePaperAreaDocument} from './paper-area-store.mjs';
+import {validatePaperAreaDocument,bindPaperAreaDocument,setPaperAreaValues,setBookPaperFixed,setBookPaperPreferred,setBookPaperGroup,encodePaperAreaDocument} from './paper-area-store.mjs';
 
 function reject(diagnostics){
   const e=Object.assign(Error('保存済みの占有領域を適用できません：'+diagnostics.map(d=>d.documentId+'/'+d.persistentId+' '+d.code).join('、')),{code:'AREA_CONFLICT',diagnostics});
@@ -9,7 +9,7 @@ function reject(diagnostics){
 export function prepareSavedAreaPreview(options,snapshot,{whole,documentId}){
   const stored=validatePaperAreaDocument(snapshot.document);
   const document=whole?stored:validatePaperAreaDocument({schemaVersion:1,entries:stored.entries.filter(e=>e.documentId===documentId)});
-  if(!whole&&document.entries.some(e=>e.bookFixed||e.bookPreferred))throw Object.assign(Error('絶対ページ位置の設定は全冊紙面で確認してください。'),{code:'AREA_BOOK_SCOPE'});
+  if(!whole&&document.entries.some(e=>e.bookFixed||e.bookPreferred||e.bookGroup))throw Object.assign(Error('位置・グループ設定は全冊紙面で確認してください。'),{code:'AREA_BOOK_SCOPE'});
   if(!document.entries.length)return {options:whole?{...options,intelligentLayout:{intents:[]}}:options,document,revision:snapshot.revision,intents:[]};
   const blocks=options.sections.flatMap(s=>s.blocks.filter(b=>!('kind' in b)));
   const bound=bindPaperAreaDocument(document,blocks);
@@ -37,9 +37,12 @@ export function verifySavedAreaPreview(prepared,result){
     if(beforeKeys.has(k))beforeClearance.set(k,r.y-bottom);
     precedingBottom.set(p.page,Math.max(bottom,r.y+r.height));
   }
+  const groupPages=new Map();
   for(const intent of bound.intents){
     if(intent.placement.spaceBefore&&(beforeClearance.get(JSON.stringify([intent.documentId,intent.blockKey]))??-1)<intent.placement.spaceBefore)throw Error('指定した前方余白が組版結果に確保されていません。');
     const placement=byKey.get(JSON.stringify([intent.documentId,intent.blockKey]))?.placement;
+    const group=intent.placement.keepTogetherGroup;
+    if(group){if(!Number.isSafeInteger(placement?.page)||placement.page<0||placement.fixed||groupPages.has(group)&&groupPages.get(group)!==placement.page)throw Error('グループが同一ページに配置されていません。');groupPages.set(group,placement.page);}
     const fixed=intent.placement.fixed;
     if(fixed&&(!placement?.fixed||placement.page!==fixed.page||placement.rect?.x!==fixed.x||placement.rect?.y!==fixed.y))throw Error('指定した固定位置が組版結果に保持されていません。');
     const preferred=intent.placement.preferred,tolerance=intent.placement.preferredTolerance;
@@ -218,4 +221,54 @@ export function prepareBookPreferredCommit(context,preferred){
   const prepared=prepareSavedAreaPreview(options,{revision:context.areaSnapshot.revision,document:next},{whole:true});
   const value=validatePaperAreaDocument({schemaVersion:1,entries:next.entries.filter(e=>e.documentId===documentId)});
   return {prepared,value,documentId,lease:context.bookLease,expectedRevision:context.areaSnapshot.revision};
+}
+
+
+// A selection may span natural pagination, but must be a continuous sequence
+// in one prepared section, without explicit breaks or split fragments.
+export function resolveBookGroupMembers(context,documentId,blockKeys){
+  if(!Array.isArray(blockKeys)||blockKeys.length<2||new Set(blockKeys).size!==blockKeys.length)return null;
+  const wanted=new Set(blockKeys);
+  const sections=context.options.sections.filter(section=>section.blocks.some(b=>b.origin?.documentId===documentId&&wanted.has(b.origin.blockKey)));
+  if(sections.length!==1)return null;
+  const blocks=sections[0].blocks,indices=blocks.flatMap((b,i)=>b.origin?.documentId===documentId&&wanted.has(b.origin.blockKey)?[i]:[]);
+  if(indices.length!==wanted.size||indices.at(-1)-indices[0]+1!==indices.length)return null;
+  const members=[];
+  for(const index of indices){
+    const b=blocks[index];
+    if('kind' in b)return null;
+    const selection=resolvePaperAreaSelection(context.plan,documentId,b.origin.blockKey);
+    if(!selection)return null;
+    members.push(selection.persistentId);
+  }
+  return new Set(members).size===members.length?members:null;
+}
+export function prepareBookGroupCommit(context,{groupId,blockKeys,layout}){
+  if(context?.scope!=='book'||!context.bookLease||!context.areaSnapshot||!context.areaPrepared)throw Error('全冊グループの保存情報がありません。');
+  const {documentId,blockKey}=context.selection??{},selected=resolvePaperAreaSelection(context.plan,documentId,blockKey);
+  if(!selected||selected.persistentId!==context.persistentId||selected.selection.revision!==context.selection.revision||selected.selection.fingerprint!==context.selection.fingerprint||!context.bookLease.documents.some(d=>d.documentId===documentId))throw Error('グループの選択が変更されました。');
+  const before=context.areaPrepared.document;
+  const old=before.entries.filter(e=>e.bookGroup?.id===groupId);
+  let members;
+  if(old.length){
+    if(old.some(e=>e.documentId!==documentId)||!old.some(e=>e.persistentId===selected.persistentId))throw Error('選択中のグループと一致しません。');
+    members=old.map(e=>e.persistentId);
+  }else{
+    if(!blockKeys?.includes(blockKey))throw Error('選択中の部品がグループにありません。');
+    members=resolveBookGroupMembers(context,documentId,blockKeys);
+    if(!members)throw Error('同じ原稿の連続した単一部品を2件以上選択してください。');
+  }
+  const next=setBookPaperGroup(before,{documentId,groupId,members,layout});
+  if(encodePaperAreaDocument(before)===encodePaperAreaDocument(next))return null;
+  const {measurementCache,paragraphCache,pageCache,inlineMathCache,displayMathCache,mathCache,intelligentLayout,...options}=context.options;
+  const prepared=prepareSavedAreaPreview(options,{revision:context.areaSnapshot.revision,document:next},{whole:true});
+  const value=validatePaperAreaDocument({schemaVersion:1,entries:next.entries.filter(e=>e.documentId===documentId)});
+  return {prepared,value,documentId,lease:context.bookLease,expectedRevision:context.areaSnapshot.revision};
+}
+export function prepareBookGroupRelease(context,documentId,groupId){
+  const snapshot=context?.areaSnapshot,lease=context?.bookLease;
+  if(!snapshot||typeof snapshot.revision!=='string'||!/^[a-f0-9]{64}$/.test(snapshot.revision)||!lease?.documents?.some(d=>d.documentId===documentId))throw Error('グループの復旧情報がありません。');
+  const before=validatePaperAreaDocument(snapshot.document),members=before.entries.filter(e=>e.documentId===documentId&&e.bookGroup?.id===groupId).map(e=>e.persistentId);
+  const next=setBookPaperGroup(before,{documentId,groupId,members,layout:null});
+  return {documentId,value:validatePaperAreaDocument({schemaVersion:1,entries:next.entries.filter(e=>e.documentId===documentId)}),lease,expectedRevision:snapshot.revision};
 }
