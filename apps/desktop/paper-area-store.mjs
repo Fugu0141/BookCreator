@@ -20,10 +20,15 @@ function preferredPosition(value){
   if(!record(value)||Object.keys(value).length!==2||!Object.hasOwn(value,'position')||!record(value.tolerance)||Object.keys(value.tolerance).length!==2||['x','y'].some(k=>!Object.hasOwn(value.tolerance,k)||!Number.isSafeInteger(value.tolerance[k])||value.tolerance[k]<0||value.tolerance[k]>1000000000))invalid();
   return Object.freeze({position:fixedPosition(value.position),tolerance:Object.freeze({x:value.tolerance.x,y:value.tolerance.y})});
 }
+const groupLayouts=['vertical','rows','adaptiveRows'];
+function validateGroup(value){
+  if(!record(value)||Object.keys(value).length!==2||typeof value.id!=='string'||!/^[A-Za-z0-9_-]{1,128}$/.test(value.id)||!groupLayouts.includes(value.layout))invalid();
+  return Object.freeze({id:value.id,layout:value.layout});
+}
 export function validatePaperAreaDocument(value){
   if(!record(value)||Object.keys(value).length!==2||!Object.hasOwn(value,'schemaVersion')||!Object.hasOwn(value,'entries')||value.schemaVersion!==1||!Array.isArray(value.entries)||value.entries.length>10000)invalid();
   const seen=new Set(),entries=value.entries.map(entry=>{
-    if(!record(entry)||!id(entry.documentId)||!id(entry.persistentId)||Object.keys(entry).some(k=>!['documentId','persistentId',...fields,'bookFixed','bookPreferred'].includes(k)))invalid();
+    if(!record(entry)||!id(entry.documentId)||!id(entry.persistentId)||Object.keys(entry).some(k=>!['documentId','persistentId',...fields,'bookFixed','bookPreferred','bookGroup'].includes(k)))invalid();
     const k=key(entry.documentId,entry.persistentId);
     if(seen.has(k))invalid();seen.add(k);
     const clean={documentId:entry.documentId,persistentId:entry.persistentId};
@@ -32,10 +37,18 @@ export function validatePaperAreaDocument(value){
     }
     if(Object.hasOwn(entry,'bookFixed'))clean.bookFixed=fixedPosition(entry.bookFixed);
     if(Object.hasOwn(entry,'bookPreferred'))clean.bookPreferred=preferredPosition(entry.bookPreferred);
-    if(clean.bookFixed&&clean.bookPreferred)invalid();
+    if(Object.hasOwn(entry,'bookGroup'))clean.bookGroup=validateGroup(entry.bookGroup);
+    if([clean.bookFixed,clean.bookPreferred,clean.bookGroup].filter(Boolean).length>1)invalid();
     if(Object.keys(clean).length===2)invalid();
     return Object.freeze(clean);
   });
+  const groups=new Map();
+  for(const e of entries)if(e.bookGroup){
+    const g=groups.get(e.bookGroup.id)??{documentId:e.documentId,layout:e.bookGroup.layout,count:0};
+    if(g.documentId!==e.documentId||g.layout!==e.bookGroup.layout)invalid();
+    g.count++;groups.set(e.bookGroup.id,g);
+  }
+  if([...groups.values()].some(g=>g.count<2))invalid();
   entries.sort((a,b)=>{const x=key(a.documentId,a.persistentId),y=key(b.documentId,b.persistentId);return x<y?-1:x>y?1:0;});
   return Object.freeze({schemaVersion:1,entries:Object.freeze(entries)});
 }
@@ -56,7 +69,7 @@ export function setPaperAreaValue(document,{documentId,persistentId,axis,value})
   if((entry[field]??0)===value)return current;
   if(value===0)delete entry[field];else entry[field]=value;
   if(at>=0)entries.splice(at,1);
-  if(entry.bookPreferred||fields.some(f=>Object.hasOwn(entry,f)))entries.push(entry);
+  if(entry.bookGroup||entry.bookPreferred||fields.some(f=>Object.hasOwn(entry,f)))entries.push(entry);
   return validatePaperAreaDocument({schemaVersion:1,entries});
 }
 // Apply a multi-field GUI proposal atomically in memory before any disk write.
@@ -75,9 +88,9 @@ export function setBookPaperFixed(document,{documentId,persistentId,position}){
   if(!id(documentId)||!id(persistentId)||position===undefined)invalid();
   const entries=current.entries.slice(),at=entries.findIndex(e=>e.documentId===documentId&&e.persistentId===persistentId);
   const entry=at<0?{documentId,persistentId}:{...entries[at]};
-  if(position===null)delete entry.bookFixed;else{if(entry.bookPreferred)throw Error('希望位置を解除してから固定してください。');entry.bookFixed=fixedPosition(position);}
+  if(position===null)delete entry.bookFixed;else{if(entry.bookPreferred||entry.bookGroup)throw Error('希望位置またはグループを解除してから固定してください。');entry.bookFixed=fixedPosition(position);}
   if(at>=0)entries.splice(at,1);
-  if(entry.bookFixed||entry.bookPreferred||fields.some(f=>Object.hasOwn(entry,f)))entries.push(entry);
+  if(entry.bookFixed||entry.bookPreferred||entry.bookGroup||fields.some(f=>Object.hasOwn(entry,f)))entries.push(entry);
   return validatePaperAreaDocument({schemaVersion:1,entries});
 }
 export function setBookPaperPreferred(document,{documentId,persistentId,preferred}){
@@ -86,9 +99,26 @@ export function setBookPaperPreferred(document,{documentId,persistentId,preferre
   const entries=current.entries.slice(),at=entries.findIndex(e=>e.documentId===documentId&&e.persistentId===persistentId);
   const entry=at<0?{documentId,persistentId}:{...entries[at]};
   if(preferred===null)delete entry.bookPreferred;
-  else{if(entry.bookFixed)throw Error('固定を解除してから希望位置を設定してください。');entry.bookPreferred=preferredPosition(preferred);}
+  else{if(entry.bookFixed||entry.bookGroup)throw Error('固定またはグループを解除してから希望位置を設定してください。');entry.bookPreferred=preferredPosition(preferred);}
   if(at>=0)entries.splice(at,1);
-  if(entry.bookFixed||entry.bookPreferred||fields.some(f=>Object.hasOwn(entry,f)))entries.push(entry);
+  if(entry.bookFixed||entry.bookPreferred||entry.bookGroup||fields.some(f=>Object.hasOwn(entry,f)))entries.push(entry);
+  return validatePaperAreaDocument({schemaVersion:1,entries});
+}
+// Group changes are atomic; a scoped document always includes every member.
+export function setBookPaperGroup(document,{documentId,groupId,members,layout}){
+  const current=validatePaperAreaDocument(document);
+  if(!id(documentId)||typeof groupId!=='string'||!/^[A-Za-z0-9_-]{1,128}$/.test(groupId)||!Array.isArray(members)||members.length<2||members.length>10000||members.some(v=>!id(v))||new Set(members).size!==members.length||!(layout===null||groupLayouts.includes(layout)))invalid();
+  const existing=current.entries.filter(e=>e.bookGroup?.id===groupId);
+  if(existing.length&&(existing.length!==members.length||existing.some(e=>e.documentId!==documentId||!members.includes(e.persistentId))))throw Error('グループの全メンバーが一致しません。');
+  if(layout===null&&!existing.length)throw Error('解除するグループがありません。');
+  const entries=current.entries.filter(e=>e.documentId!==documentId||!members.includes(e.persistentId));
+  for(const persistentId of members){
+    const previous=current.entries.find(e=>e.documentId===documentId&&e.persistentId===persistentId);
+    if(previous?.bookFixed||previous?.bookPreferred||previous?.bookGroup&&previous.bookGroup.id!==groupId)throw Error('他の位置設定・グループと併用できません。');
+    const entry={...(previous??{documentId,persistentId})};
+    if(layout===null)delete entry.bookGroup;else entry.bookGroup={id:groupId,layout};
+    if(entry.bookGroup||fields.some(f=>Object.hasOwn(entry,f)))entries.push(entry);
+  }
   return validatePaperAreaDocument({schemaVersion:1,entries});
 }
 // Only a current, complete fragment inventory may be used. A missing or
@@ -116,7 +146,7 @@ export function bindPaperAreaDocument(document,fragments){
     if(counts.get(k)!==1||used.has(k)){diagnostics.push({...identity,code:'AREA_AMBIGUOUS'});continue;}
     used.add(k);
     const sizeConstraints=Object.fromEntries(sizeFields.filter(f=>Object.hasOwn(entry,f)).map(f=>[f,entry[f]]));
-    intents.push({documentId,blockKey,placement:{...(Object.keys(sizeConstraints).length?{sizeConstraints}:{}),...(entry.spaceAfter?{spaceAfter:entry.spaceAfter}:{}),...(entry.spaceBefore?{spaceBefore:entry.spaceBefore}:{}),...(entry.bookFixed?{mode:'fixed',fixed:entry.bookFixed}:entry.bookPreferred?{preferred:entry.bookPreferred.position,preferredTolerance:entry.bookPreferred.tolerance}:{})}});
+    intents.push({documentId,blockKey,placement:{...(Object.keys(sizeConstraints).length?{sizeConstraints}:{}),...(entry.spaceAfter?{spaceAfter:entry.spaceAfter}:{}),...(entry.spaceBefore?{spaceBefore:entry.spaceBefore}:{}),...(entry.bookFixed?{mode:'fixed',fixed:entry.bookFixed}:entry.bookPreferred?{preferred:entry.bookPreferred.position,preferredTolerance:entry.bookPreferred.tolerance}:entry.bookGroup?{keepTogetherGroup:entry.bookGroup.id,keepTogetherLayout:entry.bookGroup.layout,...(entry.bookGroup.layout==='vertical'?{}:{sideBySide:true})}:{})}});
   }
   return diagnostics.length?{status:'conflict',intents:[],diagnostics}:{status:'ready',intents,diagnostics:[]};
 }
