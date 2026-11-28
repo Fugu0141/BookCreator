@@ -10,7 +10,7 @@ export function prepareSavedAreaPreview(options,snapshot,{whole,documentId}){
   const stored=validatePaperAreaDocument(snapshot.document);
   const document=whole?stored:validatePaperAreaDocument({schemaVersion:1,entries:stored.entries.filter(e=>e.documentId===documentId)});
   if(!whole&&document.entries.some(e=>e.bookFixed))throw Object.assign(Error('絶対ページ位置の固定設定は全冊紙面で確認してください。'),{code:'AREA_BOOK_SCOPE'});
-  if(!document.entries.length)return {options,document,revision:snapshot.revision,intents:[]};
+  if(!document.entries.length)return {options:whole?{...options,intelligentLayout:{intents:[]}}:options,document,revision:snapshot.revision,intents:[]};
   const blocks=options.sections.flatMap(s=>s.blocks.filter(b=>!('kind' in b)));
   const bound=bindPaperAreaDocument(document,blocks);
   if(bound.status!=='ready')reject(bound.diagnostics);
@@ -78,11 +78,11 @@ export async function measureInlineAreaProposal(context,values,measure,current,p
 // Scope a selection by the exact current fragment inventory. A duplicate
 // persistent ID in another manuscript is valid; a split/duplicate inside
 // the selected manuscript is not. Never infer identity from displayed text.
-export function resolvePaperAreaSelection(plan,documentId,blockKey){
+export function resolvePaperAreaSelection(plan,documentId,blockKey,{allowFixed=false}={}){
   if(!plan||!Array.isArray(plan.fragments)||typeof documentId!=='string'||!documentId||typeof blockKey!=='string'||!blockKey||typeof plan.revision!=='string'||!plan.revision||typeof plan.fingerprint!=='string'||!plan.fingerprint)return null;
   const matches=plan.fragments.filter(f=>f.origin?.documentId===documentId&&f.origin?.blockKey===blockKey);
   const persistentId=matches[0]?.origin?.persistentId;
-  if(matches.length!==1||typeof persistentId!=='string'||!persistentId||matches[0].placement?.fixed||plan.fragments.filter(f=>f.origin?.documentId===documentId&&f.origin?.persistentId===persistentId).length!==1)return null;
+  if(matches.length!==1||typeof persistentId!=='string'||!persistentId||(!allowFixed&&matches[0].placement?.fixed)||plan.fragments.filter(f=>f.origin?.documentId===documentId&&f.origin?.persistentId===persistentId).length!==1)return null;
   return {persistentId,selection:{documentId,blockKey,revision:plan.revision,fingerprint:plan.fingerprint}};
 }
 
@@ -147,4 +147,33 @@ export function prepareBookFixedRelease(context,documentId,persistentId){
   const next=setBookPaperFixed(before,{documentId,persistentId,position:null});
   const value=validatePaperAreaDocument({schemaVersion:1,entries:next.entries.filter(e=>e.documentId===documentId)});
   return {documentId,value,lease,expectedRevision:snapshot.revision};
+}
+
+
+// Coordinates are taken from the latest IL fragment, never a DOM pixel box.
+export function resolveBookFixedSelection(plan,documentId,blockKey){
+  const selected=resolvePaperAreaSelection(plan,documentId,blockKey,{allowFixed:true});
+  if(!selected)return null;
+  const placement=plan.fragments.find(f=>f.origin.documentId===documentId&&f.origin.blockKey===blockKey)?.placement;
+  const position={page:placement?.page,x:placement?.rect?.x,y:placement?.rect?.y};
+  if(!Number.isSafeInteger(position.page)||position.page<0||position.page>9999||[position.x,position.y].some(v=>!Number.isSafeInteger(v)||v<0||v>1000000000))return null;
+  return {...selected,position,fixed:placement.fixed===true};
+}
+
+// A lock toggles only the currently measured origin. Arbitrary movement
+// will be a separate proposal API. The ordinary history/measurement gate
+// must verify all saved intents before the scoped write.
+export function prepareBookFixedCommit(context,action){
+  if(context?.scope!=='book'||!context.bookLease||!context.areaSnapshot||!context.areaPrepared||!['lock','unlock'].includes(action))throw Error('全冊紙面の固定操作情報がありません。');
+  const {documentId,blockKey}=context.selection??{};
+  const target=resolveBookFixedSelection(context.plan,documentId,blockKey);
+  if(!target||target.persistentId!==context.persistentId||target.selection.revision!==context.selection.revision||target.selection.fingerprint!==context.selection.fingerprint||!context.bookLease.documents.some(d=>d.documentId===documentId))throw Error('固定操作の対象が変更されました。');
+  const before=context.areaPrepared.document;
+  const stored=before.entries.find(e=>e.documentId===documentId&&e.persistentId===target.persistentId)?.bookFixed;
+  if(target.fixed!==!!stored||stored&&['page','x','y'].some(k=>stored[k]!==target.position[k])||(action==='lock')===target.fixed)throw Error('固定状態が現在の紙面と一致しません。');
+  const next=setBookPaperFixed(before,{documentId,persistentId:target.persistentId,position:action==='lock'?target.position:null});
+  const {measurementCache,paragraphCache,pageCache,inlineMathCache,displayMathCache,mathCache,intelligentLayout,...options}=context.options;
+  const prepared=prepareSavedAreaPreview(options,{revision:context.areaSnapshot.revision,document:next},{whole:true});
+  const value=validatePaperAreaDocument({schemaVersion:1,entries:next.entries.filter(e=>e.documentId===documentId)});
+  return {prepared,value,documentId,lease:context.bookLease,expectedRevision:context.areaSnapshot.revision};
 }
