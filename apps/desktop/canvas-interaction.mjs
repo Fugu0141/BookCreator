@@ -56,7 +56,7 @@ export function flowResizeLimits(node,direction,availableWidth,availableHeight,o
   if(fixedWidth&&maxWidth<min||fixedHeight&&maxHeight<min)return null;
   return {fixedWidth,fixedHeight,minWidth:min,maxWidth,minHeight:min,maxHeight};
 }
-export function installCanvasDrag(root,{lookup,onSelect,onActive,onCommit,onReorder=()=>{},onFlowResize=()=>{},flowDirection=entry=>entry.parent?.direction,flowContainer=entry=>entry.parent,smartSnap=()=>true,isLocked=()=>false,ratioLocked=()=>false}){
+export function installCanvasDrag(root,{lookup,onSelect,onActive,onCommit,onReorder=()=>{},onFlowResize=()=>{},onEditText=()=>{},flowDirection=entry=>entry.parent?.direction,flowContainer=entry=>entry.parent,smartSnap=()=>true,isLocked=()=>false,ratioLocked=()=>false}){
   const cleanups=[];let active=null,disposed=false;
   const restore=()=>{if(active){active.el.style.left=active.left;active.el.style.top=active.top;active.el.removeAttribute('data-lab-dragging');if(active.ghost){active.ghost.style.display='none';}active.guides?.show({});}};
   function end(commit,event){
@@ -272,6 +272,19 @@ export function installCanvasDrag(root,{lookup,onSelect,onActive,onCommit,onReor
     for(const [name,fn] of [['pointerdown',down],['focus',select],['keydown',key],['pointermove',move],['pointerup',up],['pointercancel',cancel],['lostpointercapture',cancel]]){
       el.addEventListener(name,fn);cleanups.push(()=>el.removeEventListener(name,fn));
     }
+  }
+  // Labels are the only editable literal text in the component definition.
+  // Manuscript slots and dynamic labels must retain their source semantics.
+  for(const el of root.querySelectorAll('[data-component-node]')){
+    const id=el.dataset.componentNode;
+    if(lookup(id)?.node.type!=='label')continue;
+    el.dataset.labTextEditable='true';el.title='ダブルクリックまたはF2で文字を編集';
+    const edit=e=>{
+      if(disposed||active||flowActive||isLocked(id)||(e.type==='keydown'&&e.key!=='F2')||e.ctrlKey||e.metaKey||e.altKey)return;
+      e.preventDefault();e.stopPropagation();onSelect(id);onEditText(id);
+    };
+    el.addEventListener('dblclick',edit);el.addEventListener('keydown',edit);
+    cleanups.push(()=>{el.removeEventListener('dblclick',edit);el.removeEventListener('keydown',edit);});
   }
   return ()=>{disposed=true;end(false);finishFlow(false);for(const cleanup of cleanups)cleanup();};
 }
