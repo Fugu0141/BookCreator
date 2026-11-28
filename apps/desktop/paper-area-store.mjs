@@ -16,10 +16,14 @@ function fixedPosition(value){
   if(!record(value)||Object.keys(value).length!==3||positionFields.some(k=>!Object.hasOwn(value,k)||!Number.isSafeInteger(value[k])||value[k]<0||value[k]>(k==='page'?9999:1000000000)))invalid();
   return Object.freeze({page:value.page,x:value.x,y:value.y});
 }
+function preferredPosition(value){
+  if(!record(value)||Object.keys(value).length!==2||!Object.hasOwn(value,'position')||!record(value.tolerance)||Object.keys(value.tolerance).length!==2||['x','y'].some(k=>!Object.hasOwn(value.tolerance,k)||!Number.isSafeInteger(value.tolerance[k])||value.tolerance[k]<0||value.tolerance[k]>1000000000))invalid();
+  return Object.freeze({position:fixedPosition(value.position),tolerance:Object.freeze({x:value.tolerance.x,y:value.tolerance.y})});
+}
 export function validatePaperAreaDocument(value){
   if(!record(value)||Object.keys(value).length!==2||!Object.hasOwn(value,'schemaVersion')||!Object.hasOwn(value,'entries')||value.schemaVersion!==1||!Array.isArray(value.entries)||value.entries.length>10000)invalid();
   const seen=new Set(),entries=value.entries.map(entry=>{
-    if(!record(entry)||!id(entry.documentId)||!id(entry.persistentId)||Object.keys(entry).some(k=>!['documentId','persistentId',...fields,'bookFixed'].includes(k)))invalid();
+    if(!record(entry)||!id(entry.documentId)||!id(entry.persistentId)||Object.keys(entry).some(k=>!['documentId','persistentId',...fields,'bookFixed','bookPreferred'].includes(k)))invalid();
     const k=key(entry.documentId,entry.persistentId);
     if(seen.has(k))invalid();seen.add(k);
     const clean={documentId:entry.documentId,persistentId:entry.persistentId};
@@ -27,6 +31,8 @@ export function validatePaperAreaDocument(value){
       if(!(!sizeFields.includes(field)?Number.isSafeInteger(entry[field])&&entry[field]>0&&entry[field]<=MAX_PAPER_TRAILING_SPACE:percent(entry[field])))invalid();clean[field]=entry[field];
     }
     if(Object.hasOwn(entry,'bookFixed'))clean.bookFixed=fixedPosition(entry.bookFixed);
+    if(Object.hasOwn(entry,'bookPreferred'))clean.bookPreferred=preferredPosition(entry.bookPreferred);
+    if(clean.bookFixed&&clean.bookPreferred)invalid();
     if(Object.keys(clean).length===2)invalid();
     return Object.freeze(clean);
   });
@@ -50,7 +56,7 @@ export function setPaperAreaValue(document,{documentId,persistentId,axis,value})
   if((entry[field]??0)===value)return current;
   if(value===0)delete entry[field];else entry[field]=value;
   if(at>=0)entries.splice(at,1);
-  if(fields.some(f=>Object.hasOwn(entry,f)))entries.push(entry);
+  if(entry.bookPreferred||fields.some(f=>Object.hasOwn(entry,f)))entries.push(entry);
   return validatePaperAreaDocument({schemaVersion:1,entries});
 }
 // Apply a multi-field GUI proposal atomically in memory before any disk write.
@@ -69,9 +75,20 @@ export function setBookPaperFixed(document,{documentId,persistentId,position}){
   if(!id(documentId)||!id(persistentId)||position===undefined)invalid();
   const entries=current.entries.slice(),at=entries.findIndex(e=>e.documentId===documentId&&e.persistentId===persistentId);
   const entry=at<0?{documentId,persistentId}:{...entries[at]};
-  if(position===null)delete entry.bookFixed;else entry.bookFixed=fixedPosition(position);
+  if(position===null)delete entry.bookFixed;else{if(entry.bookPreferred)throw Error('希望位置を解除してから固定してください。');entry.bookFixed=fixedPosition(position);}
   if(at>=0)entries.splice(at,1);
-  if(entry.bookFixed||fields.some(f=>Object.hasOwn(entry,f)))entries.push(entry);
+  if(entry.bookFixed||entry.bookPreferred||fields.some(f=>Object.hasOwn(entry,f)))entries.push(entry);
+  return validatePaperAreaDocument({schemaVersion:1,entries});
+}
+export function setBookPaperPreferred(document,{documentId,persistentId,preferred}){
+  const current=validatePaperAreaDocument(document);
+  if(!id(documentId)||!id(persistentId)||preferred===undefined)invalid();
+  const entries=current.entries.slice(),at=entries.findIndex(e=>e.documentId===documentId&&e.persistentId===persistentId);
+  const entry=at<0?{documentId,persistentId}:{...entries[at]};
+  if(preferred===null)delete entry.bookPreferred;
+  else{if(entry.bookFixed)throw Error('固定を解除してから希望位置を設定してください。');entry.bookPreferred=preferredPosition(preferred);}
+  if(at>=0)entries.splice(at,1);
+  if(entry.bookFixed||entry.bookPreferred||fields.some(f=>Object.hasOwn(entry,f)))entries.push(entry);
   return validatePaperAreaDocument({schemaVersion:1,entries});
 }
 // Only a current, complete fragment inventory may be used. A missing or
@@ -99,7 +116,7 @@ export function bindPaperAreaDocument(document,fragments){
     if(counts.get(k)!==1||used.has(k)){diagnostics.push({...identity,code:'AREA_AMBIGUOUS'});continue;}
     used.add(k);
     const sizeConstraints=Object.fromEntries(sizeFields.filter(f=>Object.hasOwn(entry,f)).map(f=>[f,entry[f]]));
-    intents.push({documentId,blockKey,placement:{...(Object.keys(sizeConstraints).length?{sizeConstraints}:{}),...(entry.spaceAfter?{spaceAfter:entry.spaceAfter}:{}),...(entry.spaceBefore?{spaceBefore:entry.spaceBefore}:{}),...(entry.bookFixed?{mode:'fixed',fixed:entry.bookFixed}:{})}});
+    intents.push({documentId,blockKey,placement:{...(Object.keys(sizeConstraints).length?{sizeConstraints}:{}),...(entry.spaceAfter?{spaceAfter:entry.spaceAfter}:{}),...(entry.spaceBefore?{spaceBefore:entry.spaceBefore}:{}),...(entry.bookFixed?{mode:'fixed',fixed:entry.bookFixed}:entry.bookPreferred?{preferred:entry.bookPreferred.position,preferredTolerance:entry.bookPreferred.tolerance}:{})}});
   }
   return diagnostics.length?{status:'conflict',intents:[],diagnostics}:{status:'ready',intents,diagnostics:[]};
 }
