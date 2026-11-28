@@ -50,6 +50,7 @@ export function paperAreaPersistence(root,{checkManifest,readManuscript}){
     return source;
   }
   return {
+    async readBook(){await checkManifest();const {revision,document}=await readAll();await checkManifest();return {revision,document};},
     async read(id){
       if(!safeId(id))fail('INPUT','Invalid manuscript identity');
       await checkManifest();await readManuscript(id);
