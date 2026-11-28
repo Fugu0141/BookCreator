@@ -35,6 +35,7 @@ export function createPaperAreaController(initial,currentPlan){
     delete sizeConstraints.minWidthPercent;delete sizeConstraints.minHeightPercent;
     for(const k of ['minWidthPercent','minHeightPercent'])if(stored&&Object.hasOwn(stored,k))sizeConstraints[k]=stored[k];
     placement.sizeConstraints=sizeConstraints;
+    if(stored?.spaceAfter)placement.spaceAfter=stored.spaceAfter;
     return {target,persistentId,placement,snapshot};
   };
   return {
@@ -80,7 +81,8 @@ export function createPaperAreaController(initial,currentPlan){
         if(seen.has(id)||keys.some(key=>Object.hasOwn(placement.sizeConstraints??{},key)))return {status:'conflict',intents:[],diagnostics:[{documentId:base.documentId,blockKey:base.blockKey,code:'AREA_INTENT_OWNERSHIP'}]};
         seen.add(id);
         const own=byKey.get(id);
-        intents.push(own?{...base,placement:{...placement,sizeConstraints:{...placement.sizeConstraints,...own.placement.sizeConstraints}}}:base);
+        if(own?.placement.spaceAfter!==undefined&&placement.spaceAfter!==undefined)return {status:'conflict',intents:[],diagnostics:[{documentId:base.documentId,blockKey:base.blockKey,code:'AREA_INTENT_OWNERSHIP'}]};
+        intents.push(own?{...base,placement:{...placement,...own.placement,...(placement.sizeConstraints||own.placement.sizeConstraints?{sizeConstraints:{...placement.sizeConstraints,...own.placement.sizeConstraints}}:{})}}:base);
       }
       for(const own of area.intents)if(!seen.has(k(own)))intents.push(own);
       return {...area,intents};
