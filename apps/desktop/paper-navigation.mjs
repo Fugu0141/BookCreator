@@ -13,7 +13,7 @@ export function installPaperNavigation(root,bindings,onNavigate){
         if(!binding)continue;
         if(keyboard)event.preventDefault();
         event.stopPropagation();
-        state.onNavigate(binding.documentId,binding.range);
+        state.onNavigate(binding.documentId,binding.range,node);
         return;
       }
     };
