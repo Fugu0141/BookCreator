@@ -24,7 +24,8 @@ export function installInputProbe({values,intervalMs}){
   // A baseline publish replaces the host; retained publish mutates it in place.
   observer.observe(viewport,{childList:true,subtree:true,attributes:true,attributeFilter:['data-paper-freshness','data-provisional-pages','inert']});
   observer.observe(state,{attributes:true,attributeFilter:['data-phase']});
-  window.__bcRetainedEditBenchmark={probe,observer,timers};
+  const initialHost=viewport.firstElementChild,initialPages=Array.from(initialHost.shadowRoot.children);
+  window.__bcRetainedEditBenchmark={probe,observer,timers,initialHost,initialPages};
   const dispatch=i=>{
     index=i;seenCurrent=false;
     const now=performance.now(),offset=now-origin;
