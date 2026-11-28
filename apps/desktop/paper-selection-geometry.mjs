@@ -18,3 +18,13 @@ export function placePaperPropertyPanel(selection,bounds,size,margin=8){
   const top=below<=bottomLimit?below:above>=topLimit?above:clamp(below,topLimit,bottomLimit);
   return {left,top,width,maxHeight:Math.max(0,bounds.bottom-bounds.top-2*margin)};
 }
+
+
+// Preserve the pointer's initial offset; CSS zoom is represented by body pixels.
+// Reject, rather than clamp, a destination outside the measured footprint bounds.
+export function paperPositionFromDrag(position,bounds,body,delta){
+  if(!position||!bounds||!body||!delta||![position.page,position.x,position.y,bounds.maxX,bounds.maxY,body.width,body.height].every(Number.isSafeInteger)||![body.pixelWidth,body.pixelHeight,delta.x,delta.y].every(Number.isFinite)||body.width<=0||body.height<=0||body.pixelWidth<=0||body.pixelHeight<=0)return null;
+  const x=position.x+Math.round(delta.x/body.pixelWidth*body.width),y=position.y+Math.round(delta.y/body.pixelHeight*body.height);
+  if(!Number.isSafeInteger(x)||!Number.isSafeInteger(y)||x<0||y<0||x>bounds.maxX||y>bounds.maxY)return null;
+  return {page:position.page,x,y};
+}
