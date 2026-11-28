@@ -56,3 +56,42 @@ test('linked layout files and directory escapes are refused',{skip:process.platf
   await link(f.manuscript,f.path);
   await assert.rejects(w.readPaperArea('ch'),{code:'PATH'});
 });
+
+async function bookLeaseFixture(t){
+  const f=await fixture(t);
+  const themePath=join(f.root,'themes','default','theme.yaml');
+  await mkdir(join(f.root,'themes','default'),{recursive:true});
+  await writeFile(themePath,'schemaVersion: 1\nid: default\nname: Default\n');
+  const w=f.workspace;
+  const lease={settingsRevision:(await w.bookSettings()).revision,themeRevision:(await w.typography()).revision,documents:(await w.readBook()).map(({documentId,revision})=>({documentId,revision}))};
+  return {...f,themePath,lease};
+}
+test('full-book placement lease writes only selected manuscript and preserves other intents',async t=>{
+  const f=await bookLeaseFixture(t),w=f.workspace;
+  const first=await w.savePaperArea('ch',f.revision,null,area('ch',40));
+  const saved=await w.saveBookPaperArea('other',f.lease,first.revision,area('other',70));
+  assert.deepEqual(saved.document,area('other',70));
+  assert.deepEqual((await w.readBookPaperArea()).document.entries,[...area('ch',40).entries,...area('other',70).entries]);
+  assert.equal(await readFile(f.manuscript,'utf8'),source);
+  assert.equal(await readFile(f.book,'utf8'),manifest);
+});
+test('whole-book lease rejects missing, reordered, foreign or stale manuscripts and stale intent',async t=>{
+  const f=await bookLeaseFixture(t),w=f.workspace,l=f.lease;
+  for(const documents of [l.documents.slice(0,1),l.documents.slice().reverse(),[l.documents[0],{...l.documents[1],documentId:'unknown'}]])
+    await assert.rejects(w.saveBookPaperArea('ch',{...l,documents},null,area('ch')),{code:'INPUT'});
+  await assert.rejects(w.saveBookPaperArea('ch',l,null,area('other')),{code:'INPUT'});
+  const saved=await w.saveBookPaperArea('ch',l,null,area('ch'));
+  await assert.rejects(w.saveBookPaperArea('ch',l,null,area('ch',50)),{code:'CONFLICT'});
+  await writeFile(join(f.root,'manuscript','other.md'),source+'\n外部変更。\n');
+  await assert.rejects(w.saveBookPaperArea('ch',l,saved.revision,area('ch',50)),{code:'CONFLICT'});
+  assert.deepEqual(await w.readPaperArea('ch'),saved);
+});
+test('whole-book placement rejects stale theme or settings without creating a layout file',async t=>{
+  const f=await bookLeaseFixture(t),w=f.workspace,l=f.lease;
+  await assert.rejects(w.saveBookPaperArea('ch',{...l,settingsRevision:'0'.repeat(64)},null,area('ch')),{code:'CONFLICT'});
+  await writeFile(f.themePath,(await readFile(f.themePath,'utf8'))+'# external\n');
+  await assert.rejects(w.saveBookPaperArea('ch',l,null,area('ch')),{code:'CONFLICT'});
+  assert.equal((await w.readBookPaperArea()).revision,null);
+  await writeFile(f.book,manifest+'# external\n');
+  await assert.rejects(w.saveBookPaperArea('ch',l,null,area('ch')),{code:'CONFLICT'});
+});
