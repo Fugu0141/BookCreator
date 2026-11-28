@@ -46,3 +46,11 @@ export function preparePaperNavigationTransfer(previousRoot,nextRoot,plan){
   }
   return ()=>installPaperNavigation(previousRoot,bindings,next.onNavigate);
 }
+
+// Block operations use the current source block's full origin, not a line or
+// inline-math text range. The ordinary navigation contract stays unchanged.
+export function paperBlockRangeForNode(node){
+  const root=node?.getRootNode?.();
+  if(!root||root.host?.inert)return null;
+  return roots.get(root)?.bindings.get(node)?.blockRange??null;
+}
