@@ -12,6 +12,7 @@ async function readState(workspace){
 }
 export async function exportSavedTrialPdf({workspace,request,BrowserWindow,chooseDestination,isCurrent}){
   const {options,expectedPlan,documents,themeRevision,settingsRevision}=request??{};
+  if(options?.intelligentLayout!==undefined)throw Error('IL配置のPDF一致検証はまだ接続されていません。通常組版に戻してから試し出力してください。');
   printPlanSignature(expectedPlan);
   if(!options||!Array.isArray(options.sections)||!Array.isArray(documents)||typeof isCurrent!=='function'||
     options.revision!==expectedPlan.revision||options.fingerprint!==expectedPlan.fingerprint)throw Error('Invalid trial PDF request');
