@@ -27,9 +27,9 @@ export function installComponentAreaDrag(root,{width,height,onCommit,onActive}){
     const key=axis==='width'?'widthPercent':'minHeightPercent';
     function finish(commit){
       const a=active;if(!a||a.handle!==handle)return;
-      active=null;ghost.style.display='none';try{if(handle.hasPointerCapture(a.id))handle.releasePointerCapture(a.id);}catch{}
+      active=null;ghost.style.display='none';handle.setAttribute('aria-valuenow',String(start()));try{if(handle.hasPointerCapture(a.id))handle.releasePointerCapture(a.id);}catch{}
       onActive(false);
-      if(commit&&a.changed&&a.value!==a.start)onCommit({[key]:a.value});
+      if(commit&&a.changed&&a.value!==a.initialValue)onCommit({[key]:a.value});
     }
     const down=e=>{
       if(disposed||active||e.button!==0||!e.isPrimary)return;
@@ -37,7 +37,7 @@ export function installComponentAreaDrag(root,{width,height,onCommit,onActive}){
       if(!Number.isFinite(scale)||scale<=0)return;
       e.preventDefault();e.stopPropagation();
       try{handle.setPointerCapture(e.pointerId);}catch{return;}
-      active={handle,id:e.pointerId,origin:axis==='width'?e.clientX:e.clientY,extent:extent/um*scale,start:actual()/extent*100,value:start(),changed:false};
+      active={handle,id:e.pointerId,origin:axis==='width'?e.clientX:e.clientY,extent:extent/um*scale,start:actual()/extent*100,initialValue:start(),value:start(),changed:false};
       ghost.style.width=el.style.width;ghost.style.height=el.style.height;ghost.style.display='block';onActive(true);
     };
     const move=e=>{
