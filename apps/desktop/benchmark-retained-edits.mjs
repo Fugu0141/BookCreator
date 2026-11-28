@@ -125,7 +125,7 @@ export async function benchmarkRetainedEdits({raw,click,until,ready,paperSignatu
   console.log('BENCH list retained '+JSON.stringify({identity:listRetained.identity,pages:listRetained.listPages}));
   await setRetained(false);
   // Dedicated component workload: do not change the historical latency fixture.
-  const component=(id,formula)=>['','::pagebreak{side="any"}','','::::component{#'+id+' name="example"}','例題。','',':::layout{#'+id+'-eq numbered="true"}','$',formula,'$',':::','::::',''].join('\n');
+  const component=(id,formula)=>['','::pagebreak{side="any"}','','::::component{#'+id+' name="example"}','例題。','',':::layout{#'+id+'-eq numbered="true"}','$$',formula,'$$',':::','::::',''].join('\n');
   const componentSource=(formula='x^2')=>large.source+component('retained-component-a',formula)+component('retained-component-b','y^2');
   const componentBase=componentSource(),componentEdit=componentSource('x^3');
   const componentBefore=await edit(componentBase),componentBaseSignature=await paperSignature();
