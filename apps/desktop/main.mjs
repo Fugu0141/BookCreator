@@ -2463,6 +2463,25 @@ async function smoke(){
   await until("document.querySelector('#lab-font-label').value==='system-monospace'");
   await exec("document.querySelector('#lab-measure').click()");
   await until("!document.querySelector('#lab-apply').disabled");
+  const directTextOpen=()=>exec("document.querySelector('#lab-preview > div').shadowRoot.querySelector('[data-lab-text-editable]').dispatchEvent(new MouseEvent('dblclick',{button:0,bubbles:true,cancelable:true}))");
+  const directTextValue=value=>exec("(()=>{const e=document.querySelector('#lab-direct-text');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,"+JSON.stringify(value)+");e.dispatchEvent(new Event('input',{bubbles:true}));})()");
+  await directTextOpen();await until("document.querySelector('#lab-direct-text')?.value==='CHAPTER'&&document.querySelector('#lab-apply').disabled");
+  await directTextValue('取消サンプル');
+  await exec("document.querySelector('#lab-direct-text-cancel').click()");
+  await until("!document.querySelector('#lab-direct-text')&&!document.querySelector('#lab-apply').disabled");
+  await directTextOpen();await until("document.querySelector('#lab-direct-text')?.value==='CHAPTER'");
+  await directTextValue('編集サンプル');
+  await exec("document.querySelector('#lab-direct-text').dispatchEvent(new CompositionEvent('compositionstart',{bubbles:true,data:'編'}))");
+  await until("document.querySelector('#lab-direct-text-apply').disabled");
+  await exec("document.querySelector('#lab-direct-text').dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',bubbles:true,isComposing:true}))");
+  if(!await exec("!!document.querySelector('#lab-direct-text')"))throw Error('IME enter committed literal prematurely');
+  await exec("document.querySelector('#lab-direct-text').dispatchEvent(new CompositionEvent('compositionend',{bubbles:true,data:'編集'}))");
+  await until("!document.querySelector('#lab-direct-text-apply').disabled");
+  await exec("document.querySelector('#lab-direct-text-apply').click()");
+  await until("!document.querySelector('#lab-direct-text')&&!document.querySelector('#lab-apply').disabled&&document.querySelector('#lab-preview > div').shadowRoot.querySelector('[data-fixed-label]').textContent==='編集サンプル'");
+  await exec("document.querySelector('#lab-undo').click()");
+  await until("!document.querySelector('#lab-apply').disabled&&document.querySelector('#lab-preview > div').shadowRoot.querySelector('[data-fixed-label]').textContent==='CHAPTER'");
+
   await exec("document.querySelector('#lab-apply').click()");
   await until("!document.querySelector('#open').disabled && !document.querySelector('#lab-measure')");
   await exec("document.querySelector('#preview-book').click()");
