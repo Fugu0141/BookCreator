@@ -1,4 +1,5 @@
 import React,{useLayoutEffect,useRef,useState} from 'react';
+import {createPortal} from 'react-dom';
 import {clipPaperRect,placePaperPropertyPanel,paperPositionFromDrag,paperPositionFromPagePointer,resolvePaperSelectionNodes,preferredPositionEditStart,placeBookPositionPanel,parsePaperMillimetres,paperPositionFromCoordinates} from './paper-selection-geometry.mjs';
 import {createIntelligentGeometryDraftSession,createFullRetainedTextPagePreview,createParagraphMeasurementCache,createMathCompilationCache,createDisplayMathGeometryCache,createInlineMathGeometryCache} from '../../../BookCreator_LayoutEngine/dist/index.js';
 import {measurementLane} from './measurement-lane.mjs';
@@ -76,7 +77,7 @@ export function PaperSelectionOverlay({viewport,node,enabled,getDrop,onMove}){
 
 
 // Explicit move mode: overlays never enter the measured/printable tree.
-export function BookPositionOverlay({viewport,node,context,bounds,onCommit,onClose,preferredMode=false}){
+export function BookPositionOverlay({viewport,node,context,bounds,onCommit,onClose,preferredMode=false,dockTarget,onUndock}){
   const [geometry,setGeometry]=useState(null),[proposal,setProposal]=useState(null),[ghost,setGhost]=useState(null),[invalid,setInvalid]=useState(false);
   const stored=preferredMode?context.areaPrepared.document.entries.find(e=>e.documentId===context.selection.documentId&&e.persistentId===context.persistentId)?.bookPreferred:null;
   const initial=preferredMode?preferredPositionEditStart(context.position,bounds,context.options,stored):null;
@@ -213,6 +214,7 @@ export function BookPositionOverlay({viewport,node,context,bounds,onCommit,onClo
     return rect?[{...f,rect}]:[];
   });
   const placement=shown?.intelligentLayout?.fragments.find(f=>f.origin.documentId===context.selection.documentId&&f.origin.blockKey===context.selection.blockKey)?.placement;
+  const renderPositionPanel=element=>dockTarget?createPortal(element,dockTarget):element;
   return <>
     {shown&&<div className="paper-inline-live" aria-hidden="true" inert={true} style={{left:visible.left,top:visible.top,width:visible.right-visible.left,height:visible.bottom-visible.top}}><div ref={liveMount} style={{position:'absolute',left:host.left,top:host.top,width:host.width,transformOrigin:'top left',transform:'scale('+host.sx+','+host.sy+')'}}/></div>}
     {handleRect&&!needsRebase&&<div className="paper-selection-frame book-position-frame" style={handleRect}>
@@ -224,7 +226,8 @@ export function BookPositionOverlay({viewport,node,context,bounds,onCommit,onClo
     </div>}
     {quickFrames.map(f=><div key={f.key} className={'book-geometry-draft-frame'+(f.selected?' is-selected':'')} aria-hidden="true" style={f.rect}/>)}
     {rect&&!needsRebase&&<div className="paper-drop-guide" aria-hidden="true" style={rect}/>}
-    <div className="paper-inline-area-toolbar book-position-panel" style={panel} role="group" aria-label={preferredMode?'希望位置の移動案':'固定位置の移動案'}>
+    {renderPositionPanel(<div className={'paper-inline-area-toolbar book-position-panel'+(dockTarget?' paper-area-docked':'')} style={dockTarget?undefined:panel} role="group" aria-label={preferredMode?'希望位置の移動案':'固定位置の移動案'}>
+      {dockTarget&&<button id="book-position-undock" type="button" className="secondary-action" disabled={dragging} onClick={onUndock}>紙面上に戻す</button>}
       <small role="status">{needsRebase?'以前の希望位置は現在の本文領域では直接編集できません。':invalid?'本文領域外には移動できません。':display.page+1+'ページ · X '+display.x/1000+' / Y '+display.y/1000+' mm'+(preferredMode&&!preferenceChanged?'（保存済みの希望）':'（未確定）')}</small>
       {needsRebase&&<><small>保存済み：{stored.position.page+1}ページ X {stored.position.x/1000} / Y {stored.position.y/1000} mm、許容 ±{stored.tolerance.x/1000} / ±{stored.tolerance.y/1000} mm</small><button type="button" id="book-paper-preferred-rebase" onClick={()=>{if(!context.current())return;setProposal(null);setRebased(true);}}>現在の紙面を基準に再指定</button></>}
       {quickMode&&<small className="paper-inline-live-status" data-position-phase={quickResult?'geometry-ready':quick?.key===quickKey&&quick.error?'geometry-conflict':'geometry-pending'} data-elapsed-ms={quickResult?quick.elapsedMs:undefined} data-queue-ms={quickResult?quick.queueMs:undefined} role="status">{invalid?'':quick?.key===quickKey&&quick.error?'配置案が成立しません：'+quick.error:quickResult?'軽量配置案 · 移動 '+quickResult.changed.length+'件 · '+quickResult.pageCount+'ページ（未確定）':'配置ガイド（ドロップ後に実測）'}</small>}
@@ -234,7 +237,7 @@ export function BookPositionOverlay({viewport,node,context,bounds,onCommit,onClo
       {!needsRebase&&<div className="book-position-coordinates"><small>本文領域の左上からの距離（mm）</small><div className="paper-property-grid">{['x','y'].map(axis=><label className="paper-property-number" key={axis}>{axis.toUpperCase()} <input id={'book-paper-coordinate-'+axis} type="text" inputMode="decimal" value={coordinateValues[axis]} aria-invalid={parsePaperMillimetres(coordinateValues[axis],axis==='x'?bounds.maxX:bounds.maxY)===null} disabled={dragging} onChange={e=>setCoordinates({...coordinateValues,[axis]:e.target.value})} onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();applyCoordinates();}}}/><span>mm</span></label>)}</div>{coordinateDirty&&<><small role="status">{coordinatePosition?'座標を反映してから紙面を確認してください。':'座標は X 0〜'+bounds.maxX/1000+' / Y 0〜'+bounds.maxY/1000+' mm（小数3桁まで）です。'}</small><div className="controls"><button id="book-paper-coordinate-apply" type="button" disabled={!coordinatePosition||dragging||!context.current()} onClick={applyCoordinates}>座標を反映</button><button type="button" onClick={()=>setCoordinates(null)}>入力を取消</button></div></>}</div>}
       {preferredMode&&!needsRebase?<><small>許容範囲内を優先。成立しない場合は通常配置に戻ります。</small><div className="controls"><label>横 ± mm <input type="number" min="0" max={body.width/1000} step="0.001" value={tx} onChange={e=>setTx(e.target.value)}/></label><label>縦 ± mm <input type="number" min="0" max={body.height/1000} step="0.001" value={ty} onChange={e=>setTy(e.target.value)}/></label></div></>:!preferredMode?<small>確定すると移動先を固定します。</small>:null}
       <div className="controls"><button id="book-paper-position-apply" type="button" disabled={(!preferredMode&&!changed)||(preferredMode&&(!validTolerance||!preferenceChanged||needsRebase))||coordinateDirty||!!gesture.current||!context.current()||!!(liveKey&&live?.key===liveKey&&live.error)} onClick={()=>{if(!coordinateDirty&&!gesture.current&&context.current()){if(preferredMode&&validTolerance&&preferenceChanged&&!needsRebase)onCommit({position,tolerance});else if(!preferredMode&&changed)onCommit(proposal);}}}>{preferredMode?'希望位置を保存':'移動先を固定して保存'}</button><button type="button" className="secondary-action" onClick={onClose}>取消</button></div>
-    </div>
+    </div>)}
   </>;
 }
 
