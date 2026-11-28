@@ -117,10 +117,22 @@ async function writeNew(path,text){
   const f=await open(path,'wx',0o644);
   try{await f.writeFile(text,'utf8');await f.sync();}finally{await f.close();}
 }
+// Fixed local starters, never executable or user-supplied paths.
+function starterChapters(template){
+  if(template===undefined||template==='blank')return ['# はじめに\n\nここから原稿を書き始めます。\n'];
+  if(template==='textbook')return [
+    '# この本の使い方\n\nこの参考書は、解説・例題・練習問題の順に学びます。本文や部品を自由に編集してください。\n',
+    '# 第1章 一次方程式\n\n## 基本の考え方\n\n一次方程式は、未知数の値を求めるための等式です。\n\n$\n2x+3=7\n$\n\n:::component{name="example" #example-01}\n両辺から3を引き、2で割ると $x=2$ になります。\n:::\n\n:::component{name="exercise" #exercise-01}\n$3x+1=10$ を解きなさい。\n:::\n\n:::component{name="explanation" #answer-01 answer-to="exercise-01"}\n両辺から1を引くと $3x=9$ なので、$x=3$ です。\n:::\n',
+    '# 第2章 練習問題\n\n学んだ内容を使って問題を解きましょう。\n\n:::component{name="exercise" #exercise-02}\n$5x-2=18$ を解きなさい。\n:::\n\n:::component{name="explanation" #answer-02 answer-to="exercise-02"}\n両辺に2を足すと $5x=20$ なので、$x=4$ です。\n:::\n'
+  ];
+  fail('INPUT','Unknown new project template');
+}
 export async function createProject(parent,options){
   if(!record(options)||typeof options.title!=='string'||!options.title.trim()||options.title.length>200||/[\p{Cc}\p{Cs}]/u.test(options.title)||
     typeof options.folder!=='string'||!/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(options.folder)||!['A4','A5','B5'].includes(options.size))
     fail('INPUT','Invalid new project title, folder or page size');
+  const chapters=starterChapters(options.template);
+  const sections=chapters.map((_,i)=>{const id='chapter-'+String(i+1).padStart(2,'0');return {id,type:'manuscript',role:'body',path:'manuscript/'+id+'.md'};});
   relativeParts(options.folder);
   const dir=await realpath(parent),root=join(dir,options.folder);
   // An existing directory or file is never overwritten.
@@ -128,11 +140,11 @@ export async function createProject(parent,options){
   try{
     for(const name of ['manuscript','assets','fonts','layouts','themes'])await mkdir(join(root,name));
     await mkdir(join(root,'themes','default'));
-    await writeNew(join(root,'manuscript','chapter-01.md'),'# はじめに\n\nここから原稿を書き始めます。\n');
+    for(let i=0;i<sections.length;i++)await writeNew(join(root,sections[i].path),chapters[i]);
     await writeNew(join(root,'themes','default','theme.yaml'),stringify({schemaVersion:1,id:'default',name:'Default',tokens:{color:{accent:'#315b86',text:'#222222'}},typography:{schemaVersion:1,roles:DEFAULT_ROLES},components:{},bindings:{},repeats:[]}));
     await writeNew(join(root,'.gitignore'),'.bookcreator/\ndist/\n');
     // Publish the manifest last. Partial creation remains visible for manual recovery.
-    await writeNew(join(root,'book.yaml'),stringify({schemaVersion:1,documentFormat:{name:'bcm',version:1},title:options.title.trim(),language:'ja',theme:'themes/default/theme.yaml',page:{size:options.size,binding:'left',firstInteriorSide:'right',defaultSectionStart:'page',margin:{top:'18mm',bottom:'20mm',inner:'23mm',outer:'18mm'}},sections:[{id:'chapter-01',type:'manuscript',role:'body',path:'manuscript/chapter-01.md'}]}));
+    await writeNew(join(root,'book.yaml'),stringify({schemaVersion:1,documentFormat:{name:'bcm',version:1},title:options.title.trim(),language:'ja',theme:'themes/default/theme.yaml',page:{size:options.size,binding:'left',firstInteriorSide:'right',defaultSectionStart:'page',margin:{top:'18mm',bottom:'20mm',inner:'23mm',outer:'18mm'}},sections}));
     return await openWorkspace(join(root,'book.yaml'));
   }catch(e){fail('CREATE','Project creation incomplete; inspect the newly created folder '+root+' ('+String(e.message??e)+')');}
 }
