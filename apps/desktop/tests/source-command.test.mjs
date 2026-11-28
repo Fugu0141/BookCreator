@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createManuscriptStore} from '../manuscript-store.mjs';
-import {captureSourceCommand,isSourceCommandCurrent,applySourceCommand} from '../source-command.mjs';
+import {captureSourceCommand,isSourceCommandCurrent,applySourceCommand,captureDraftCommand,isDraftCommandCurrent} from '../source-command.mjs';
 function setup(){
   const store=createManuscriptStore();
   store.dispatch({type:'install',file:{id:'a',revision:'r1',text:'abc',editable:true}});
@@ -45,4 +45,43 @@ test('no selected writable source or IME prevents capture; mismatched DOM is rej
   s.deps.composing.current=false;s.node.value='other';assert.throws(s.capture,/再選択/);
   s.store.dispatch({type:'editable',editable:false});assert.equal(s.capture(),null);
   s.store.dispatch({type:'clear'});assert.equal(s.capture(),null);
+});
+
+function modal(s){
+  const origin=s.capture();
+  return {origin,fileId:origin.file.id,revision:origin.file.revision,source:origin.text,job:origin.job,start:origin.start,end:origin.end};
+}
+test('modal draft preserves the captured range even after the live selection moves',()=>{
+  const s=setup(),draft=modal(s);
+  s.node.selectionStart=3;s.node.selectionEnd=3;
+  const command=captureDraftCommand(s.deps,draft);
+  assert.equal(command.start,0);assert.equal(command.end,2);
+  assert.equal(isDraftCommandCurrent(s.deps,command),true);
+});
+test('modal draft rejects stale origin even for a replacement with identical id, revision and text',()=>{
+  const s=setup(),draft=modal(s);
+  s.store.dispatch({type:'install',file:{...s.store.getSnapshot().file}});
+  assert.equal(captureDraftCommand(s.deps,draft),null);
+});
+test('modal command is revalidated after asynchronous work',()=>{
+  for(const change of [
+    s=>s.store.dispatch({type:'edit',value:'new'}),
+    s=>s.store.dispatch({type:'saved',file:s.store.getSnapshot().file,value:'abc',revision:'r2'}),
+    s=>{s.deps.generation.current++;},
+    s=>{s.deps.textarea.current={...s.node};},
+    s=>{s.deps.composing.current=true;},
+    s=>{s.node.value='new';}
+  ]){
+    const s=setup(),draft=modal(s),command=captureDraftCommand(s.deps,draft);
+    change(s);
+    assert.equal(isDraftCommandCurrent(s.deps,command),false);
+    assert.equal(captureDraftCommand(s.deps,draft),null);
+  }
+});
+test('legacy structured reference draft retains current document guard without a source origin',()=>{
+  const s=setup(),{origin,...draft}=modal(s);
+  assert.ok(captureDraftCommand(s.deps,draft));
+  s.store.dispatch({type:'editable',editable:false});
+  assert.equal(captureDraftCommand(s.deps,draft),null);
+  assert.equal(isDraftCommandCurrent(s.deps,null),false);
 });
