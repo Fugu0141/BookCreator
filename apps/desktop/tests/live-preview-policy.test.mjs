@@ -46,3 +46,10 @@ test('short wait requires a warm retained manuscript in writing mode',()=>{
     assert.equal(livePreviewWaitMs({...base,...patch}),100);
   }
 });
+
+test('short-window trial affects only warm retained writing, not cold or full layout',()=>{
+  const base={mode:'writing',scope:'manuscript',retained:true,warmRetained:true,shortWarmWindow:true};
+  assert.equal(livePreviewWaitMs(base),8);
+  for(const patch of [{mode:'design'},{mode:'layout'},{scope:'book'},{retained:false},{warmRetained:false}])assert.equal(livePreviewWaitMs({...base,...patch}),100);
+  assert.equal(livePreviewWaitMs({...base,shortWarmWindow:false}),16);
+});

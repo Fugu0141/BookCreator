@@ -44,3 +44,12 @@ test('preview input observes text and revision, not history-only changes',()=>{
   s.store.dispatch({type:'saved',file:f,value:'B',revision:'r2'});
   assert.equal(notifications,2);stop();
 });
+
+test('short-window reservation retains latest-only and IME/block safety',()=>{
+  const s=setup(),cancel=s.reserve({shortWarmWindow:true});
+  assert.equal(s.tasks[0].wait,8);
+  s.store.dispatch({type:'edit',value:'新'});cancel();s.reserve({shortWarmWindow:true});
+  s.tasks[0].run();s.tasks[1].run();assert.deepEqual(s.calls,[[false,'新']]);
+  s.reserve({shortWarmWindow:true,warmRetained:()=>false});assert.equal(s.tasks[2].wait,100);
+  s.block();s.tasks[2].run();assert.deepEqual(s.calls,[[false,'新']]);
+});
