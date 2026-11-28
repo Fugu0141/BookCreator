@@ -790,3 +790,7 @@ body{font-family:BCFont_NotoSansJP,system-ui,sans-serif}.font-control,.typograph
 .book-paper-toolbar-actions{display:flex;align-items:center;flex-wrap:wrap;gap:4px;min-width:0;}
 .book-paper-toolbar-actions:empty{display:none;}
 .book-paper-toolbar[data-tool]:not([data-tool=select]) .book-paper-toolbar-status{font-weight:600;color:#205a99;}
+
+.book-position-coordinates{width:100%;display:grid;gap:4px;border-top:1px solid #d0dae2;padding-top:4px;}
+.book-position-coordinates>small{font-size:11px;}
+.book-position-coordinates .controls{flex-wrap:wrap;}
